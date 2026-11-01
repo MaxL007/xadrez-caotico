@@ -45,3 +45,12 @@ npx wrangler deploy
 ```
 
 O endereço do servidor vai em `.env.production` (`VITE_API_URL`), e o site é publicado a cada envio pra `main`.
+
+Servidor publicado: `https://xadrez-caotico.xadrez-caotico-servidor.workers.dev`. Para conferir a publicação de verdade:
+
+```sh
+API=https://xadrez-caotico.xadrez-caotico-servidor.workers.dev node testes/conferir-producao.mjs
+API=https://xadrez-caotico.xadrez-caotico-servidor.workers.dev node testes/conferir-site-publicado.mjs
+```
+
+Os dois criam contas temporárias e as apagam no fim, e gastam o limite de 5 contas por hora do endereço.

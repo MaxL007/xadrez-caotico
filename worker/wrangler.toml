@@ -8,7 +8,7 @@ ORIGENS = "https://maxl007.github.io"
 [[d1_databases]]
 binding = "DB"
 database_name = "xadrez-caotico"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "5118a73f-9d41-43ab-a53c-d5fac0ae0141"
 migrations_dir = "migracoes"
 
 [[durable_objects.bindings]]
