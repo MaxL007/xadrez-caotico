@@ -1,0 +1,24 @@
+name = "xadrez-caotico"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[vars]
+ORIGENS = "https://maxl007.github.io"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "xadrez-caotico"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migracoes"
+
+[[durable_objects.bindings]]
+name = "SALAS"
+class_name = "Sala"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sala"]
+
+# limpeza diária de sessões vencidas e contadores de tentativas
+[triggers]
+crons = ["0 6 * * *"]

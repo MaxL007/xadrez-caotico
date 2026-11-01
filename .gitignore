@@ -1,0 +1,23 @@
+node_modules
+dist
+.DS_Store
+*.local
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Cloudflare: estado local do simulador e segredos de desenvolvimento
+.wrangler
+.dev.vars
+
+# resultado dos testes
+testes/saidas/
+
+# backup automático do Blender
+*.blend1
+*.blend2
+
+# arquivos brutos de personagem e animação: ficam só na máquina. O repositório é público e o jogo usa
+# os modelos prontos de public/models
+scripts/blender/*.fbx
+scripts/blender/*.blend

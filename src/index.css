@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --ink-50: 250 249 247;
+    --ink-100: 240 238 233;
+    --ink-200: 224 220 212;
+    --ink-300: 199 192 180;
+    --ink-400: 163 154 140;
+    --ink-500: 125 116 104;
+    --ink-600: 95 88 78;
+    --ink-700: 72 66 58;
+    --ink-800: 0 0 0;
+    --ink-900: 0 0 0;
+    --ink-950: 20 17 14;
+    --surface: 255 255 255;
+    --amber-50: 253 246 236;
+    --amber-100: 250 232 203;
+    --amber-200: 242 205 143;
+    --amber-300: 232 172 87;
+    --amber-400: 221 143 48;
+    --amber-500: 196 116 31;
+    --amber-600: 162 90 24;
+    --amber-700: 127 68 23;
+    --amber-800: 103 55 24;
+    --amber-900: 86 47 23;
+    --brand-50: 245 245 245;
+    --brand-100: 229 229 229;
+    --brand-200: 212 212 212;
+    /* verde/vermelho/azul: os valores normais do Tailwind no claro */
+    --emerald-50: 236 253 245;
+    --emerald-100: 209 250 229;
+    --emerald-200: 167 243 208;
+    --emerald-700: 4 120 87;
+    --emerald-800: 6 95 70;
+    --emerald-900: 6 78 59;
+    --rose-50: 255 241 242;
+    --rose-100: 255 228 230;
+    --rose-200: 254 205 211;
+    --rose-700: 190 18 60;
+    --rose-800: 159 18 57;
+    --rose-900: 136 19 55;
+    --sky-50: 240 249 255;
+    --sky-100: 224 242 254;
+    --sky-200: 186 230 253;
+    --sky-700: 3 105 161;
+    --sky-800: 7 89 133;
+    --sky-900: 12 74 110;
+  }
+
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-ink-50 text-ink-900 font-sans transition-colors;
+  }
+  ::selection {
+    @apply bg-brand-200 text-ink-900;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+  @keyframes dialog-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes dialog-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.94) translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-ink-100 bg-surface p-5 sm:p-6;
+  }
+  .pill-tab {
+    @apply inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition whitespace-nowrap;
+  }
+}
