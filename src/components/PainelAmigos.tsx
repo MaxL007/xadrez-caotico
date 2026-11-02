@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { ChaveTexto, Idioma, Traduzir } from '../chess/idiomas'
 import { convidarAmigo, criarSala, entrarEmSala, ErroDoServidor, listarSalas, recusarSala, removerAmigo, useSessao, verPerfil, type Amigos, type Jogador, type Perfil, type SalaNaLista } from '../db/servidor'
+import { Avatar, MeuId, Placar } from './ElementosDoJogador'
 import { PainelConta } from './PainelConta'
 
 // Amigos: o ID de quem joga, os convites, a lista de amigos e as partidas amistosas com eles.
@@ -21,37 +22,6 @@ const mensagemDeErro = (erro: unknown): ChaveTexto => {
   if (codigo === 'muitos-convites') return 'online.erroMuitosConvites'
   if (codigo === 'muitas-tentativas') return 'conta.erroTentativas'
   return 'conta.erroConexao'
-}
-
-function rotuloDoResultado(t: Traduzir, sala: SalaNaLista): string {
-  if (sala.status === 'aguardando') return t('online.listaAguardando')
-  if (sala.status === 'andamento') return t('online.listaAndamento')
-  if (sala.status === 'expirada') return t('online.listaExpirada')
-  if (sala.resultado === 'empate') return t('online.listaEmpate')
-  return t((sala.resultado === 'brancas') === (sala.minhaCor === 'w') ? 'online.listaVenceu' : 'online.listaPerdeu')
-}
-
-function MeuId({ t, id }: { t: Traduzir; id: string }) {
-  const [copiado, setCopiado] = useState(false)
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-[#2a1c10] px-3 py-2">
-      <p className="text-xs text-[#c9b48a]">
-        {t('amigos.meuId')}{' '}
-        <span className="select-all font-mono text-sm font-semibold tracking-widest text-[#f5e6c8]" data-meu-id>
-          {id}
-        </span>
-      </p>
-      <button
-        type="button"
-        className={botaoLink}
-        onClick={() => {
-          void navigator.clipboard?.writeText(id).then(() => setCopiado(true))
-        }}
-      >
-        {t(copiado ? 'conta.copiado' : 'conta.copiar')}
-      </button>
-    </div>
-  )
 }
 
 function ConvidarAmigos({ t, onConvidou }: { t: Traduzir; onConvidou: () => Promise<void> }) {
@@ -107,15 +77,6 @@ function ConvidarAmigos({ t, onConvidou }: { t: Traduzir; onConvidou: () => Prom
   )
 }
 
-function Quadro({ rotulo, valor }: { rotulo: string; valor: number }) {
-  return (
-    <div className="rounded-lg bg-[#2a1c10] px-1 py-2 text-center">
-      <p className="text-lg font-semibold">{valor}</p>
-      <p className="text-[0.65rem] text-[#c9b48a]">{rotulo}</p>
-    </div>
-  )
-}
-
 function PerfilDoAmigo({
   t,
   idioma,
@@ -156,22 +117,20 @@ function PerfilDoAmigo({
       <button type="button" className={botaoLink} onClick={onVoltar}>
         {t('amigos.voltarLista')}
       </button>
-      <div>
-        <p className="truncate font-display text-lg font-semibold">{amigo.nome}</p>
-        <p className="font-mono text-xs text-[#c9b48a]">{t('amigos.perfilId', { id: amigo.idJogador })}</p>
-        {perfil && <p className="text-xs text-[#c9b48a]">{t('amigos.perfilDesde', { data: new Date(perfil.desde).toLocaleDateString(idioma) })}</p>}
+      <div className="flex items-center gap-4 pt-1">
+        <Avatar jogador={amigo} tamanho={72} />
+        <div className="min-w-0">
+          <p className="truncate font-display text-lg font-semibold">{amigo.nome}</p>
+          <p className="font-mono text-xs text-[#c9b48a]">{t('amigos.perfilId', { id: amigo.idJogador })}</p>
+          {perfil && <p className="text-xs text-[#c9b48a]">{t('amigos.perfilDesde', { data: new Date(perfil.desde).toLocaleDateString(idioma) })}</p>}
+        </div>
       </div>
       {falhou && <p className="text-xs font-medium text-[#ffb4a8]">{t('conta.erroConexao')}</p>}
       {perfil && (
         <>
           <div>
             <p className="mb-1 text-sm font-medium">{t('amigos.perfilAmistosas')}</p>
-            <div className="grid grid-cols-4 gap-2">
-              <Quadro rotulo={t('amigos.perfilPartidas')} valor={perfil.geral.partidas} />
-              <Quadro rotulo={t('amigos.perfilVitorias')} valor={perfil.geral.vitorias} />
-              <Quadro rotulo={t('amigos.perfilDerrotas')} valor={perfil.geral.derrotas} />
-              <Quadro rotulo={t('amigos.perfilEmpates')} valor={perfil.geral.empates} />
-            </div>
+            <Placar t={t} retrospecto={perfil.geral} />
           </div>
           <p className="text-xs text-[#c9b48a]">
             {t('amigos.perfilEntreVoces', { minhas: perfil.entreVoces.derrotas, nome: amigo.nome, deles: perfil.entreVoces.vitorias, empates: perfil.entreVoces.empates })}
@@ -291,7 +250,6 @@ export function PainelAmigos({
   }
 
   const abertas = salas.filter((s) => s.status === 'andamento' || s.status === 'aguardando')
-  const encerradas = salas.filter((s) => s.status === 'fim').slice(0, 5)
 
   return (
     <div className="space-y-4">
@@ -342,7 +300,10 @@ export function PainelAmigos({
         {amigos?.amigos.length === 0 && <p className="text-xs text-[#c9b48a]">{t('amigos.vazio')}</p>}
         {amigos?.amigos.map((amigo) => (
           <div key={amigo.idJogador} className="space-y-1.5 py-1" data-amigo={amigo.idJogador}>
-            <p className="truncate text-sm font-semibold">{amigo.nome}</p>
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <Avatar jogador={amigo} tamanho={32} />
+              <span className="min-w-0 truncate">{amigo.nome}</span>
+            </p>
             {escolhendoCorPara === amigo.idJogador ? (
               <>
                 <p className="text-xs text-[#c9b48a]">{t('amigos.voceJogaDe')}</p>
@@ -385,10 +346,10 @@ export function PainelAmigos({
         </div>
       )}
 
-      {(abertas.length > 0 || encerradas.length > 0) && (
+      {abertas.length > 0 && (
         <div className={secao}>
           <p className="mb-1 text-sm font-medium">{t('online.minhas')}</p>
-          {[...abertas, ...encerradas].map((s) => (
+          {abertas.map((s) => (
             <button
               key={s.codigo}
               type="button"
@@ -398,7 +359,7 @@ export function PainelAmigos({
               <span className="truncate">
                 {s.brancas ?? '…'} × {s.pretas ?? '…'}
               </span>
-              <span className="shrink-0 text-[#c9b48a]">{rotuloDoResultado(t, s)}</span>
+              <span className="shrink-0 text-[#c9b48a]">{t(s.status === 'aguardando' ? 'online.listaAguardando' : 'online.listaAndamento')}</span>
             </button>
           ))}
         </div>

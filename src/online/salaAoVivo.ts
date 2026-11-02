@@ -37,6 +37,8 @@ export interface AoReceberDaSala {
   conexao: (ligada: boolean) => void
   /** O servidor recusou a entrada (sessão vencida, sem lugar na sala). */
   recusada: () => void
+  /** O adversário pediu outra partida: o código é o da sala nova. */
+  revanche: (codigo: string) => void
 }
 
 export interface ConexaoDaSala {
@@ -70,6 +72,7 @@ export function abrirConexaoDaSala(codigo: string, token: string, ao: AoReceberD
       else if (m.t === 'lance') ao.lance(m as LanceDaSala)
       else if (m.t === 'fim') ao.fim(m.resultado, m.motivo)
       else if (m.t === 'presenca') ao.presenca(m.adversarioConectado)
+      else if (m.t === 'revanche') ao.revanche(m.codigo)
     }
     conexao.onclose = () => {
       if (batimento) clearInterval(batimento)

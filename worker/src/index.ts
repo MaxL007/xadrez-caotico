@@ -6,6 +6,7 @@ import {
   codigoNormalizado,
   conferirSemConta,
   criarSessao,
+  deBase64,
   encerrarSessao,
   limpezaDiaria,
   nomeDeBusca,
@@ -19,6 +20,7 @@ import {
   type Usuario,
 } from './conta'
 import type { Sala } from './sala'
+import aparencia from '../../src/conta/aparencia.json'
 
 export { Sala } from './sala'
 
@@ -43,6 +45,9 @@ const MAXIMO_DE_AMIGOS = 200
 const LIGACOES_NA_LISTA = 300
 const PARTIDAS_RECEBIDAS_NA_LISTA = 20
 const CONVITES_DE_AMIZADE_POR_HORA = 30
+const MAXIMO_FOTO_BASE64 = 60 * 1024
+const FOTOS_POR_HORA = 20
+const FOTO_NO_CACHE_S = 7 * 24 * 60 * 60
 const ALFABETO_CODIGO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const TAMANHO_CODIGO = 8
 
@@ -181,6 +186,7 @@ async function excluirConta(pedido: Request, env: Ambiente) {
     env.DB.prepare('DELETE FROM sessoes WHERE usuario_id = ?1').bind(usuario.id),
     env.DB.prepare('DELETE FROM registros WHERE usuario_id = ?1').bind(usuario.id),
     env.DB.prepare('DELETE FROM amizades WHERE solicitante_id = ?1 OR destinatario_id = ?1').bind(usuario.id),
+    env.DB.prepare('DELETE FROM fotos WHERE usuario_id = ?1').bind(usuario.id),
     // na lista do adversário a partida continua, sem o nome de quem saiu
     env.DB.prepare("UPDATE salas SET brancas_nome = '—', brancas_id = NULL WHERE brancas_id = ?1").bind(usuario.id),
     env.DB.prepare("UPDATE salas SET pretas_nome = '—', pretas_id = NULL WHERE pretas_id = ?1").bind(usuario.id),
@@ -232,19 +238,26 @@ async function gravarRegistros(pedido: Request, env: Ambiente) {
 }
 
 // --- amigos ------------------------------------------------------------------------------
-const jogadorPublico = (linha: { id_jogador: string; nome: string }) => ({ idJogador: linha.id_jogador, nome: linha.nome })
+interface LinhaDeJogador {
+  id_jogador: string
+  nome: string
+  avatar: string | null
+  moldura: string | null
+}
+
+const jogadorPublico = (linha: LinhaDeJogador) => ({ idJogador: linha.id_jogador, nome: linha.nome, avatar: linha.avatar, moldura: linha.moldura })
 
 async function listarAmigos(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
   const [eu, ligacoes, chamadas] = await Promise.all([
     env.DB.prepare('SELECT id_jogador FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ id_jogador: string }>(),
     env.DB.prepare(
-      `SELECT u.id, u.id_jogador, u.nome, a.solicitante_id, a.status FROM amizades a
+      `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, a.solicitante_id, a.status FROM amizades a
        JOIN usuarios u ON u.id = CASE a.solicitante_id WHEN ?1 THEN a.destinatario_id ELSE a.solicitante_id END
        WHERE a.solicitante_id = ?1 OR a.destinatario_id = ?1 ORDER BY a.status = 'aceita' DESC, u.nome_busca LIMIT ?2`,
     )
       .bind(usuario.id, LIGACOES_NA_LISTA)
-      .all<{ id: string; id_jogador: string; nome: string; solicitante_id: string; status: string }>(),
+      .all<LinhaDeJogador & { id: string; solicitante_id: string; status: string }>(),
     env.DB.prepare(
       `SELECT codigo, criador_id, brancas_id FROM salas
        WHERE (brancas_id = ?1 OR pretas_id = ?1) AND status = 'aguardando' AND criador_id <> ?1 ORDER BY criada_em DESC LIMIT ?2`,
@@ -274,9 +287,9 @@ async function convidarAmigo(pedido: Request, env: Ambiente) {
   if ((await somarTentativa(env, `amigo:${usuario.id}`, UMA_HORA)) > CONVITES_DE_AMIZADE_POR_HORA) throw new Falha(429, 'muitas-tentativas')
 
   // o nome precisa ser exato, pra busca não servir de lista de jogadores; um nome igual ao ID de alguém perde pro ID
-  const alvo = await env.DB.prepare('SELECT id, id_jogador, nome FROM usuarios WHERE id_jogador = ?1 OR nome_busca = ?2 ORDER BY id_jogador = ?1 DESC LIMIT 1')
+  const alvo = await env.DB.prepare('SELECT id, id_jogador, nome, avatar, moldura FROM usuarios WHERE id_jogador = ?1 OR nome_busca = ?2 ORDER BY id_jogador = ?1 DESC LIMIT 1')
     .bind(codigoNormalizado(busca), nomeDeBusca(busca))
-    .first<{ id: string; id_jogador: string; nome: string }>()
+    .first<LinhaDeJogador & { id: string }>()
   if (!alvo) throw new Falha(404, 'jogador-nao-encontrado')
   if (alvo.id === usuario.id) throw new Falha(422, 'voce-mesmo')
 
@@ -314,12 +327,12 @@ async function removerAmigo(pedido: Request, env: Ambiente, idJogador: string) {
 /** Só amizade aceita chega aqui: é o que protege o perfil e as partidas amistosas. */
 function amigoPeloId(env: Ambiente, usuarioId: string, idJogador: string) {
   return env.DB.prepare(
-    `SELECT u.id, u.id_jogador, u.nome, u.criado_em FROM usuarios u
+    `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, u.criado_em FROM usuarios u
      JOIN amizades a ON a.status = 'aceita' AND ((a.solicitante_id = ?1 AND a.destinatario_id = u.id) OR (a.destinatario_id = ?1 AND a.solicitante_id = u.id))
      WHERE u.id_jogador = ?2`,
   )
     .bind(usuarioId, idJogador)
-    .first<{ id: string; id_jogador: string; nome: string; criado_em: number }>()
+    .first<LinhaDeJogador & { id: string; criado_em: number }>()
 }
 
 const RETROSPECTO = `SELECT COUNT(*) AS partidas, COALESCE(SUM(resultado = 'empate'), 0) AS empates,
@@ -343,23 +356,115 @@ async function verPerfil(pedido: Request, env: Ambiente, idJogador: string) {
   return responder({ ...jogadorPublico(amigo), desde: amigo.criado_em, geral: comDerrotas(geral), entreVoces: comDerrotas(entreVoces) })
 }
 
+// --- perfil ------------------------------------------------------------------------------
+async function lerMeuPerfil(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const [eu, geral] = await Promise.all([
+    env.DB.prepare('SELECT id_jogador, nome, avatar, moldura, criado_em, tudo_liberado FROM usuarios WHERE id = ?1')
+      .bind(usuario.id)
+      .first<LinhaDeJogador & { criado_em: number; tudo_liberado: number }>(),
+    env.DB.prepare(RETROSPECTO).bind(usuario.id).first<Retrospecto>(),
+  ])
+  if (!eu) throw new Falha(401, 'sessao')
+  return responder({ ...jogadorPublico(eu), desde: eu.criado_em, geral: comDerrotas(geral), tudoLiberado: eu.tudo_liberado === 1 })
+}
+
+/** Escolher um avatar do jogo apaga a foto: ela não fica guardada à toa. As molduras, por enquanto, só pra conta com
+ * tudo liberado; tirar a moldura qualquer um pode. */
+async function mudarAparencia(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { avatar, moldura } = await lerCorpo<{ avatar?: unknown; moldura?: unknown }>(pedido)
+  if (avatar !== undefined && !aparencia.avatares.includes(avatar as string)) throw new Falha(422, 'avatar-invalido')
+  if (moldura !== undefined && !aparencia.molduras.includes(moldura as string)) throw new Falha(422, 'moldura-invalida')
+  if (moldura !== undefined && moldura !== 'nenhuma') {
+    const conta = await env.DB.prepare('SELECT tudo_liberado FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ tudo_liberado: number }>()
+    if (conta?.tudo_liberado !== 1) throw new Falha(403, 'moldura-bloqueada')
+  }
+  const instrucoes = []
+  if (moldura !== undefined) instrucoes.push(env.DB.prepare('UPDATE usuarios SET moldura = ?1 WHERE id = ?2').bind(moldura, usuario.id))
+  if (avatar !== undefined) {
+    instrucoes.push(env.DB.prepare('UPDATE usuarios SET avatar = ?1 WHERE id = ?2').bind(avatar, usuario.id))
+    instrucoes.push(env.DB.prepare('DELETE FROM fotos WHERE usuario_id = ?1').bind(usuario.id))
+  }
+  if (instrucoes.length > 0) await env.DB.batch(instrucoes)
+  return responder({ ok: true })
+}
+
+/** O site reduz a foto e manda só JPEG (`/9j/` é como o início do arquivo sai em base64): fora isso nada é aceito. */
+async function enviarFoto(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { foto } = await lerCorpo<{ foto?: unknown }>(pedido)
+  if (typeof foto !== 'string' || foto.length > MAXIMO_FOTO_BASE64 || !foto.startsWith('/9j/') || !/^[A-Za-z0-9+/]+={0,2}$/.test(foto)) throw new Falha(422, 'foto-invalida')
+  if ((await somarTentativa(env, `foto:${usuario.id}`, UMA_HORA)) > FOTOS_POR_HORA) throw new Falha(429, 'muitas-tentativas')
+
+  const agora = Date.now()
+  const avatar = `foto:${agora}`
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO fotos (usuario_id, dados, atualizada_em) VALUES (?1, ?2, ?3) ON CONFLICT(usuario_id) DO UPDATE SET dados = excluded.dados, atualizada_em = excluded.atualizada_em').bind(usuario.id, foto, agora),
+    env.DB.prepare('UPDATE usuarios SET avatar = ?1 WHERE id = ?2').bind(avatar, usuario.id),
+  ])
+  return responder({ avatar })
+}
+
+/** Uma `<img>` não manda sessão: a foto é aberta pra quem tem o ID. A versão na URL é que vence o cache. */
+async function verFoto(env: Ambiente, idJogador: string) {
+  const foto = await env.DB.prepare('SELECT f.dados FROM fotos f JOIN usuarios u ON u.id = f.usuario_id WHERE u.id_jogador = ?1').bind(idJogador).first<{ dados: string }>()
+  if (!foto) throw new Falha(404, 'sem-foto')
+  return new Response(deBase64(foto.dados), {
+    headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': `public, max-age=${FOTO_NO_CACHE_S}`, 'X-Content-Type-Options': 'nosniff' },
+  })
+}
+
 // --- salas -------------------------------------------------------------------------------
 const stubDaSala = (env: Ambiente, codigo: string) => env.SALAS.get(env.SALAS.idFromName(codigo))
 const codigoDeSalaValido = (codigo: string) => /^[A-Z2-9]{8}$/.test(codigo)
 
+type CorPedida = 'w' | 'b' | 'sorteio'
+const corValida = (cor: unknown): cor is CorPedida => cor === 'w' || cor === 'b' || cor === 'sorteio'
+
 async function criarSala(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
   const { cor, amigo } = await lerCorpo<{ cor?: unknown; amigo?: unknown }>(pedido)
-  if (cor !== 'w' && cor !== 'b' && cor !== 'sorteio') throw new Falha(422, 'cor-invalida')
+  if (!corValida(cor)) throw new Falha(422, 'cor-invalida')
   const linhaDoAmigo = typeof amigo === 'string' ? await amigoPeloId(env, usuario.id, amigo) : null
   if (!linhaDoAmigo) throw new Falha(403, 'nao-e-amigo')
-  const convidado: Usuario = { id: linhaDoAmigo.id, nome: linhaDoAmigo.nome }
+  const sala = await abrirPartidaAmistosa(env, usuario, { id: linhaDoAmigo.id, nome: linhaDoAmigo.nome }, cor)
+  return responder({ codigo: sala.codigo, cor: sala.cor }, sala.nova ? 201 : 200)
+}
 
+/** "Novo jogo" no fim de uma partida amistosa chama o mesmo amigo, e ele fica sabendo pela partida aberta na tela. */
+async function pedirRevanche(pedido: Request, env: Ambiente, codigo: string) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { cor } = await lerCorpo<{ cor?: unknown }>(pedido)
+  if (!corValida(cor)) throw new Falha(422, 'cor-invalida')
+  const sala = codigoDeSalaValido(codigo)
+    ? await env.DB.prepare('SELECT brancas_id, pretas_id FROM salas WHERE codigo = ?1').bind(codigo).first<{ brancas_id: string | null; pretas_id: string | null }>()
+    : null
+  const outroId = sala?.brancas_id === usuario.id ? sala.pretas_id : sala?.pretas_id === usuario.id ? sala.brancas_id : null
+  const outro = outroId ? await env.DB.prepare('SELECT id_jogador FROM usuarios WHERE id = ?1').bind(outroId).first<{ id_jogador: string }>() : null
+  const amigo = outro ? await amigoPeloId(env, usuario.id, outro.id_jogador) : null
+  if (!amigo) throw new Falha(403, 'nao-e-amigo')
+
+  // os dois pediram ao mesmo tempo: quem chega depois entra na partida que o outro já abriu
+  const doOutro = await env.DB.prepare("SELECT codigo FROM salas WHERE criador_id = ?1 AND status = 'aguardando' AND (brancas_id = ?2 OR pretas_id = ?2)")
+    .bind(amigo.id, usuario.id)
+    .first<{ codigo: string }>()
+  if (doOutro) {
+    const entrou = await stubDaSala(env, doOutro.codigo).entrar(usuario)
+    if (entrou.ok) return responder({ codigo: doOutro.codigo, cor: entrou.cor })
+  }
+
+  const nova = await abrirPartidaAmistosa(env, usuario, { id: amigo.id, nome: amigo.nome }, cor)
+  await stubDaSala(env, codigo).avisarRevanche(usuario.id, nova.codigo)
+  return responder({ codigo: nova.codigo, cor: nova.cor }, nova.nova ? 201 : 200)
+}
+
+async function abrirPartidaAmistosa(env: Ambiente, usuario: Usuario, convidado: Usuario, cor: CorPedida): Promise<{ codigo: string; cor: 'w' | 'b'; nova: boolean }> {
   // chamar de novo quem ainda não respondeu volta pra mesma partida
   const aberta = await env.DB.prepare("SELECT codigo, brancas_id FROM salas WHERE criador_id = ?1 AND status = 'aguardando' AND (brancas_id = ?2 OR pretas_id = ?2)")
     .bind(usuario.id, convidado.id)
     .first<{ codigo: string; brancas_id: string }>()
-  if (aberta) return responder({ codigo: aberta.codigo, cor: aberta.brancas_id === usuario.id ? 'w' : 'b' })
+  if (aberta) return { codigo: aberta.codigo, cor: aberta.brancas_id === usuario.id ? 'w' : 'b', nova: false }
 
   const abertos = await env.DB.prepare("SELECT COUNT(*) AS n FROM salas WHERE criador_id = ?1 AND status = 'aguardando'").bind(usuario.id).first<{ n: number }>()
   if ((abertos?.n ?? 0) >= CONVITES_ABERTOS_POR_PESSOA) throw new Falha(429, 'muitos-convites')
@@ -375,7 +480,7 @@ async function criarSala(pedido: Request, env: Ambiente) {
     .bind(codigo, usuario.id, brancas.id, pretas.id, brancas.nome, pretas.nome, agora)
     .run()
   await stubDaSala(env, codigo).criar(codigo, brancas, pretas, minhaCor)
-  return responder({ codigo, cor: minhaCor }, 201)
+  return { codigo, cor: minhaCor, nova: true }
 }
 
 async function entrarNaSala(pedido: Request, env: Ambiente, codigo: string) {
@@ -437,8 +542,9 @@ async function conectarNaSala(pedido: Request, env: Ambiente, codigo: string) {
 async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Response> {
   const { pathname: caminho } = url
   const metodo = pedido.method
-  const sala = caminho.match(/^\/salas\/([^/]+)(\/entrar|\/recusar|\/ws)?$/)
+  const sala = caminho.match(/^\/salas\/([^/]+)(\/entrar|\/recusar|\/revanche|\/ws)?$/)
   const amigo = caminho.match(/^\/amigos\/([A-Z2-9]{8})(\/remover)?$/)
+  const foto = caminho.match(/^\/fotos\/([A-Z2-9]{8})$/)
 
   if (metodo === 'GET' && caminho === '/saude') return responder({ ok: true, jogo: 'xadrez-caotico' })
   if (metodo === 'POST' && caminho === '/contas') return criarConta(pedido, env)
@@ -453,6 +559,10 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'GET' && caminho === '/eu') return responder({ usuario: await exigirUsuario(pedido, env) })
   if (metodo === 'GET' && caminho === '/registros') return listarRegistros(pedido, env, url)
   if (metodo === 'POST' && caminho === '/registros') return gravarRegistros(pedido, env)
+  if (metodo === 'GET' && caminho === '/perfil') return lerMeuPerfil(pedido, env)
+  if (metodo === 'POST' && caminho === '/perfil/aparencia') return mudarAparencia(pedido, env)
+  if (metodo === 'POST' && caminho === '/perfil/foto') return enviarFoto(pedido, env)
+  if (foto && metodo === 'GET') return verFoto(env, foto[1])
   if (metodo === 'GET' && caminho === '/amigos') return listarAmigos(pedido, env)
   if (metodo === 'POST' && caminho === '/amigos') return convidarAmigo(pedido, env)
   if (amigo && metodo === 'GET' && !amigo[2]) return verPerfil(pedido, env, amigo[1])
@@ -461,6 +571,7 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'POST' && caminho === '/salas') return criarSala(pedido, env)
   if (sala && metodo === 'POST' && sala[2] === '/entrar') return entrarNaSala(pedido, env, sala[1])
   if (sala && metodo === 'POST' && sala[2] === '/recusar') return recusarSala(pedido, env, sala[1])
+  if (sala && metodo === 'POST' && sala[2] === '/revanche') return pedirRevanche(pedido, env, sala[1])
   if (sala && metodo === 'GET' && sala[2] === '/ws') return conectarNaSala(pedido, env, sala[1])
   throw new Falha(404, 'nao-encontrado')
 }

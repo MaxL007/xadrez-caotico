@@ -1,0 +1,17 @@
+{
+  "avatares": [
+    "peao-brancas",
+    "peao-pretas",
+    "cavalo-brancas",
+    "cavalo-pretas",
+    "bispo-brancas",
+    "bispo-pretas",
+    "torre-brancas",
+    "torre-pretas",
+    "dama-brancas",
+    "dama-pretas",
+    "rei-brancas",
+    "rei-pretas"
+  ],
+  "molduras": ["nenhuma", "madeira", "bronze", "prata", "ouro", "rubi", "safira", "real", "caos"]
+}

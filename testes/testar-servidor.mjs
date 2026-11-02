@@ -2,6 +2,9 @@
 // contas, senhas, dados de cada pessoa e as partidas entre pessoas, inclusive as tentativas de trapaça.
 // Rodar com o simulador no ar: node testes/testar-servidor.mjs
 import crypto from 'crypto'
+import { execFileSync } from 'child_process'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
 const API = process.env.API ?? 'http://127.0.0.1:8787'
 const WS = API.replace(/^http/, 'ws')
@@ -92,6 +95,13 @@ function conectar(codigo, token, origem = ORIGEM) {
 }
 
 const lance = (de, para, n, promocao) => ({ t: 'lance', n, de, para, promocao })
+
+/** Liga "tudo liberado" na conta direto no banco do simulador, do mesmo jeito que se faz na conta do dono do jogo. */
+function liberarTudo(nome) {
+  const pastaDoServidor = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'worker')
+  const comando = `UPDATE usuarios SET tudo_liberado = 1 WHERE nome_busca = '${nome.toLowerCase()}'`
+  execFileSync(process.execPath, [path.join(pastaDoServidor, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'd1', 'execute', 'xadrez-caotico', '--local', '--command', comando], { cwd: pastaDoServidor, stdio: 'pipe' })
+}
 const espera = (ms) => new Promise((r) => setTimeout(r, ms))
 const meusAmigos = async (token) => (await api('GET', '/amigos', { token })).json
 const convidar = (token, busca) => api('POST', '/amigos', { token, corpo: { busca } })
@@ -391,18 +401,91 @@ try {
   conferir('promoção à escolha chega ao adversário', promovido.promocao === 'n' && promovido.san.includes('=N'), promovido.san)
   e.enviar({ t: 'desistir' })
   await f.esperar((m) => m.t === 'fim')
+
+  // "Novo jogo" numa partida amistosa chama o mesmo amigo
+  conferir('quem não jogou a partida não pede outra', (await api('POST', `/salas/${sala4.codigo}/revanche`, { token: tokenCaio, corpo: { cor: 'w' } })).status === 403)
+  conferir('cor inválida na revanche recusada', (await api('POST', `/salas/${sala4.codigo}/revanche`, { token: ana.token, corpo: { cor: 'x' } })).status === 422)
+  const revanche = await api('POST', `/salas/${sala4.codigo}/revanche`, { token: ana.token, corpo: { cor: 'b' } })
+  conferir('pede outra partida com o mesmo amigo', revanche.status === 201 && revanche.json?.cor === 'b' && revanche.json.codigo !== sala4.codigo, JSON.stringify(revanche.json))
+  const avisoDaRevanche = await f.esperar((m) => m.t === 'revanche')
+  conferir('o amigo fica sabendo na hora, pela partida aberta', avisoDaRevanche.codigo === revanche.json.codigo)
+  await espera(300)
+  conferir('quem pediu não recebe o próprio aviso', !e.mensagens.some((m) => m.t === 'revanche'))
+  const aoMesmoTempo = await api('POST', `/salas/${sala4.codigo}/revanche`, { token: bia.token, corpo: { cor: 'b' } })
+  conferir('se o outro pede também, entra na partida já aberta', aoMesmoTempo.json?.codigo === revanche.json.codigo && aoMesmoTempo.json?.cor === 'w', JSON.stringify(aoMesmoTempo.json))
+  const g = await conectar(revanche.json.codigo, ana.token)
+  conferir('a nova partida já começou', (await g.esperar((m) => m.t === 'estado')).status === 'andamento')
+  g.enviar({ t: 'desistir' })
+  await g.esperar((m) => m.t === 'fim')
+  g.fechar()
   e.fechar()
   f.fechar()
 
-  // a Ana levou mate, desistiu duas vezes e empatou uma
+  // a Ana levou mate, desistiu três vezes e empatou uma
   const perfilAna = (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json
-  const esperadoAna = { partidas: 4, vitorias: 0, derrotas: 3, empates: 1 }
+  const esperadoAna = { partidas: 5, vitorias: 0, derrotas: 4, empates: 1 }
   conferir('o perfil mostra o retrospecto do amigo', JSON.stringify(perfilAna.geral) === JSON.stringify(esperadoAna), JSON.stringify(perfilAna.geral))
   conferir('e o placar entre vocês', JSON.stringify(perfilAna.entreVoces) === JSON.stringify(esperadoAna), JSON.stringify(perfilAna.entreVoces))
   conferir('o perfil mostra nome, ID e data da conta', perfilAna.nome === nomeAna && perfilAna.idJogador === idAna && perfilAna.desde > 0)
   const perfilBia = (await api('GET', `/amigos/${idBia}`, { token: ana.token })).json
-  conferir('o outro lado vê o placar invertido', perfilBia.entreVoces.vitorias === 3 && perfilBia.entreVoces.derrotas === 0, JSON.stringify(perfilBia.entreVoces))
+  conferir('o outro lado vê o placar invertido', perfilBia.entreVoces.vitorias === 4 && perfilBia.entreVoces.derrotas === 0, JSON.stringify(perfilBia.entreVoces))
   conferir('o perfil não entrega dados internos', !JSON.stringify(perfilAna).includes(ana.usuario.id) && !JSON.stringify(perfilAna).includes('hash'))
+
+  // =================== perfil próprio ===================
+  conferir('sem sessão não vê o perfil', (await api('GET', '/perfil')).status === 401)
+  const meuPerfil = (await api('GET', '/perfil', { token: ana.token })).json
+  conferir('o perfil traz nome, ID, data e o retrospecto', meuPerfil.nome === nomeAna && meuPerfil.idJogador === idAna && meuPerfil.desde > 0 && meuPerfil.geral.partidas === 5, JSON.stringify(meuPerfil.geral))
+  conferir('conta nova não tem foto nem moldura', meuPerfil.avatar === null && meuPerfil.moldura === null)
+  conferir('o perfil não entrega dados internos', !JSON.stringify(meuPerfil).includes(ana.usuario.id) && !JSON.stringify(meuPerfil).includes('hash'))
+
+  const aparencia = (corpo, token = ana.token) => api('POST', '/perfil/aparencia', { token, corpo })
+  conferir('sem sessão não muda a aparência', (await api('POST', '/perfil/aparencia', { corpo: { moldura: 'ouro' } })).status === 401)
+  for (const avatar of ['inventado', '../../segredo', 'foto:123', '', 7]) conferir(`avatar fora da lista recusado: ${avatar}`, (await aparencia({ avatar })).status === 422)
+  conferir('moldura fora da lista recusada', (await aparencia({ moldura: 'diamante-pago' })).status === 422)
+  conferir('conta comum não tem tudo liberado', meuPerfil.tudoLiberado === false)
+  const trancada = await aparencia({ avatar: 'rei-pretas', moldura: 'ouro' })
+  conferir('molduras estão trancadas pra conta comum, mesmo chamando o servidor direto', trancada.status === 403 && trancada.json?.erro === 'moldura-bloqueada', String(trancada.status))
+  conferir('e nada da mudança entra', (await api('GET', '/perfil', { token: ana.token })).json?.avatar === null)
+  conferir('tirar a moldura qualquer um pode', (await aparencia({ moldura: 'nenhuma' })).status === 200)
+  liberarTudo(nomeAna)
+  conferir('ligada no banco, a conta passa a ter tudo liberado', (await api('GET', '/perfil', { token: ana.token })).json?.tudoLiberado === true)
+  conferir('e aí escolhe avatar do jogo e moldura', (await aparencia({ avatar: 'rei-pretas', moldura: 'ouro' })).status === 200)
+  conferir('a liberação é só dela', (await aparencia({ moldura: 'ouro' }, bia.token)).status === 403)
+  const comAparencia = (await api('GET', '/perfil', { token: ana.token })).json
+  conferir('fica salvo', comAparencia.avatar === 'rei-pretas' && comAparencia.moldura === 'ouro')
+  conferir('o amigo vê na lista', (await meusAmigos(bia.token)).amigos.some((a) => a.idJogador === idAna && a.avatar === 'rei-pretas' && a.moldura === 'ouro'))
+  const perfilComAparencia = (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json
+  conferir('e no perfil', perfilComAparencia.avatar === 'rei-pretas' && perfilComAparencia.moldura === 'ouro')
+
+  const verFoto = (id) => fetch(`${API}/fotos/${id}`, { headers: { Origin: ORIGEM } })
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(600)])
+  const mandarFoto = (foto, token = ana.token) => api('POST', '/perfil/foto', { token, corpo: { foto } })
+  conferir('sem foto, o endereço dá 404', (await verFoto(idAna)).status === 404)
+  conferir('sem sessão não envia foto', (await api('POST', '/perfil/foto', { corpo: { foto: jpeg.toString('base64') } })).status === 401)
+  const naoFoto = {
+    svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>').toString('base64'),
+    png: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]).toString('base64'),
+    'endereço de dados': `data:image/svg+xml;base64,${jpeg.toString('base64')}`,
+    'caracteres inválidos': `/9j/<script>alert(1)</script>`,
+    'grande demais': Buffer.concat([jpeg, Buffer.alloc(50000, 7)]).toString('base64'),
+    número: 123,
+  }
+  for (const [nome, foto] of Object.entries(naoFoto)) conferir(`foto recusada: ${nome}`, (await mandarFoto(foto)).status === 422)
+  const enviou = await mandarFoto(jpeg.toString('base64'))
+  conferir('aceita o JPEG e passa a usar a foto', enviou.status === 200 && /^foto:\d+$/.test(enviou.json?.avatar ?? ''), enviou.json?.avatar)
+  const servida = await verFoto(idAna)
+  const bytes = Buffer.from(await servida.arrayBuffer())
+  conferir('a foto volta igual, como imagem', servida.status === 200 && servida.headers.get('Content-Type') === 'image/jpeg' && bytes.equals(jpeg))
+  conferir('e o navegador não pode tratar como outra coisa', servida.headers.get('X-Content-Type-Options') === 'nosniff')
+  conferir('o amigo recebe a versão nova da foto', (await meusAmigos(bia.token)).amigos.some((a) => a.idJogador === idAna && a.avatar === enviou.json.avatar))
+  conferir('ID que não existe não tem foto', (await verFoto('AAAAAAAA')).status === 404)
+  await aparencia({ avatar: 'peao-brancas' })
+  conferir('voltar pra um avatar do jogo apaga a foto', (await verFoto(idAna)).status === 404)
+  await aparencia({ moldura: 'nenhuma' })
+
+  let limitouFoto = false
+  for (let i = 0; i < 25 && !limitouFoto; i++) limitouFoto = (await mandarFoto(jpeg.toString('base64'), bia.token)).status === 429
+  conferir('fotos demais numa hora são barradas', limitouFoto)
 
   // limite de convites por hora
   let limitou = false
@@ -413,12 +496,15 @@ try {
   await convidar(tokenCaio, idBia)
   await convidar(bia.token, idCaio)
   conferir('amizade feita pra testar a exclusão', (await meusAmigos(bia.token)).amigos.some((a) => a.idJogador === idCaio))
+  await mandarFoto(jpeg.toString('base64'), tokenCaio)
+  conferir('foto feita pra testar a exclusão', (await verFoto(idCaio)).status === 200)
   const tchau = await api('POST', '/contas/excluir', { token: tokenCaio, corpo: { chave: derivar(nomeCaio, 'errada') } })
   conferir('excluir a conta exige a senha', tchau.status === 401)
   const excluiu = await api('POST', '/contas/excluir', { token: tokenCaio, corpo: { chave: derivar(nomeCaio, 'nova-senha') } })
   conferir('a pessoa pode excluir a própria conta', excluiu.status === 200)
   await espera(50)
   conferir('a sessão morre junto', (await api('GET', '/eu', { token: tokenCaio })).status === 401)
+  conferir('a foto some junto', (await verFoto(idCaio)).status === 404)
   conferir('quem saiu some da lista dos amigos', !(await meusAmigos(bia.token)).amigos.some((a) => a.idJogador === idCaio))
 } catch (erro) {
   falhas++

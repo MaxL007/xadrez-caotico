@@ -23,7 +23,7 @@ function paraBase64Url(bytes: Uint8Array): string {
   return paraBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function deBase64(texto: string): Uint8Array {
+export function deBase64(texto: string): Uint8Array {
   return Uint8Array.from(atob(texto), (c) => c.charCodeAt(0))
 }
 

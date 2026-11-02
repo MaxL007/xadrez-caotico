@@ -3,10 +3,11 @@ import type { ConfigXadrez, QualidadeXadrez } from '../chess/configXadrez'
 import { IDIOMAS, type ChaveTexto, type Idioma, type Traduzir } from '../chess/idiomas'
 import { useResumoDaNuvem } from '../db/db'
 import { useAmigos, useSessao } from '../db/servidor'
-import { importarPartidas } from '../db/xadrezRepo'
+import { importarPartidas, type PartidaXadrez } from '../db/xadrezRepo'
 import { useFecharComEsc } from '../teclaEsc'
 import { PainelAmigos } from './PainelAmigos'
 import { PainelConta } from './PainelConta'
+import { PainelPerfil } from './PainelPerfil'
 
 // -----------------------------------------------------------------------
 // Tela inicial do jogo: fica por cima do próprio tabuleiro 3D, visto de lado
@@ -157,13 +158,14 @@ function Configuracoes({ t, config, onConfig, onImportou }: { t: Traduzir; confi
   )
 }
 
-type Painel = 'inicio' | 'loja' | 'config' | 'conta' | 'amigos'
+type Painel = 'inicio' | 'loja' | 'config' | 'conta' | 'amigos' | 'perfil'
 
 const TITULOS: Record<Exclude<Painel, 'inicio'>, ChaveTexto> = {
   loja: 'menu.loja',
   config: 'menu.configuracoes',
   conta: 'conta.titulo',
   amigos: 'menu.amigos',
+  perfil: 'menu.perfil',
 }
 
 export function MenuXadrez({
@@ -171,6 +173,8 @@ export function MenuXadrez({
   config,
   onConfig,
   temPartida,
+  partidasTerminadas,
+  onVerPartida,
   onContinuar,
   onNovoJogo,
   telaCheia,
@@ -184,6 +188,8 @@ export function MenuXadrez({
   onConfig: (m: Partial<ConfigXadrez>) => void
   /** Tem partida em andamento pra retomar. */
   temPartida: boolean
+  partidasTerminadas: PartidaXadrez[]
+  onVerPartida: (partida: PartidaXadrez) => void
   onContinuar: () => void
   onNovoJogo: () => void
   telaCheia: boolean
@@ -201,7 +207,7 @@ export function MenuXadrez({
   useFecharComEsc(() => setPainel('inicio'), painel !== 'inicio' && !mostrandoCodigo)
 
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden rounded-xl bg-[radial-gradient(ellipse_at_center,rgba(10,6,3,0.72)_0%,rgba(10,6,3,0.28)_42%,rgba(10,6,3,0)_70%)] p-4">
+    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_center,rgba(10,6,3,0.72)_0%,rgba(10,6,3,0.28)_42%,rgba(10,6,3,0)_70%)] p-4">
       <button
         type="button"
         onClick={telaCheia ? onTelaNormal : onExpandir}
@@ -211,19 +217,22 @@ export function MenuXadrez({
       </button>
 
       {painel === 'inicio' && (
-        // tela em pé: os botões em grade, no meio do tabuleiro, e o título em cima, pra não cobrir as peças
-        <div className="mt-3 grid w-full max-w-[17rem] grid-cols-2 gap-1.5 sm:mt-0 sm:max-w-[15rem] sm:grid-cols-1 sm:gap-2.5">
-          <h2 className="absolute left-4 top-3 font-display text-xl font-bold tracking-wide text-[#f5e6c8] [text-shadow:0_2px_10px_rgba(0,0,0,0.8)] sm:static sm:mb-1 sm:justify-self-center sm:whitespace-nowrap sm:text-center sm:text-4xl">{t('titulo')}</h2>
+        // tela em pé ou muito baixa: os botões em grade e o título no canto, pra não cobrir as peças
+        <div className="mt-3 grid w-full max-w-[17rem] grid-cols-2 gap-1.5 sm:mt-0 sm:max-w-[15rem] sm:grid-cols-1 sm:gap-2.5 [@media(max-height:520px)]:!grid-cols-2 [@media(max-height:520px)]:!max-w-sm [@media(max-height:520px)]:!gap-1.5">
+          <h2 className="absolute left-4 top-3 font-display text-xl font-bold tracking-wide text-[#f5e6c8] [text-shadow:0_2px_10px_rgba(0,0,0,0.8)] sm:static sm:mb-1 sm:justify-self-center sm:whitespace-nowrap sm:text-center sm:text-4xl [@media(max-height:520px)]:!absolute [@media(max-height:520px)]:!text-xl">{t('titulo')}</h2>
           {temPartida && (
             <button type="button" className={botaoMenu} onClick={onContinuar}>
               {t('menu.continuar')}
             </button>
           )}
-          <button type="button" className={`${botaoMenu} ${temPartida ? '' : 'col-span-2 sm:col-span-1'}`} onClick={onNovoJogo}>
+          <button type="button" className={`${botaoMenu} ${temPartida ? '' : 'col-span-2 sm:col-span-1 [@media(max-height:520px)]:!col-span-2'}`} onClick={onNovoJogo}>
             {t('menu.novoJogo')}
           </button>
-          <button type="button" className={`${botaoMenu} col-span-2 sm:col-span-1`} onClick={() => setPainel('amigos')}>
+          <button type="button" className={botaoMenu} onClick={() => setPainel('amigos')}>
             {t('menu.amigos')} {novidades > 0 && <span className="ml-1 rounded-full bg-[#c9a24a] px-1.5 text-xs font-bold text-[#1c120a]">{novidades}</span>}
+          </button>
+          <button type="button" className={botaoMenu} onClick={() => setPainel('perfil')}>
+            {t('menu.perfil')}
           </button>
           <button type="button" className={botaoMenu} onClick={() => setPainel('loja')}>
             {t('menu.loja')}
@@ -257,6 +266,17 @@ export function MenuXadrez({
           {painel === 'loja' && <p className="py-6 text-center text-sm text-[#c9b48a]">{t('loja.vazia')}</p>}
           {painel === 'config' && <Configuracoes t={t} config={config} onConfig={onConfig} onImportou={onImportou} />}
           {painel === 'conta' && <PainelConta t={t} onConcluir={() => setPainel('inicio')} onCodigoNaTela={setMostrandoCodigo} />}
+          {painel === 'perfil' && (
+            <PainelPerfil
+              t={t}
+              idioma={config.idioma}
+              partidas={partidasTerminadas}
+              comHistorico={config.registro}
+              onVerPartida={onVerPartida}
+              onAbrirSala={onAbrirSala}
+              onEntrar={() => setPainel('conta')}
+            />
+          )}
           {painel === 'amigos' && <PainelAmigos t={t} idioma={config.idioma} amigos={amigos} onAtualizar={atualizarAmigos} onAbrirSala={onAbrirSala} onCodigoNaTela={setMostrandoCodigo} />}
         </section>
       )}

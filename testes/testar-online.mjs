@@ -3,6 +3,7 @@
 // partidas pra conta ao entrar.
 // Precisa do simulador (worker: npm run dev) e do site (npm run dev) no ar.
 import { createRequire } from 'module'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -41,10 +42,24 @@ async function novoJogador(viewport = { width: 1100, height: 760 }) {
 }
 
 const botao = (page, nome) => page.locator('main').getByRole('button', { name: nome, exact: true })
+
+/** Liga "tudo liberado" na conta direto no banco do simulador, do mesmo jeito que se faz na conta do dono do jogo. */
+function liberarTudo(nome) {
+  const pastaDoServidor = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'worker')
+  const comando = `UPDATE usuarios SET tudo_liberado = 1 WHERE nome_busca = '${nome.toLowerCase()}'`
+  execFileSync(process.execPath, [path.join(pastaDoServidor, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'd1', 'execute', 'xadrez-caotico', '--local', '--command', comando], { cwd: pastaDoServidor, stdio: 'pipe' })
+}
 // o botão ganha um número quando há novidade
 const abrirAmigos = (page) => page.locator('main').getByRole('button', { name: /^Amigos/ }).click()
 const foto = (page, nome) => page.screenshot({ path: path.join(FOTOS, nome), timeout: 150000 }).catch((e) => console.log(`  (sem foto ${nome}: ${e.message.split('\n')[0]})`))
 const h = (page, fn, ...args) => page.evaluate(({ fn, args }) => window.__xadrez[fn](...args), { fn, args })
+
+/** A tela inicial preenche a página inteira. */
+const ocupaAPagina = (page) =>
+  page.evaluate(() => {
+    const quadro = document.querySelector('canvas').getBoundingClientRect()
+    return quadro.left === 0 && quadro.top === 0 && quadro.width === innerWidth && quadro.height === innerHeight && document.documentElement.scrollTop === 0
+  })
 
 async function abrir(page, url = SITE) {
   await page.goto(url, { waitUntil: 'load', timeout: 120000 })
@@ -84,6 +99,13 @@ try {
   const ana = await novoJogador()
   await abrir(ana)
   conferir('abre no título do jogo', (await ana.getByRole('heading', { name: 'Xadrez Caótico' }).count()) === 1)
+  conferir('a tela inicial preenche a página', await ocupaAPagina(ana))
+  conferir('as partidas finalizadas saíram da tela inicial', (await ana.getByText('Partidas finalizadas').count()) === 0)
+  await botao(ana, 'Perfil').click()
+  await ana.getByText('Entre na sua conta para ter ID').waitFor()
+  await ana.getByText('Nenhuma partida terminada ainda.').waitFor()
+  conferir('sem conta, o perfil mostra os números do aparelho e convida a entrar', (await ana.locator('[data-placar]').count()) === 1)
+  await botao(ana, 'Voltar').click()
   conferir('joga sem conta: o menu oferece entrar, sem obrigar', (await botao(ana, 'Entrar').count()) === 1 && (await botao(ana, 'Novo jogo').count()) === 1)
   await botao(ana, 'Novo jogo').click()
   await ana.getByRole('heading', { name: 'Com qual peça você quer jogar?' }).waitFor()
@@ -130,6 +152,7 @@ try {
 
   const bia = await novoJogador({ width: 390, height: 844 })
   await abrir(bia)
+  conferir('no celular em pé a tela inicial também preenche a página', await ocupaAPagina(bia))
   await abrirAmigos(bia)
   await bia.getByText('Entre na sua conta para adicionar amigos').waitFor()
   conferir('sem conta, Amigos pede a conta e deixa criar ali', true)
@@ -190,6 +213,8 @@ try {
   conferir('a espera some quando a partida começa', true)
   await bia.waitForFunction(() => !window.__xadrez.camera().girando, null, { timeout: 30000, polling: 300 })
   conferir('o tabuleiro de quem joga de pretas fica virado', (await h(bia, 'camera')).z < 0, String((await h(bia, 'camera')).z))
+  const vista = await h(bia, 'camera')
+  conferir('saindo da tela cheia do menu, o tabuleiro fica do tamanho certo', Math.abs(vista.distancia - vista.distanciaIdeal) < 0.6, `${vista.distancia.toFixed(1)} / ${vista.distanciaIdeal.toFixed(1)}`)
 
   // =================== partida ===================
   await h(bia, 'jogar', 'e7', 'e5')
@@ -231,9 +256,54 @@ try {
 
   // nova partida, chamada pelo perfil: desistência e lista
   await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+  conferir('voltando ao menu, ele preenche a página de novo', await ocupaAPagina(ana))
+
+  // =================== perfil ===================
+  await botao(ana, 'Perfil').click()
+  await ana.locator('[data-meu-id]').waitFor()
+  conferir('o perfil mostra o nome e o ID', (await ana.locator('[data-meu-id]').innerText()) === idAna && (await ana.getByText(nomeAna, { exact: true }).count()) >= 1)
+  await ana.locator('[data-historico]').getByText(`Contra ${nomeBia}`).waitFor()
+  conferir('a partida amistosa está no histórico, com o resultado', (await ana.locator('[data-historico]').getByText('Perdeu', { exact: true }).count()) === 1)
+  conferir('e nos números', (await ana.locator('[data-placar-amistosas]').innerText()).includes('derrotas: 1'), await ana.locator('[data-placar-amistosas]').innerText())
+
+  await botao(ana, 'Mudar foto e moldura').click()
+  await ana.locator('[data-editor-perfil]').waitFor()
+  await foto(ana, 'perfil-editor.png')
+  const quadroDaFoto = await ana.screenshot({ type: 'png', timeout: 150000 })
+  await ana.locator('[data-editor-perfil] input[type=file]').setInputFiles({ name: 'foto.png', mimeType: 'image/png', buffer: quadroDaFoto })
+  const retrato = ana.locator('section[role=dialog] img').first()
+  await ana.waitForFunction(() => document.querySelector('section[role=dialog] img')?.src.includes('/fotos/'), null, { timeout: 30000, polling: 300 })
+  await ana.waitForFunction(() => document.querySelector('section[role=dialog] img').naturalWidth > 0, null, { timeout: 30000, polling: 300 })
+  conferir('a foto do aparelho vira a foto do perfil, reduzida', (await retrato.evaluate((img) => img.naturalWidth)) === 256, String(await retrato.evaluate((img) => img.naturalWidth)))
+  await ana.locator('[data-editor-perfil] input[type=file]').setInputFiles({ name: 'texto.png', mimeType: 'image/png', buffer: Buffer.from('isto não é uma imagem') })
+  await ana.getByText('Não consegui usar essa imagem').waitFor()
+  conferir('arquivo que não é imagem avisa, sem trocar a foto', (await retrato.getAttribute('src')).includes('/fotos/'))
+
+  await ana.getByText('Molduras bloqueadas por enquanto.').waitFor()
+  conferir('as molduras aparecem trancadas pra conta comum', await botao(ana, 'Ouro (bloqueada)').isDisabled())
+  liberarTudo(nomeAna)
+  await botao(ana, 'Voltar').click()
+  await botao(ana, 'Perfil').click()
+  await botao(ana, 'Mudar foto e moldura').click()
+  await botao(ana, 'Ouro').click()
+  await ana.locator('section[role=dialog] [data-moldura="ouro"]').first().waitFor()
+  conferir('com tudo liberado na conta, as molduras abrem', (await ana.getByText('Molduras bloqueadas por enquanto.').count()) === 0)
+  await ana.waitForTimeout(500)
+  await botao(ana, 'Usar o avatar 11').click()
+  await ana.waitForFunction(() => document.querySelector('section[role=dialog] img').src.includes('rei-brancas'), null, { timeout: 30000, polling: 300 })
+  conferir('escolhe uma sugestão do jogo e uma moldura', true)
+  await foto(ana, 'perfil-pronto.png')
+  await ana.reload({ waitUntil: 'load' })
+  await ana.waitForFunction(() => !!window.__xadrez?.carregarTeste, null, { timeout: 120000, polling: 300 })
+  await botao(ana, 'Perfil').click()
+  await ana.locator('section[role=dialog] [data-moldura="ouro"]').first().waitFor()
+  conferir('a aparência continua depois de recarregar', (await ana.locator('section[role=dialog] img').first().getAttribute('src')).includes('rei-brancas'))
+  await ana.locator('[data-historico] button').first().click()
+  await ana.waitForFunction(() => window.__xadrez.sala()?.status === 'fim', null, { timeout: 30000, polling: 300 })
+  conferir('clicar no histórico abre a partida terminada', true)
+  await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+
   await abrirAmigos(ana)
-  await ana.getByText('Minhas partidas').waitFor()
-  conferir('a partida aparece na lista, com o resultado', (await ana.getByText('Perdeu', { exact: true }).count()) === 1)
   await botao(ana, 'Ver perfil').click()
   await ana.getByText(`Entre vocês: você 0, ${nomeBia} 1, empates 0`).waitFor()
   conferir('o perfil mostra o placar entre os dois', true)
@@ -252,6 +322,22 @@ try {
   await bia.getByText('desistiu. Você venceu!').first().waitFor({ timeout: 30000 })
   await ana.getByText('Você desistiu').first().waitFor({ timeout: 30000 })
   conferir('desistir: os dois veem o fim', true)
+
+  // "Novo jogo" numa partida amistosa chama o mesmo amigo, não a máquina
+  await bia.locator('main').getByRole('button', { name: 'Novo jogo', exact: true }).first().click()
+  await bia.getByText(`Nova partida contra ${nomeAna}`).waitFor()
+  await botao(bia, 'Brancas').click()
+  await bia.waitForFunction(() => window.__xadrez.sala()?.status === 'aguardando', null, { timeout: 30000, polling: 300 })
+  conferir('novo jogo numa partida amistosa chama o amigo, não a máquina', (await h(bia, 'sala')).minhaCor === 'w')
+  await ana.locator('[data-revanche]').getByText(`${nomeBia} chamou você pra outra partida.`).waitFor({ timeout: 30000 })
+  conferir('o amigo vê o pedido na hora, ainda na partida', true)
+  await ana.locator('[data-revanche]').getByRole('button', { name: 'Jogar', exact: true }).click()
+  await ana.waitForFunction(() => window.__xadrez.sala()?.status === 'andamento', null, { timeout: 30000, polling: 300 })
+  await bia.waitForFunction(() => window.__xadrez.sala()?.status === 'andamento', null, { timeout: 30000, polling: 300 })
+  conferir('aceitou: os dois na partida nova, com as cores trocadas', (await h(ana, 'sala')).minhaCor === 'b')
+  await bia.locator('main').getByRole('button', { name: 'Desistir', exact: true }).first().click()
+  await bia.locator('main').getByRole('button', { name: 'Sim, desistir', exact: true }).first().click()
+  await ana.waitForFunction(() => window.__xadrez.sala()?.motivo === 'desistencia', null, { timeout: 60000, polling: 300 })
 
   // recusar e cancelar
   await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
@@ -281,6 +367,15 @@ try {
   await botao(ana, 'Continuar partida').click()
   await ana.waitForFunction(() => window.__xadrez.sala() === null && !window.__xadrez.ocupado(), null, { polling: 300 })
   conferir('a partida contra a máquina continua de onde parou', (await h(ana, 'fen')).includes('4P3'), await h(ana, 'fen'))
+  await ana.locator('main').getByRole('button', { name: 'Desistir', exact: true }).first().click()
+  await ana.locator('main').getByRole('button', { name: 'Sim, desistir', exact: true }).first().click()
+  await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+  await botao(ana, 'Perfil').click()
+  await ana.locator('[data-historico]').getByText('Contra a máquina').waitFor()
+  conferir('a partida contra a máquina entra no histórico e nos números', (await ana.locator('[data-placar-maquina]').innerText()).includes('derrotas: 1'), await ana.locator('[data-placar-maquina]').innerText())
+  await ana.locator('[data-historico]').getByText('Contra a máquina').click()
+  await ana.waitForFunction(() => window.__xadrez.cena().menu === false, null, { timeout: 30000, polling: 300 })
+  conferir('e abre ao clicar', (await h(ana, 'fen')).includes('4P3'), await h(ana, 'fen'))
 
   // remover um amigo pede confirmação
   await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()

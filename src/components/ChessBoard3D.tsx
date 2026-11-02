@@ -16,7 +16,7 @@ import { tradutor, type ChaveTexto, type Traduzir } from '../chess/idiomas'
 import { MenuXadrez } from './MenuXadrez'
 import { listPartidas, novaPartida, salvarPartida, type PartidaXadrez } from '../db/xadrezRepo'
 import { ouvirDados } from '../db/db'
-import { recusarSala, sessaoAtual, useSessao } from '../db/servidor'
+import { entrarEmSala, pedirRevanche, recusarSala, sessaoAtual, useSessao } from '../db/servidor'
 import { abrirConexaoDaSala, type ConexaoDaSala, type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../online/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../db/xadrezAprendizadoRepo'
 
@@ -82,11 +82,15 @@ function criarContorno(geo: THREE.BufferGeometry): THREE.Mesh {
 
 /** Desenha um texto curto num canvas pra usar como textura — usado nas coordenadas (a-h, 1-8) na
  * moldura do tabuleiro: dourado com uma sombra leve, em alta resolução (nítido mesmo de perto). */
+// Os desenhos das texturas ficam na memória comum, não na placa de vídeo. No celular, a aba em segundo plano
+// pode perder tudo o que estava na placa, e o tabuleiro e o fundo voltavam pretos.
+const DESENHO_NA_MEMORIA: CanvasRenderingContext2DSettings = { willReadFrequently: true }
+
 function criarTexturaTexto(texto: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = 256
   canvas.height = 256
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d', DESENHO_NA_MEMORIA)!
   ctx.font = 'bold 170px Georgia, "Times New Roman", serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -119,7 +123,7 @@ function criarTexturaMadeira(
   const canvas = document.createElement('canvas')
   canvas.width = tamanho
   canvas.height = tamanho
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d', DESENHO_NA_MEMORIA)!
   const imagem = ctx.createImageData(tamanho, tamanho)
   const ruido = (x: number, y: number) => {
     const v = Math.sin(x * 12.9898 + y * 78.233 + semente * 37.719) * 43758.5453
@@ -1718,7 +1722,7 @@ function criarTexturaBrilho(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = 128
   canvas.height = 128
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d', DESENHO_NA_MEMORIA)!
   const gradiente = ctx.createRadialGradient(64, 64, 0, 64, 64, 64)
   gradiente.addColorStop(0, 'rgba(255,255,255,1)')
   gradiente.addColorStop(0.25, 'rgba(255,255,255,0.75)')
@@ -2146,7 +2150,7 @@ function obterTexturaRachadura(): THREE.CanvasTexture {
   const tamanho = 256
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = tamanho
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
+  const ctx = canvas.getContext('2d', DESENHO_NA_MEMORIA) as CanvasRenderingContext2D
   const centro = tamanho / 2
   const miolo = ctx.createRadialGradient(centro, centro, 2, centro, centro, 34)
   miolo.addColorStop(0, 'rgba(15,9,4,0.95)')
@@ -2454,7 +2458,7 @@ function criarTexturaPetala(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = 64
   canvas.height = 64
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d', DESENHO_NA_MEMORIA)!
   const gradiente = ctx.createRadialGradient(32, 40, 2, 32, 32, 30)
   gradiente.addColorStop(0, '#fff3f7')
   gradiente.addColorStop(0.6, '#f7b6cc')
@@ -2540,7 +2544,7 @@ function criarTexturaColuna(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = 4
   canvas.height = 256
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d', DESENHO_NA_MEMORIA)!
   const gradiente = ctx.createLinearGradient(0, 256, 0, 0)
   gradiente.addColorStop(0, 'rgba(255,255,255,0.95)')
   gradiente.addColorStop(0.35, 'rgba(255,255,255,0.45)')
@@ -2856,6 +2860,9 @@ export function ChessBoard3D() {
   const salaRef = useRef<{ conexao: ConexaoDaSala; estado: EstadoDaSala | null } | null>(null)
   const [sala, setSala] = useState<EstadoDaSala | null>(null)
   const [conectadoNaSala, setConectadoNaSala] = useState(true)
+  // o amigo pediu outra partida enquanto esta está na tela; `vencida` quando o convite já não vale
+  const [revanche, setRevanche] = useState<{ codigo: string; vencida: boolean } | null>(null)
+  const [revancheFalhou, setRevancheFalhou] = useState(false)
   // a tela inicial por cima do tabuleiro, ou a partida
   const [tela, setTela] = useState<'menu' | 'jogo'>('menu')
   const [statusTexto, setStatusTexto] = useState('')
@@ -2867,7 +2874,6 @@ export function ChessBoard3D() {
   const [partidasEmAndamento, setPartidasEmAndamento] = useState<PartidaXadrez[]>([])
   const [partidasAberto, setPartidasAberto] = useState(false)
   const [partidasFinalizadas, setPartidasFinalizadas] = useState<PartidaXadrez[]>([])
-  const [partidasFinalizadasAberto, setPartidasFinalizadasAberto] = useState(false)
   // true quando ainda não há partida em andamento e o jogador precisa escolher a cor antes de
   // começar (tanto na primeira vez quanto em "Novo jogo")
   const [escolhendoCor, setEscolhendoCor] = useState(false)
@@ -2899,6 +2905,8 @@ export function ChessBoard3D() {
   const [confirmandoDesistencia, setConfirmandoDesistencia] = useState(false)
   // tabuleiro ocupando a tela toda (e a tela cheia do navegador, se der)
   const [telaCheia, setTelaCheia] = useState(false)
+  // a tela inicial sempre ocupa a página inteira
+  const ocupaATela = telaCheia || tela === 'menu'
   const tabuleiroRef = useRef<HTMLDivElement>(null)
 
   // acompanha os lances conforme são registrados — rola a lista pro fim assim que um novo lance
@@ -2997,11 +3005,19 @@ export function ChessBoard3D() {
 
     // reflexo de ambiente (um "estúdio" gerado na hora, sem imagem externa): é o que faz o metal das
     // armaduras, o ouro das coroas e o verniz do tabuleiro brilharem de verdade
-    const geradorAmbiente = new THREE.PMREMGenerator(renderer)
-    const ambiente = geradorAmbiente.fromScene(new RoomEnvironment(), 0.04).texture
-    scene.environment = ambiente
+    let reflexo: THREE.WebGLRenderTarget | null = null
+    function gerarReflexoDoAmbiente() {
+      const gerador = new THREE.PMREMGenerator(renderer)
+      reflexo?.dispose()
+      reflexo = gerador.fromScene(new RoomEnvironment(), 0.04)
+      scene.environment = reflexo.texture
+      gerador.dispose()
+    }
+    gerarReflexoDoAmbiente()
     scene.environmentIntensity = 0.55
-    geradorAmbiente.dispose()
+    // a placa de vídeo devolveu o contexto (aba voltou do segundo plano): o three.js reenvia as texturas
+    // sozinho, mas o reflexo é desenhado na própria placa e precisa ser feito de novo
+    renderer.domElement.addEventListener('webglcontextrestored', gerarReflexoDoAmbiente)
 
     const controls = new OrbitControls(camera, renderer.domElement)
     // o alvo fica na altura do corpo das peças (torso), não no chão do tabuleiro — senão o zoom
@@ -4236,7 +4252,7 @@ export function ChessBoard3D() {
       ladoDaCamera = 1
       levarCameraPara(
         camera.aspect >= 1
-          ? { raio: RAIO_CAMERA_MENU, phi: INCLINACAO_CAMERA_MENU, theta: Math.PI / 2 }
+          ? { raio: Math.max(RAIO_CAMERA_MENU, raioQueEnquadra(INCLINACAO_CAMERA_MENU, Math.PI / 2)), phi: INCLINACAO_CAMERA_MENU, theta: Math.PI / 2 }
           : { raio: raioQueEnquadra(INCLINACAO_CAMERA_MENU_EM_PE, 0), phi: INCLINACAO_CAMERA_MENU_EM_PE, theta: 0 },
         instantaneo,
       )
@@ -4317,6 +4333,10 @@ export function ChessBoard3D() {
       const necessaria = distanciaQueEnquadra()
       if (emMenu) {
         irParaVistaDoMenu(true)
+      } else if (giroCamera && Math.abs(giroCamera.para.raio - distanciaAutomatica) < 0.01) {
+        // o menu ocupa a tela toda e a partida não: o giro que sai dele foi calculado no formato antigo
+        distanciaAutomatica = raioQueEnquadra(giroCamera.para.phi, giroCamera.para.theta)
+        giroCamera.para = { ...giroCamera.para, raio: distanciaAutomatica }
       } else if (atual < necessaria - 0.01 || Math.abs(atual - distanciaAutomatica) < 0.01) {
         // só mexe na câmera se o tabuleiro não cabe, ou se a distância ainda é a que o enquadramento
         // pôs (o jogador não deu zoom desde então)
@@ -4339,7 +4359,7 @@ export function ChessBoard3D() {
         /** Lance ou máquina ainda em andamento. */
         ocupado: () => vezDaMaquinaRef.current || lancesEmAndamento > 0,
         /** Lado da câmera (z positivo = brancas perto da tela) e se ela ainda está girando. */
-        camera: () => ({ z: camera.position.z, girando: giroCamera !== null, coordenadaA: labelsGroup.children[0].position.z }),
+        camera: () => ({ z: camera.position.z, girando: giroCamera !== null, coordenadaA: labelsGroup.children[0].position.z, distancia: camera.position.distanceTo(controls.target), distanciaIdeal: distanciaQueEnquadra() }),
         /** Onde a casa aparece no tabuleiro, em pixels da janela. */
         casaNaTela: (casa: string) => {
           const { x, z } = squareToPos(casa)
@@ -4437,9 +4457,10 @@ export function ChessBoard3D() {
       window.removeEventListener('resize', onResize)
       observador.disconnect()
       renderer.domElement.removeEventListener('click', onClick)
+      renderer.domElement.removeEventListener('webglcontextrestored', gerarReflexoDoAmbiente)
       cancelAnimationFrame(frameId)
       controls.dispose()
-      ambiente.dispose()
+      reflexo?.dispose()
       renderer.dispose()
       container.removeChild(renderer.domElement)
     }
@@ -4458,6 +4479,7 @@ export function ChessBoard3D() {
     salaRef.current = null
     setSala(null)
     setConectadoNaSala(true)
+    setRevanche(null)
   }
 
   function abrirSala(codigo: string) {
@@ -4500,6 +4522,9 @@ export function ChessBoard3D() {
       recusada() {
         if (salaRef.current?.conexao === conexao) handleMenu()
       },
+      revanche(codigo) {
+        if (salaRef.current?.conexao === conexao) setRevanche({ codigo, vencida: false })
+      },
     })
     salaRef.current = { conexao, estado: null }
   }
@@ -4511,7 +4536,23 @@ export function ChessBoard3D() {
   }
 
   function handleNovoJogo() {
+    setRevancheFalhou(false)
     setEscolhendoCor(true)
+  }
+
+  async function handleAceitarRevanche() {
+    if (!revanche) return
+    try {
+      await entrarEmSala(revanche.codigo)
+      abrirSala(revanche.codigo)
+    } catch {
+      setRevanche({ ...revanche, vencida: true })
+    }
+  }
+
+  function handleRecusarRevanche() {
+    if (revanche && !revanche.vencida) void recusarSala(revanche.codigo).catch(() => {})
+    setRevanche(null)
   }
 
   function handleMenu() {
@@ -4551,13 +4592,13 @@ export function ChessBoard3D() {
 
   // tabuleiro em tela cheia: a página de trás não rola junto
   useEffect(() => {
-    if (!telaCheia) return
+    if (!ocupaATela) return
     const anterior = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = anterior
     }
-  }, [telaCheia])
+  }, [ocupaATela])
 
   function handleDesistir() {
     setConfirmandoDesistencia(false)
@@ -4565,6 +4606,17 @@ export function ChessBoard3D() {
   }
 
   async function handleEscolherCor(cor: 'w' | 'b') {
+    // numa partida amistosa, "Novo jogo" chama o mesmo amigo de novo, não a máquina
+    if (sala) {
+      try {
+        const nova = await pedirRevanche(sala.codigo, cor)
+        setEscolhendoCor(false)
+        abrirSala(nova.codigo)
+      } catch {
+        setRevancheFalhou(true)
+      }
+      return
+    }
     fecharSala()
     setEscolhendoCor(false)
     if (ehCelular()) entrarEmTelaCheia()
@@ -4579,19 +4631,8 @@ export function ChessBoard3D() {
     acoesRef.current?.carregarPgn('', cor)
   }
 
-  // recarrega o PGN igual a retomar uma partida em andamento — como o jogo já terminou (xeque-mate,
-  // afogamento ou empate), não sobra nenhum lance legal pro chess.js aceitar, então o tabuleiro fica
-  // naturalmente travado só de olhar, sem precisar de nenhuma trava extra
-  function handleVerPartidaFinalizada(partida: PartidaXadrez) {
-    handleRetomarPartida(partida)
-  }
-
-  function resultadoPartida(partida: PartidaXadrez): 'venceu' | 'perdeu' | 'empate' {
-    if (partida.resultado?.startsWith('Você venceu')) return 'venceu'
-    if (partida.resultado?.startsWith('A máquina venceu')) return 'perdeu'
-    return 'empate'
-  }
-
+  // serve também pra rever uma partida terminada: como não sobra lance legal pro chess.js aceitar, o
+  // tabuleiro fica naturalmente travado, sem precisar de nenhuma trava extra
   function handleRetomarPartida(partida: PartidaXadrez) {
     fecharSala()
     partidaAtualRef.current = partida
@@ -4685,16 +4726,12 @@ export function ChessBoard3D() {
 
       <div
         ref={tabuleiroRef}
-        className={telaCheia ? 'fixed inset-0 z-[65] bg-[#f5f0e6]' : 'relative'}
+        className={ocupaATela ? `fixed inset-0 z-[65] ${tela === 'menu' ? 'bg-[#1c120a]' : 'bg-[#f5f0e6]'}` : 'relative'}
         aria-label={telaCheia ? t('menu.tabuleiroCheio') : undefined}
       >
         <div
           ref={containerRef}
-          className={
-            telaCheia
-              ? 'h-full w-full touch-none'
-              : `w-full ${tela === 'menu' ? 'aspect-[4/5]' : 'aspect-[4/3]'} sm:aspect-video rounded-xl overflow-hidden border border-ink-100 touch-none`
-          }
+          className={ocupaATela ? 'h-full w-full touch-none' : 'w-full aspect-[4/3] sm:aspect-video rounded-xl overflow-hidden border border-ink-100 touch-none'}
         />
 
         {tela === 'menu' && (
@@ -4703,6 +4740,8 @@ export function ChessBoard3D() {
             config={config}
             onConfig={mudarConfig}
             temPartida={partidasEmAndamento.length > 0}
+            partidasTerminadas={partidasFinalizadas}
+            onVerPartida={handleRetomarPartida}
             onContinuar={handleContinuar}
             onNovoJogo={handleNovoJogo}
             telaCheia={telaCheia}
@@ -4797,11 +4836,32 @@ export function ChessBoard3D() {
           </div>
         )}
 
+        {revanche && (
+          <div className="absolute inset-x-3 bottom-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/95 p-3 shadow-lg" role="status" data-revanche>
+            <p className="text-sm font-medium text-[#3a2a1a]">{t(revanche.vencida ? 'amigos.erroPartidaVencida' : 'online.revancheRecebida', { nome: adversarioDaSala ?? '' })}</p>
+            <span className="flex gap-2">
+              {!revanche.vencida && (
+                <Button variant="primary" onClick={() => void handleAceitarRevanche()}>
+                  {t('amigos.jogar')}
+                </Button>
+              )}
+              <Button variant="secondary" onClick={handleRecusarRevanche}>
+                {t(revanche.vencida ? 'resultado.fechar' : 'amigos.recusar')}
+              </Button>
+            </span>
+          </div>
+        )}
+
         {escolhendoCor && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl p-4">
             <div className="w-full max-w-xs rounded-xl bg-surface p-4 shadow-xl text-center">
-              <h3 className="font-display text-base font-semibold text-ink-900 mb-1">{t('cor.titulo')}</h3>
-              <p className="text-xs text-ink-400 mb-4">{t('cor.texto')}</p>
+              <h3 className="font-display text-base font-semibold text-ink-900 mb-1">{sala ? t('online.revancheTitulo', { nome: adversarioDaSala ?? '' }) : t('cor.titulo')}</h3>
+              <p className="text-xs text-ink-400 mb-4">{sala ? t('online.revancheTexto', { nome: adversarioDaSala ?? '' }) : t('cor.texto')}</p>
+              {revancheFalhou && (
+                <p role="alert" className="mb-3 text-xs font-medium text-rose-700">
+                  {t('online.revancheErro', { nome: adversarioDaSala ?? '' })}
+                </p>
+              )}
               <div className="flex gap-3 justify-center">
                 <button
                   type="button"
@@ -4859,7 +4919,7 @@ export function ChessBoard3D() {
         )}
       </div>}
 
-      {config.registro && partidasEmAndamento.length > 1 && (
+      {config.registro && tela === 'jogo' && partidasEmAndamento.length > 1 && (
         <div className="rounded-xl border border-ink-200 overflow-hidden">
           <button
             type="button"
@@ -4887,48 +4947,6 @@ export function ChessBoard3D() {
                   {t('registro.partidaDe', { data: new Date(p.criadaEm).toLocaleDateString(config.idioma) })}
                 </button>
               ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {config.registro && partidasFinalizadas.length > 0 && (
-        <div className="rounded-xl border border-ink-200 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setPartidasFinalizadasAberto((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-ink-50"
-          >
-            {t('registro.finalizadas')}
-            <span aria-hidden className={`transition-transform ${partidasFinalizadasAberto ? 'rotate-180' : ''}`}>
-              ▾
-            </span>
-          </button>
-          {partidasFinalizadasAberto && (
-            <div className="flex flex-wrap gap-2 px-3 pb-3 pt-1 border-t border-ink-100">
-              {partidasFinalizadas.map((p) => {
-                const resultado = resultadoPartida(p)
-                const ativa = partidaAtualRef.current?.id === p.id
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handleVerPartidaFinalizada(p)}
-                    title={t(resultado === 'venceu' ? 'resultado.venceu' : resultado === 'perdeu' ? 'resultado.perdeu' : 'status.empate')}
-                    className={`pill-tab border ${
-                      ativa
-                        ? 'bg-ink-950 border-ink-950 text-white'
-                        : resultado === 'venceu'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                          : resultado === 'perdeu'
-                            ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                            : 'border-ink-200 text-ink-600 hover:bg-ink-50'
-                    }`}
-                  >
-                    {t('registro.partidaDe', { data: new Date(p.criadaEm).toLocaleDateString(config.idioma) })}
-                  </button>
-                )
-              })}
             </div>
           )}
         </div>

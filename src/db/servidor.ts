@@ -143,6 +143,9 @@ export async function enviarLote(registros: { store: string; dados: unknown }[])
 export interface Jogador {
   idJogador: string
   nome: string
+  /** Sugestão do jogo ('peao-brancas') ou foto própria ('foto:<versão>'). */
+  avatar: string | null
+  moldura: string | null
 }
 
 export interface Amigos {
@@ -172,6 +175,12 @@ export const convidarAmigo = (busca: string) => pedir<Jogador & { status: 'pende
 /** Serve também pra recusar um convite recebido e cancelar um enviado. */
 export const removerAmigo = (idJogador: string) => pedir('POST', `/amigos/${idJogador}/remover`)
 export const verPerfil = (idJogador: string) => pedir<Perfil>('GET', `/amigos/${idJogador}`)
+
+/** `tudoLiberado`: a conta pode usar o que ainda não está aberto pra todos, como as molduras. */
+export const lerMeuPerfil = () => pedir<Omit<Perfil, 'entreVoces'> & { tudoLiberado: boolean }>('GET', '/perfil')
+export const mudarAparencia = (aparencia: { avatar?: string; moldura?: string }) => pedir('POST', '/perfil/aparencia', aparencia)
+export const enviarFoto = (foto: string) => pedir<{ avatar: string }>('POST', '/perfil/foto', { foto })
+export const enderecoDaFoto = (idJogador: string, versao: string) => `${API}/fotos/${idJogador}?v=${versao}`
 
 /** Confere de tempos em tempos, enquanto a aba está à vista: convites chegam sem precisar recarregar a página. */
 export function useAmigos() {
@@ -214,5 +223,7 @@ export interface SalaNaLista {
 export const criarSala = (cor: 'w' | 'b' | 'sorteio', amigo: string) => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', '/salas', { cor, amigo })
 export const entrarEmSala = (codigo: string) => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', `/salas/${codigo}/entrar`)
 export const recusarSala = (codigo: string) => pedir('POST', `/salas/${codigo}/recusar`)
+/** Outra partida com quem jogou a sala `codigo`. Se ele já tinha chamado, entra nessa. */
+export const pedirRevanche = (codigo: string, cor: 'w' | 'b') => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', `/salas/${codigo}/revanche`, { cor })
 export const listarSalas = () => pedir<{ salas: SalaNaLista[] }>('GET', '/salas')
 export const enderecoDaSala = (codigo: string) => `${API.replace(/^http/, 'ws')}/salas/${codigo}/ws`

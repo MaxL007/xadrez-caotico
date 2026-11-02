@@ -27,6 +27,12 @@ export function novaPartida(jogador: string, corJogador: 'w' | 'b'): PartidaXadr
   return { id: makeId(), jogador, corJogador, pgn: '', status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora }
 }
 
+export function resultadoDaPartida(partida: PartidaXadrez): 'venceu' | 'perdeu' | 'empate' {
+  if (partida.resultado?.startsWith('Você venceu')) return 'venceu'
+  if (partida.resultado?.startsWith('A máquina venceu')) return 'perdeu'
+  return 'empate'
+}
+
 export async function listPartidas(): Promise<PartidaXadrez[]> {
   const todas = await dbGetAll<PartidaXadrez>(STORE_PARTIDAS)
   return todas.filter((p) => !p.demonstracao).sort((a, b) => b.atualizadaEm - a.atualizadaEm)

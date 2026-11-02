@@ -78,6 +78,19 @@ export class Sala extends DurableObject<Ambiente> {
     return { ok: true, cor }
   }
 
+  /** Quem continua com esta partida aberta na tela fica sabendo na hora do convite pra outra. */
+  avisarRevanche(autorId: string, codigo: string) {
+    const texto = JSON.stringify({ t: 'revanche', codigo })
+    for (const conexao of this.ctx.getWebSockets()) {
+      if (this.ctx.getTags(conexao)[0] === autorId) continue
+      try {
+        conexao.send(texto)
+      } catch {
+        // conexão já caiu: o convite aparece em Amigos
+      }
+    }
+  }
+
   /** O amigo chamado recusou ou quem chamou desistiu de esperar. */
   async recusar(usuarioId: string) {
     const estado = await this.ler()

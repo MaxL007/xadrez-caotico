@@ -17,7 +17,8 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 - `src/components/ChessBoard3D.tsx`: o jogo inteiro em three.js, num `useEffect` grande. `geracao` invalida
   animações de um tabuleiro antigo; `acoesRef` é a ponte do React pra cena; `window.__xadrez` tem os ganchos
   dos testes, só em desenvolvimento.
-- `src/components/MenuXadrez.tsx`, `PainelConta.tsx`, `PainelAmigos.tsx`: tela inicial, conta e amigos.
+- `src/components/MenuXadrez.tsx`, `PainelConta.tsx`, `PainelAmigos.tsx`, `PainelPerfil.tsx`: tela inicial, conta, amigos
+  e perfil. `ElementosDoJogador.tsx` tem o avatar com moldura, o ID e o placar que amigos e perfil dividem.
 - `src/db/db.ts`: salva primeiro no aparelho (IndexedDB, um banco por conta) e depois na nuvem, com fila.
 - `src/db/servidor.ts`: chamadas ao servidor e sessão.
 - `src/online/salaAoVivo.ts`: WebSocket da partida, com reconexão. O token vai como subprotocolo.
@@ -31,8 +32,26 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 - `amizades` tem uma linha por par. Aceitar é convidar de volta; recusar, cancelar e remover apagam a linha.
 - Partida só entre amigos aceitos, e os dois lugares têm dono desde a criação (`status: 'aguardando'`). Não existe mais
   link nem código de convite. Quem chamou pode cancelar, e o amigo pode recusar (`status: 'recusada'`).
+- "Novo jogo" numa partida amistosa chama o mesmo amigo (`/salas/<código>/revanche`), não a máquina. O aviso chega pela
+  conexão da partida aberta; se os dois pedem, o segundo entra na partida do primeiro.
 - O menu confere `/amigos` a cada 15 s (`useAmigos`), só com a aba à vista: conta nos 100 mil pedidos por dia. Durante
   uma partida não confere; a novidade aparece ao voltar ao menu.
+
+## Perfil
+
+- A tela inicial ocupa a página inteira (`ocupaATela`). A partida não: quando a tela muda de formato no meio do giro da
+  câmera, o `onResize` refaz o destino, senão o tabuleiro fica pequeno no celular.
+- Molduras estão trancadas: só a conta com `usuarios.tudo_liberado = 1` coloca uma, e o servidor confere
+  (`moldura-bloqueada`). Liga-se direto no banco, nunca pelo site:
+  `npx wrangler d1 execute xadrez-caotico --remote --command "UPDATE usuarios SET tudo_liberado = 1 WHERE nome_busca = '<nome>'"`.
+  Quem liga qual conta fica fora do repositório, que é público.
+- `usuarios.avatar` é uma sugestão do jogo (`peao-brancas`) ou a foto (`foto:<versão>`), e `moldura` é só o id. As listas
+  válidas ficam em `src/conta/aparencia.json`, que o Worker também importa: moldura nova entra ali e em `ANEL_DA_MOLDURA`.
+- A foto é recortada e reduzida no aparelho (`src/conta/foto.ts`) e fica na tabela `fotos`. O servidor só aceita JPEG até
+  60 KB em base64. `GET /fotos/<ID>` é aberto, porque uma `<img>` não manda sessão: quem tem o ID vê a foto.
+- Os avatares sugeridos em `public/avatares` saem dos modelos das peças: `node scripts/gerar-avatares.mjs`, com o site de
+  desenvolvimento no ar. As cores em `scripts/avatares/retratos.js` copiam as de `materiaisPorFaccao`.
+- Os números do perfil somam as partidas contra a máquina, contadas no aparelho, com as amistosas, contadas no servidor.
 
 ## Limites do plano gratuito da Cloudflare
 
@@ -50,6 +69,9 @@ Ver README. Armadilhas:
   com `Get-NetTCPConnection -LocalPort 8787`.
 - O limite de 5 contas por hora vale no simulador também: `LIMITE_CONTAS` em `worker/.dev.vars` afrouxa.
 - Entrar em tela cheia leva segundos sem GPU e o canvas fica 12 px menor nesse meio-tempo: medir em laço.
+- O celular perde o contexto gráfico com a aba em segundo plano. Tudo que é desenhado na placa (o reflexo do ambiente)
+  precisa ser refeito em `webglcontextrestored`, e os canvas das texturas usam `willReadFrequently` pra ficar na memória
+  comum. `testes/testar-volta-da-aba.mjs` simula a perda; a queda do processo gráfico inteiro não dá pra simular aqui.
 
 ## Peças
 
