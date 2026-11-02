@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import type { ConfigXadrez, QualidadeXadrez } from '../chess/configXadrez'
 import { IDIOMAS, type ChaveTexto, type Idioma, type Traduzir } from '../chess/idiomas'
 import { useResumoDaNuvem } from '../db/db'
@@ -8,6 +8,14 @@ import { useFecharComEsc } from '../teclaEsc'
 import { PainelAmigos } from './PainelAmigos'
 import { PainelConta } from './PainelConta'
 import { PainelPerfil } from './PainelPerfil'
+import { PainelPersonalizacao } from './PainelPersonalizacao'
+import { nomeDaConquista } from './PainelConquistas'
+import { Oticoin } from './ElementosDoJogador'
+import { verificarConquistas, type Conquista, type SituacaoDasConquistas } from '../chess/conquistas'
+import { carregarPersonalizacao } from '../conta/personalizacao'
+import { PainelLoja } from './PainelLoja'
+import type { VitrineDaPeca } from '../chess/equipamentos'
+import type * as THREE from 'three'
 
 // -----------------------------------------------------------------------
 // Tela inicial do jogo: fica por cima do próprio tabuleiro 3D, visto de lado
@@ -158,11 +166,11 @@ function Configuracoes({ t, config, onConfig, onImportou }: { t: Traduzir; confi
   )
 }
 
-type Painel = 'inicio' | 'loja' | 'config' | 'conta' | 'amigos' | 'perfil'
+type Painel = 'inicio' | 'loja' | 'personalizacao' | 'conta' | 'amigos' | 'perfil'
 
 const TITULOS: Record<Exclude<Painel, 'inicio'>, ChaveTexto> = {
   loja: 'menu.loja',
-  config: 'menu.configuracoes',
+  personalizacao: 'menu.personalizacao',
   conta: 'conta.titulo',
   amigos: 'menu.amigos',
   perfil: 'menu.perfil',
@@ -174,6 +182,7 @@ export function MenuXadrez({
   onConfig,
   temPartida,
   partidasTerminadas,
+  partidasContraMaquina,
   onVerPartida,
   onContinuar,
   onNovoJogo,
@@ -181,6 +190,8 @@ export function MenuXadrez({
   onExpandir,
   onTelaNormal,
   onAbrirSala,
+  montarVitrine,
+  montarExpositor,
   onImportou,
 }: {
   t: Traduzir
@@ -189,6 +200,8 @@ export function MenuXadrez({
   /** Tem partida em andamento pra retomar. */
   temPartida: boolean
   partidasTerminadas: PartidaXadrez[]
+  /** Todas as partidas contra a máquina, também as em andamento: é delas que saem as conquistas. */
+  partidasContraMaquina: PartidaXadrez[]
   onVerPartida: (partida: PartidaXadrez) => void
   onContinuar: () => void
   onNovoJogo: () => void
@@ -196,12 +209,45 @@ export function MenuXadrez({
   onExpandir: () => void
   onTelaNormal: () => void
   onAbrirSala: (codigo: string) => void
+  /** A peça vestida, sozinha, pra vitrine da Personalização. */
+  montarVitrine: (tipo: string, escolhas: Record<string, string>) => VitrineDaPeca | null
+  /** O equipamento sozinho, pro expositor de cada quadrado da Personalização. */
+  montarExpositor: (tipo: string, parte: string, opcao: string) => THREE.Object3D | null
   onImportou: () => void
 }) {
   const sessao = useSessao()
   const { amigos, atualizar: atualizarAmigos } = useAmigos()
   const novidades = (amigos?.convitesRecebidos.length ?? 0) + (amigos?.partidasRecebidas.length ?? 0)
   const [painel, setPainel] = useState<Painel>('inicio')
+  const [conquistas, setConquistas] = useState<SituacaoDasConquistas | null>(null)
+  const [conquistasNovas, setConquistasNovas] = useState<Conquista[]>([])
+
+  // ao abrir o menu, confere as conquistas e recebe as óticoins do que foi alcançado desde a última vez
+  useEffect(() => {
+    let cancelado = false
+    verificarConquistas(partidasContraMaquina)
+      .then((situacao) => {
+        // o aviso vale mesmo se a lista de partidas mudou no meio: a conquista já foi paga e não volta a aparecer
+        if (situacao.novas.length > 0) {
+          setConquistasNovas(situacao.novas)
+          // conquista nova pode liberar equipamento na Personalização
+          void carregarPersonalizacao()
+        }
+        if (!cancelado) setConquistas(situacao)
+      })
+      .catch(() => {
+        // sem conexão: confere na próxima vez
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [partidasContraMaquina, sessao?.token])
+
+  useEffect(() => {
+    if (conquistasNovas.length === 0) return
+    const prazo = window.setTimeout(() => setConquistasNovas([]), 7000)
+    return () => window.clearTimeout(prazo)
+  }, [conquistasNovas])
   // o código de recuperação só aparece uma vez: nem Esc nem Voltar fecham essa tela sem querer
   const [mostrandoCodigo, setMostrandoCodigo] = useState(false)
   useFecharComEsc(() => setPainel('inicio'), painel !== 'inicio' && !mostrandoCodigo)
@@ -217,9 +263,10 @@ export function MenuXadrez({
       </button>
 
       {painel === 'inicio' && (
-        // tela em pé ou muito baixa: os botões em grade e o título no canto, pra não cobrir as peças
-        <div className="mt-3 grid w-full max-w-[17rem] grid-cols-2 gap-1.5 sm:mt-0 sm:max-w-[15rem] sm:grid-cols-1 sm:gap-2.5 [@media(max-height:520px)]:!grid-cols-2 [@media(max-height:520px)]:!max-w-sm [@media(max-height:520px)]:!gap-1.5">
-          <h2 className="absolute left-4 top-3 font-display text-xl font-bold tracking-wide text-[#f5e6c8] [text-shadow:0_2px_10px_rgba(0,0,0,0.8)] sm:static sm:mb-1 sm:justify-self-center sm:whitespace-nowrap sm:text-center sm:text-4xl [@media(max-height:520px)]:!absolute [@media(max-height:520px)]:!text-xl">{t('titulo')}</h2>
+        // no celular em pé o tabuleiro fica de lado, numa faixa no meio: o título vai logo acima dele e os botões em grade
+        // logo abaixo. Na tela muito baixa, o título vai pro canto pra não cobrir as peças
+        <div className="mt-3 grid w-full max-w-[17rem] grid-cols-2 gap-1.5 max-sm:mb-14 max-sm:self-end sm:mt-0 sm:max-w-[15rem] sm:grid-cols-1 sm:gap-2.5 [@media(max-height:520px)]:!grid-cols-2 [@media(max-height:520px)]:!max-w-sm [@media(max-height:520px)]:!gap-1.5">
+          <h2 className="absolute left-4 top-3 font-display text-xl font-bold tracking-wide text-[#f5e6c8] [text-shadow:0_2px_10px_rgba(0,0,0,0.8)] max-sm:bottom-[calc(50%+22vw)] max-sm:left-1/2 max-sm:top-auto max-sm:-translate-x-1/2 max-sm:whitespace-nowrap max-sm:text-3xl sm:static sm:mb-1 sm:justify-self-center sm:whitespace-nowrap sm:text-center sm:text-4xl [@media(max-height:520px)]:!absolute [@media(max-height:520px)]:!bottom-auto [@media(max-height:520px)]:!left-4 [@media(max-height:520px)]:!top-3 [@media(max-height:520px)]:!translate-x-0 [@media(max-height:520px)]:!text-xl">{t('titulo')}</h2>
           {temPartida && (
             <button type="button" className={botaoMenu} onClick={onContinuar}>
               {t('menu.continuar')}
@@ -237,9 +284,23 @@ export function MenuXadrez({
           <button type="button" className={botaoMenu} onClick={() => setPainel('loja')}>
             {t('menu.loja')}
           </button>
-          <button type="button" className={botaoMenu} onClick={() => setPainel('config')}>
-            {t('menu.configuracoes')}
+          <button type="button" className={botaoMenu} onClick={() => setPainel('personalizacao')}>
+            {t('menu.personalizacao')}
           </button>
+        </div>
+      )}
+
+      {painel === 'inicio' && conquistasNovas.length > 0 && (
+        <div
+          role="status"
+          className="absolute left-1/2 top-14 z-20 flex w-max max-w-[90%] -translate-x-1/2 items-center gap-2 rounded-xl border border-[#e6c675] bg-[#1c120a]/95 px-4 py-2 text-sm font-semibold text-[#f5e6c8] shadow-xl"
+          data-aviso-conquista
+        >
+          <Oticoin tamanho={34} girando />
+          <span>
+            {t('conquistas.nova', { nome: nomeDaConquista(t, conquistasNovas[0]), n: conquistasNovas[0].oticoins })}
+            {conquistasNovas.length > 1 ? ` ${t('conquistas.maisNovas', { n: conquistasNovas.length - 1 })}` : ''}
+          </span>
         </div>
       )}
 
@@ -263,8 +324,10 @@ export function MenuXadrez({
               </button>
             )}
           </div>
-          {painel === 'loja' && <p className="py-6 text-center text-sm text-[#c9b48a]">{t('loja.vazia')}</p>}
-          {painel === 'config' && <Configuracoes t={t} config={config} onConfig={onConfig} onImportou={onImportou} />}
+          {painel === 'loja' && (
+            <PainelLoja t={t} saldo={conquistas?.oticoins ?? null} onSaldo={(oticoins) => setConquistas((atual) => atual && { ...atual, oticoins })} />
+          )}
+          {painel === 'personalizacao' && <PainelPersonalizacao t={t} montarVitrine={montarVitrine} montarExpositor={montarExpositor} />}
           {painel === 'conta' && <PainelConta t={t} onConcluir={() => setPainel('inicio')} onCodigoNaTela={setMostrandoCodigo} />}
           {painel === 'perfil' && (
             <PainelPerfil
@@ -275,7 +338,10 @@ export function MenuXadrez({
               onVerPartida={onVerPartida}
               onAbrirSala={onAbrirSala}
               onEntrar={() => setPainel('conta')}
-            />
+              conquistas={conquistas}
+            >
+              <Configuracoes t={t} config={config} onConfig={onConfig} onImportou={onImportou} />
+            </PainelPerfil>
           )}
           {painel === 'amigos' && <PainelAmigos t={t} idioma={config.idioma} amigos={amigos} onAtualizar={atualizarAmigos} onAbrirSala={onAbrirSala} onCodigoNaTela={setMostrandoCodigo} />}
         </section>

@@ -1,0 +1,27 @@
+{
+  "niveis": ["basicas", "intermediarias", "avancadas"],
+  "conquistas": [
+    { "id": "peoes-50", "nivel": "basicas", "medida": "peoes", "meta": 50, "oticoins": 2 },
+    { "id": "torres-30", "nivel": "basicas", "medida": "torres", "meta": 30, "oticoins": 4 },
+    { "id": "peoes-150", "nivel": "basicas", "medida": "peoes", "meta": 150, "oticoins": 5 },
+    { "id": "torres-60", "nivel": "basicas", "medida": "torres", "meta": 60, "oticoins": 8 },
+    { "id": "peoes-400", "nivel": "basicas", "medida": "peoes", "meta": 400, "oticoins": 15 },
+    { "id": "torres-180", "nivel": "basicas", "medida": "torres", "meta": 180, "oticoins": 24 },
+    { "id": "cavalos-50", "nivel": "basicas", "medida": "cavalos", "meta": 50, "oticoins": 8 },
+    { "id": "bispos-30", "nivel": "basicas", "medida": "bispos", "meta": 30, "oticoins": 4 },
+    { "id": "cavalos-100", "nivel": "basicas", "medida": "cavalos", "meta": 100, "oticoins": 16 },
+    { "id": "bispos-60", "nivel": "basicas", "medida": "bispos", "meta": 60, "oticoins": 8 },
+    { "id": "cavalos-250", "nivel": "basicas", "medida": "cavalos", "meta": 250, "oticoins": 48 },
+    { "id": "bispos-180", "nivel": "basicas", "medida": "bispos", "meta": 180, "oticoins": 24 },
+    { "id": "roque-1", "nivel": "basicas", "medida": "roques", "meta": 1, "oticoins": 5 },
+    { "id": "convite-1", "nivel": "basicas", "medida": "convites", "meta": 1, "oticoins": 5 },
+    { "id": "rainhas-25", "nivel": "intermediarias", "medida": "rainhas", "meta": 25, "oticoins": 10 },
+    { "id": "rainhas-50", "nivel": "intermediarias", "medida": "rainhas", "meta": 50, "oticoins": 20 },
+    { "id": "rainhas-150", "nivel": "intermediarias", "medida": "rainhas", "meta": 150, "oticoins": 60 },
+    { "id": "xeques-100", "nivel": "avancadas", "medida": "xeques", "meta": 100, "oticoins": 40 },
+    { "id": "peoes-1000", "nivel": "avancadas", "medida": "peoes", "meta": 1000, "oticoins": 50 },
+    { "id": "vitorias-200", "nivel": "avancadas", "medida": "vitorias", "meta": 200, "oticoins": 100 },
+    { "id": "rainhas-500", "nivel": "avancadas", "medida": "rainhas", "meta": 500, "oticoins": 200 },
+    { "id": "convites-50", "nivel": "avancadas", "medida": "convites", "meta": 50, "oticoins": 80 }
+  ]
+}

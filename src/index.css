@@ -88,10 +88,30 @@
 }
 
 @layer components {
+  /* a óticoin girando: a fileira de quadros do giro, andada de quadro em quadro */
+  .oticoin-giro {
+    background-repeat: no-repeat;
+    background-size: calc(var(--tamanho) * 32) var(--tamanho);
+    animation: oticoin-giro 2.4s steps(32) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .oticoin-giro {
+      animation: none;
+    }
+  }
   .card {
     @apply rounded-2xl border border-ink-100 bg-surface p-5 sm:p-6;
   }
   .pill-tab {
     @apply inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition whitespace-nowrap;
+  }
+}
+
+@keyframes oticoin-giro {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: calc(var(--tamanho) * -32) 0;
   }
 }

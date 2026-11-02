@@ -45,6 +45,23 @@ export function MeuId({ t, id }: { t: Traduzir; id: string }) {
   )
 }
 
+/**
+ * A óticoin, a moeda do jogo: uma moeda 3D com o peão de um lado e o rei do outro. As imagens saem do modelo da moeda
+ * (scripts/gerar-oticoin.mjs): girando, é a sequência do giro tocada quadro a quadro; parada, mostra um dos lados.
+ */
+export function Oticoin({ tamanho = 16, figura = 'rei', girando = false }: { tamanho?: number; figura?: 'rei' | 'peao'; girando?: boolean }) {
+  if (girando) {
+    return (
+      <span
+        aria-hidden
+        className="oticoin-giro inline-block shrink-0"
+        style={{ width: tamanho, height: tamanho, ['--tamanho' as string]: `${tamanho}px`, backgroundImage: `url(${import.meta.env.BASE_URL}oticoin/giro.webp)` }}
+      />
+    )
+  }
+  return <img src={`${import.meta.env.BASE_URL}oticoin/${figura}.png`} alt="" aria-hidden width={tamanho} height={tamanho} className="shrink-0" />
+}
+
 function Quadro({ rotulo, valor }: { rotulo: string; valor: number }) {
   return (
     <div className="rounded-lg bg-[#2a1c10] px-1 py-2 text-center">

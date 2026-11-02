@@ -52,6 +52,36 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 - Os avatares sugeridos em `public/avatares` saem dos modelos das peças: `node scripts/gerar-avatares.mjs`, com o site de
   desenvolvimento no ar. As cores em `scripts/avatares/retratos.js` copiam as de `materiaisPorFaccao`.
 - Os números do perfil somam as partidas contra a máquina, contadas no aparelho, com as amistosas, contadas no servidor.
+- O Perfil tem três abas: Perfil, Conquistas e Configurações. O botão do menu que era Configurações agora é
+  Personalização.
+
+## Personalização das peças
+
+- Aberta a toda conta, mas só o básico é livre: o padrão de cada parte e o primeiro equipamento de cada uma. O resto está
+  em `itens` do catálogo (`src/conta/personalizacao.json`, o mesmo que o Worker confere): cada item libera com uma
+  conquista ou com a compra na Loja (tabela `itens`). A conta com `tudo_liberado` usa tudo. A escolha fica em
+  `usuarios.personalizacao`, só o que foge do padrão.
+- A compra na Loja grava o item e tira as óticoins no mesmo lote: o item só entra se havia saldo (`INSERT ... SELECT ...
+  WHERE oticoins >= preço`), e a moeda só sai se o item entrou (`changes()`).
+- Na aba, cada quadrado é um expositor: o equipamento sozinho, girando num pedestal, montado por `montarExpositor`
+  (ChessBoard3D) e `equipamentoSozinho` (equipamentos.ts). A katana e os cajados de sempre são recortados do modelo.
+- `src/chess/equipamentos.ts` monta as armaduras e armas: cada parte vira malha com esqueleto presa ao osso que cobre,
+  medida no corpo em pose de braços abertos (igual nas seis peças). O que a parte nova substitui (ombreira redonda,
+  cajado, sela, katana) some do modelo pela regra de `ESCONDER`, numa cópia da geometria.
+- Quem joga veste só as próprias peças (`vestimenta` em ChessBoard3D); no menu, as brancas. A marreta da torre muda em
+  `criarMarreta`. A vitrine da aba tem renderizador próprio e é montada por `montarVitrine`.
+- `testes/fotos-personalizacao.mjs` fotografa cada peça vestida: é como se confere se as partes encaixam.
+
+## Conquistas e óticoins
+
+- A óticoin é uma moeda 3D com o peão de um lado e o rei do outro: `node scripts/gerar-oticoin.mjs` gera em
+  `public/oticoin` a fileira de quadros do giro e os dois lados parados, que o componente `Oticoin` mostra.
+- Catálogo em `src/chess/conquistas.json`, também lido pelo Worker. Só contam partidas contra a máquina; as com amigos
+  ficam de fora. Capturas, xeques, roques e vitórias saem das partidas salvas (`contarPartidas`); convites aceitos, o
+  servidor conta.
+- O servidor não refaz as partidas (não cabe nos 10 ms): confia na contagem do aparelho, mas cada conquista paga uma vez
+  só (tabela `conquistas`), então o máximo de uma conta é a soma do catálogo. O recibo e a moeda entram juntos no mesmo
+  lote, com `changes()`.
 
 ## Limites do plano gratuito da Cloudflare
 

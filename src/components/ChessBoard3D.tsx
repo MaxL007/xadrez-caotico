@@ -19,6 +19,9 @@ import { ouvirDados } from '../db/db'
 import { entrarEmSala, pedirRevanche, recusarSala, sessaoAtual, useSessao } from '../db/servidor'
 import { abrirConexaoDaSala, type ConexaoDaSala, type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../online/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../db/xadrezAprendizadoRepo'
+import { cajadoDoModelo, equipamentoSozinho, katanaDoModelo, vestirPeca, type MateriaisDaPeca, type VitrineDaPeca } from '../chess/equipamentos'
+import { carregarPersonalizacao, ouvirPersonalizacao, personalizacaoAtual } from '../conta/personalizacao'
+import { contarPartidas } from '../chess/conquistas'
 
 const COR_SELECIONADA = 0x2a9d5f
 const COR_DESTINO = 0x2a78d6
@@ -480,6 +483,7 @@ function buildPecaRPG(modelo: ModeloRPG, cor: 'w' | 'b'): THREE.Group {
   for (const malha of malhas) {
     const nomeOriginal = Array.isArray(malha.material) ? undefined : malha.material?.name
     malha.material = materialRPG(nomeOriginal, cor)
+    malha.userData.material = nomeOriginal
     malha.castShadow = true
     malha.receiveShadow = true
     if (nomeOriginal === 'EspadaLamina' || nomeOriginal === 'EspadaCabo') naMao.push(malha)
@@ -781,6 +785,16 @@ const materialCaboEspada = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, met
 const materialCaboKatana = new THREE.MeshStandardMaterial({ color: 0x1f2a44, metalness: 0.2, roughness: 0.7 })
 const materialSaya = new THREE.MeshStandardMaterial({ color: 0x0c0c10, metalness: 0.1, roughness: 0.22 })
 
+function materiaisDaPeca(cor: 'w' | 'b'): MateriaisDaPeca {
+  const { armadura, detalhe, brilho } = materiaisPorFaccao[cor]
+  return { armadura, detalhe, brilho, coroa: materialCoroa, lamina: materialLaminaEspada }
+}
+
+/** Quem joga veste as próprias peças com o que escolheu na Personalização; o adversário e a máquina, não. No menu,
+ * as vestidas são as brancas. */
+let vestimenta: { cor: 'w' | 'b'; escolhas: Record<string, Record<string, string>> } = { cor: 'w', escolhas: {} }
+const assinaturaDaVestimenta = (tipo: string, cor: 'w' | 'b') => (cor === vestimenta.cor ? JSON.stringify(vestimenta.escolhas[tipo] ?? {}) : '{}')
+
 function criarEspadaDoPeao(): THREE.Group {
   const espada = new THREE.Group()
   const partes: { geo: THREE.BufferGeometry; y: number; material: THREE.Material }[] = [
@@ -826,6 +840,9 @@ function buildPieceMesh(tipo: string, cor: 'w' | 'b'): THREE.Group {
   const modeloRPG = modelosRPG[tipo]
   if (modeloRPG) {
     const grupo = buildPecaRPG(modeloRPG, cor)
+    const escolhas = cor === vestimenta.cor ? vestimenta.escolhas[tipo] : undefined
+    if (escolhas) vestirPeca(grupo, tipo, escolhas, materiaisDaPeca(cor))
+    grupo.userData.vestimenta = assinaturaDaVestimenta(tipo, cor)
     grupo.userData.tipo = tipo
     grupo.userData.cor = cor
     grupo.rotation.y = cor === 'w' ? Math.PI : 0
@@ -940,8 +957,6 @@ const QUALIDADES: Record<QualidadeXadrez, { resolucao: number; sombras: number }
 /** Vista de lado do menu: mais baixa e mais perto que a do jogo, pra ver as peças de frente. */
 const RAIO_CAMERA_MENU = 11.5
 const INCLINACAO_CAMERA_MENU = 1.12
-/** Na tela em pé a câmera sobe: o tabuleiro fica quase quadrado e sobra espaço pros botões entre os exércitos. */
-const INCLINACAO_CAMERA_MENU_EM_PE = 0.5
 
 /** Calcula o pixel ratio necessário pra garantir que o canvas renderize em pelo menos Full HD (1920x1080), mesmo quando o card exibido na tela é menor — limitado a 3x pra não sobrecarregar a GPU em telas muito pequenas. */
 function pixelRatioParaFullHD(larguraCss: number, alturaCss: number): number {
@@ -1937,7 +1952,7 @@ const geoGemaMarreta = new THREE.SphereGeometry(0.036, 16, 12)
 /** A marreta é da peça: os mesmos materiais do corpo (armadura), dos detalhes, do dourado da coroa e
  * do brilho, e as ameias da torre nas duas faces. Montada com a ponta do cabo na origem, o cabo pra
  * cima (+Y) e as faces da cabeça em Z: girando em X, ela desce batendo com a face. */
-function criarMarreta(cor: 'w' | 'b'): THREE.Group {
+function criarMarreta(cor: 'w' | 'b', arma = 'marreta'): THREE.Group {
   const { armadura, detalhe, brilho } = materiaisPorFaccao[cor]
   const marreta = new THREE.Group()
   const topo = COMPRIMENTO_CABO_MARRETA
@@ -1945,17 +1960,32 @@ function criarMarreta(cor: 'w' | 'b'): THREE.Group {
     [geoCaboMarreta, detalhe, 0, topo / 2, 0],
     [geoPegadaMarreta, armadura, 0, 0.1, 0],
     [geoPonteiraMarreta, materialCoroa, 0, -0.01, 0],
-    [geoCabecaMarreta, armadura, 0, topo, 0],
-    [geoCintaMarreta, materialCoroa, 0, topo, 0],
-    [geoFaceMarreta, detalhe, 0, topo, 0.175],
-    [geoFaceMarreta, detalhe, 0, topo, -0.175],
-    [geoGemaMarreta, brilho, 0.13, topo, 0],
-    [geoGemaMarreta, brilho, -0.13, topo, 0],
   ]
-  // as ameias, nos quatro cantos de cada face
-  for (const face of [1, -1]) {
-    for (const x of [-0.095, 0.095]) {
-      for (const y of [-0.095, 0.095]) pecas.push([geoAmeiaMarreta, detalhe, x, topo + y, face * 0.225])
+  if (arma === 'machado') {
+    // a lâmina bate pra frente, onde a marreta bate com a face; atrás, uma ponta
+    pecas.push(
+      [new RoundedBoxGeometry(0.12, 0.15, 0.13, 2, 0.02), armadura, 0, topo, 0],
+      [new RoundedBoxGeometry(0.032, 0.3, 0.2, 2, 0.012), materialLaminaEspada, 0, topo, 0.16],
+      [new RoundedBoxGeometry(0.036, 0.32, 0.022, 2, 0.008), materialCoroa, 0, topo, 0.265],
+      [geoGemaMarreta, brilho, 0.065, topo, 0],
+      [geoGemaMarreta, brilho, -0.065, topo, 0],
+    )
+  } else if (arma === 'maca') {
+    pecas.push([new THREE.SphereGeometry(0.15, 16, 12), armadura, 0, topo, 0], [new THREE.CylinderGeometry(0.155, 0.155, 0.03, 16), materialCoroa, 0, topo, 0])
+  } else {
+    pecas.push(
+      [geoCabecaMarreta, armadura, 0, topo, 0],
+      [geoCintaMarreta, materialCoroa, 0, topo, 0],
+      [geoFaceMarreta, detalhe, 0, topo, 0.175],
+      [geoFaceMarreta, detalhe, 0, topo, -0.175],
+      [geoGemaMarreta, brilho, 0.13, topo, 0],
+      [geoGemaMarreta, brilho, -0.13, topo, 0],
+    )
+    // as ameias, nos quatro cantos de cada face
+    for (const face of [1, -1]) {
+      for (const x of [-0.095, 0.095]) {
+        for (const y of [-0.095, 0.095]) pecas.push([geoAmeiaMarreta, detalhe, x, topo + y, face * 0.225])
+      }
     }
   }
   for (const [geometria, material, x, y, z] of pecas) {
@@ -1963,6 +1993,30 @@ function criarMarreta(cor: 'w' | 'b'): THREE.Group {
     parte.position.set(x, y, z)
     parte.castShadow = true
     marreta.add(parte)
+  }
+  // pontas que saem da cabeça, cada uma apontando pra fora
+  const pontas: [THREE.Vector3, number, THREE.Material][] =
+    arma === 'machado'
+      ? [[new THREE.Vector3(0, 0, -1), 0.065, detalhe]]
+      : arma === 'maca'
+        ? [
+            [new THREE.Vector3(1, 0, 0), 0.15, detalhe],
+            [new THREE.Vector3(-1, 0, 0), 0.15, detalhe],
+            [new THREE.Vector3(0, 0, 1), 0.15, detalhe],
+            [new THREE.Vector3(0, 0, -1), 0.15, detalhe],
+            [new THREE.Vector3(0, 1, 0), 0.15, detalhe],
+            [new THREE.Vector3(1, 0.8, 1).normalize(), 0.15, brilho],
+            [new THREE.Vector3(-1, 0.8, -1).normalize(), 0.15, brilho],
+            [new THREE.Vector3(1, -0.8, -1).normalize(), 0.15, brilho],
+            [new THREE.Vector3(-1, -0.8, 1).normalize(), 0.15, brilho],
+          ]
+        : []
+  for (const [direcao, raio, material] of pontas) {
+    const ponta = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.11, 8), material)
+    ponta.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direcao)
+    ponta.position.set(0, topo, 0).addScaledVector(direcao, raio + 0.04)
+    ponta.castShadow = true
+    marreta.add(ponta)
   }
   return marreta
 }
@@ -2137,10 +2191,49 @@ function atualizarMarretadas(agora: number) {
 /** Começa o golpe; `aoAcertar` roda no instante em que a marreta bate no chão. `continua` falso
  * (outro jogo entrou no meio) tira a marreta da mão sem acertar. */
 function baterComMarreta(torre: THREE.Object3D, cor: 'w' | 'b', continua: () => boolean, aoAcertar: () => void) {
-  const marreta = criarMarreta(cor)
+  const marreta = criarMarreta(cor, torre.userData.arma as string | undefined)
   marreta.scale.setScalar(0.001)
   torre.add(marreta)
   marretadas.add({ torre, marreta, ossos: salvarOssosDoGolpe(torre), inicio: performance.now(), acertou: false, continua, aoAcertar })
+}
+
+/** A peça sozinha, vestida, pra vitrine da Personalização: o peão com a espada na mão, a torre com a arma na pose
+ * de guarda do golpe. Null enquanto os modelos não chegaram. */
+function montarVitrine(tipo: string, escolhas: Record<string, string>): VitrineDaPeca | null {
+  const modelo = modelosRPG[tipo]
+  if (!modelo) return null
+  const grupo = buildPecaRPG(modelo, 'w')
+  vestirPeca(grupo, tipo, escolhas, materiaisDaPeca('w'))
+  mostrarEspadaRPG(grupo, true)
+  const mixer = grupo.userData.mixer as THREE.AnimationMixer
+  if (tipo !== 'r') return { grupo, atualizar: (delta) => mixer.update(delta) }
+  const marreta = criarMarreta('w', grupo.userData.arma as string | undefined)
+  marreta.position.set(0, POSE_MARRETA_GUARDA.y, POSE_MARRETA_GUARDA.z)
+  marreta.rotation.x = POSE_MARRETA_GUARDA.angulo
+  grupo.add(marreta)
+  let ossos: OssoSalvo[] = []
+  return {
+    grupo,
+    atualizar(delta) {
+      // o clipe só regrava o osso que muda: a pose com a arma é desfeita antes do clipe e refeita depois
+      restaurarOssos(ossos)
+      mixer.update(delta)
+      ossos = salvarOssosDoGolpe(grupo)
+      posarComMarreta(grupo, POSE_MARRETA_GUARDA, 1)
+    },
+  }
+}
+
+/** O equipamento sozinho, pro expositor da Personalização: a marreta vem de criarMarreta, a katana e os cajados de
+ * sempre são recortados do próprio modelo, e o resto é montado em código. */
+function montarExpositor(tipo: string, parte: string, opcao: string): THREE.Object3D | null {
+  if (parte === 'arma' && tipo === 'r') return criarMarreta('w', opcao)
+  const modelo = modelosRPG[tipo]
+  if (parte === 'arma' && modelo && (opcao === 'katana' || opcao === 'padrao')) {
+    const peca = buildPecaRPG(modelo, 'w')
+    return tipo === 'p' ? katanaDoModelo(peca) : cajadoDoModelo(peca, tipo)
+  }
+  return equipamentoSozinho(tipo, parte, opcao, materiaisDaPeca('w'))
 }
 
 /** Rachaduras saindo do centro, desenhadas uma vez só e reaproveitadas em todo golpe. */
@@ -2840,6 +2933,8 @@ export function ChessBoard3D() {
     atualizarTextos: () => void
     aplicarQualidade: (qualidade: QualidadeXadrez) => void
     aplicarTelaMovel: () => void
+    /** A personalização mudou: refaz só as peças cuja roupa mudou. */
+    revestir: () => void
     carregarSala: () => void
     receberEstadoDaSala: (estado: EstadoDaSala) => void
     receberLanceDaSala: (lance: LanceDaSala) => void
@@ -2907,6 +3002,8 @@ export function ChessBoard3D() {
   const [telaCheia, setTelaCheia] = useState(false)
   // a tela inicial sempre ocupa a página inteira
   const ocupaATela = telaCheia || tela === 'menu'
+  // as conquistas contam as partidas contra a máquina, terminadas ou não; as com amigos ficam de fora
+  const partidasContraMaquina = useMemo(() => [...partidasEmAndamento, ...partidasFinalizadas], [partidasEmAndamento, partidasFinalizadas])
   const tabuleiroRef = useRef<HTMLDivElement>(null)
 
   // acompanha os lances conforme são registrados — rola a lista pro fim assim que um novo lance
@@ -2942,6 +3039,11 @@ export function ChessBoard3D() {
   }, [atualizarListaDePartidas])
 
   useEffect(() => () => salaRef.current?.conexao.fechar(), [])
+  // as peças de quem joga vestem o que a pessoa escolheu: a escolha vem da conta e muda pela aba Personalização
+  useEffect(() => ouvirPersonalizacao(() => acoesRef.current?.revestir()), [])
+  useEffect(() => {
+    void carregarPersonalizacao()
+  }, [sessao?.token])
 
   useEffect(() => {
     const container = containerRef.current
@@ -3205,6 +3307,7 @@ export function ChessBoard3D() {
     // as peças usam geometria/material compartilhados (cache por tipo/cor), então aqui só
     // desmonta o grupo — nunca chama dispose(), senão quebraria as peças que ainda usam o cache
     function sincronizarPecas(recriar = false) {
+      vestimenta = { cor: corHumanoRef.current, escolhas: personalizacaoAtual().escolhas }
       if (recriar) {
         // inclusive as que estavam caindo/sumindo de uma captura em andamento
         piecesGroup.clear()
@@ -3227,7 +3330,8 @@ export function ChessBoard3D() {
             existente &&
             existente.userData.tipo === casa.type &&
             existente.userData.cor === casa.color &&
-            Boolean(existente.userData.acoesRPG) === Boolean(modelosRPG[casa.type])
+            Boolean(existente.userData.acoesRPG) === Boolean(modelosRPG[casa.type]) &&
+            (!modelosRPG[casa.type] || existente.userData.vestimenta === assinaturaDaVestimenta(casa.type, casa.color))
           ) {
             pieceMeshBySquare.set(casa.square, existente)
             meshesAntigos.delete(casa.square)
@@ -4138,6 +4242,7 @@ export function ChessBoard3D() {
       atualizarTextos: atualizarStatusTexto,
       aplicarQualidade,
       aplicarTelaMovel: liberarCamera,
+      revestir: () => sincronizarPecas(),
     }
 
     sincronizarPecas()
@@ -4245,15 +4350,13 @@ export function ChessBoard3D() {
       levarCameraPara({ raio: vemDoMenu ? distanciaAutomatica : atual.raio, phi: vemDoMenu ? INCLINACAO_CAMERA_JOGO : atual.phi, theta })
     }
 
-    /** Vista da tela inicial: de lado, com as brancas de um lado e as pretas do outro. Numa tela em pé
-     * elas não caberiam assim, e a câmera olha de cima, com as brancas embaixo e as pretas em cima. */
+    /** Vista da tela inicial: de lado, com as brancas de um lado e as pretas do outro, em qualquer tela. Na tela em
+     * pé a câmera recua até o tabuleiro caber na largura, e os botões ficam embaixo dele. */
     function irParaVistaDoMenu(instantaneo = false) {
       emMenu = true
       ladoDaCamera = 1
       levarCameraPara(
-        camera.aspect >= 1
-          ? { raio: Math.max(RAIO_CAMERA_MENU, raioQueEnquadra(INCLINACAO_CAMERA_MENU, Math.PI / 2)), phi: INCLINACAO_CAMERA_MENU, theta: Math.PI / 2 }
-          : { raio: raioQueEnquadra(INCLINACAO_CAMERA_MENU_EM_PE, 0), phi: INCLINACAO_CAMERA_MENU_EM_PE, theta: 0 },
+        { raio: Math.max(RAIO_CAMERA_MENU, raioQueEnquadra(INCLINACAO_CAMERA_MENU, Math.PI / 2)), phi: INCLINACAO_CAMERA_MENU, theta: Math.PI / 2 },
         instantaneo,
       )
     }
@@ -4355,6 +4458,16 @@ export function ChessBoard3D() {
     if (import.meta.env.DEV) {
       ;(window as unknown as { __xadrez?: object }).__xadrez = {
         casaEmXeque: () => (xequeMesh.visible ? (xequeMesh.userData.casa as string) : null),
+        /** O que as conquistas contam nessas partidas. */
+        contarConquistas: (partidas: PartidaXadrez[]) => contarPartidas(partidas),
+        /** As partes da personalização que a peça daquela casa está vestindo. */
+        vestimentaDaCasa: (casa: string) => {
+          const nomes: string[] = []
+          pieceMeshBySquare.get(casa)?.traverse((filho) => {
+            if (filho.name.startsWith('vestimenta:')) nomes.push(filho.name)
+          })
+          return nomes
+        },
         distanciaCamera: () => camera.position.distanceTo(controls.target),
         /** Lance ou máquina ainda em andamento. */
         ocupado: () => vezDaMaquinaRef.current || lancesEmAndamento > 0,
@@ -4741,6 +4854,7 @@ export function ChessBoard3D() {
             onConfig={mudarConfig}
             temPartida={partidasEmAndamento.length > 0}
             partidasTerminadas={partidasFinalizadas}
+            partidasContraMaquina={partidasContraMaquina}
             onVerPartida={handleRetomarPartida}
             onContinuar={handleContinuar}
             onNovoJogo={handleNovoJogo}
@@ -4748,6 +4862,8 @@ export function ChessBoard3D() {
             onExpandir={entrarEmTelaCheia}
             onTelaNormal={sairDaTelaCheia}
             onAbrirSala={abrirSala}
+            montarVitrine={montarVitrine}
+            montarExpositor={montarExpositor}
             onImportou={atualizarListaDePartidas}
           />
         )}

@@ -1,0 +1,147 @@
+{
+  "pecas": [
+    "p",
+    "r",
+    "n",
+    "b",
+    "q",
+    "k"
+  ],
+  "corpo": {
+    "cabeca": [
+      "padrao",
+      "elmo",
+      "chifres"
+    ],
+    "ombros": [
+      "padrao",
+      "placas",
+      "espinhos"
+    ],
+    "maos": [
+      "padrao",
+      "manoplas",
+      "garras"
+    ],
+    "peito": [
+      "padrao",
+      "couraca",
+      "brasao"
+    ],
+    "calca": [
+      "padrao",
+      "grevas",
+      "saiote"
+    ],
+    "botas": [
+      "padrao",
+      "ferro",
+      "esporas"
+    ]
+  },
+  "armas": {
+    "p": [
+      "katana",
+      "espada"
+    ],
+    "r": [
+      "marreta",
+      "machado",
+      "maca"
+    ],
+    "b": [
+      "padrao",
+      "cristal",
+      "cetro",
+      "lua"
+    ],
+    "q": [
+      "padrao",
+      "cristal",
+      "cetro",
+      "lua"
+    ],
+    "k": [
+      "padrao",
+      "cristal",
+      "cetro",
+      "lua"
+    ]
+  },
+  "montaria": {
+    "cavalo": [
+      "padrao",
+      "armadura"
+    ],
+    "sela": [
+      "padrao",
+      "guerra"
+    ],
+    "cabresto": [
+      "padrao",
+      "guerra"
+    ]
+  },
+  "itens": {
+    "cabeca:chifres": {
+      "conquista": "torres-30",
+      "preco": 15
+    },
+    "ombros:espinhos": {
+      "conquista": "cavalos-50",
+      "preco": 15
+    },
+    "maos:garras": {
+      "conquista": "bispos-30",
+      "preco": 15
+    },
+    "peito:brasao": {
+      "conquista": "rainhas-25",
+      "preco": 20
+    },
+    "calca:saiote": {
+      "conquista": "peoes-150",
+      "preco": 15
+    },
+    "botas:esporas": {
+      "conquista": "roque-1",
+      "preco": 10
+    },
+    "arma:espada": {
+      "conquista": "peoes-50",
+      "preco": 20
+    },
+    "arma:machado": {
+      "conquista": "torres-60",
+      "preco": 30
+    },
+    "arma:maca": {
+      "conquista": "torres-180",
+      "preco": 45
+    },
+    "arma:cristal": {
+      "conquista": "bispos-60",
+      "preco": 30
+    },
+    "arma:cetro": {
+      "conquista": "rainhas-50",
+      "preco": 45
+    },
+    "arma:lua": {
+      "conquista": "rainhas-150",
+      "preco": 60
+    },
+    "cavalo:armadura": {
+      "conquista": "cavalos-100",
+      "preco": 40
+    },
+    "sela:guerra": {
+      "conquista": "cavalos-50",
+      "preco": 20
+    },
+    "cabresto:guerra": {
+      "conquista": "cavalos-250",
+      "preco": 30
+    }
+  }
+}

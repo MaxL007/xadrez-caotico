@@ -21,6 +21,8 @@ import {
 } from './conta'
 import type { Sala } from './sala'
 import aparencia from '../../src/conta/aparencia.json'
+import personalizacao from '../../src/conta/personalizacao.json'
+import conquistas from '../../src/chess/conquistas.json'
 
 export { Sala } from './sala'
 
@@ -48,6 +50,7 @@ const CONVITES_DE_AMIZADE_POR_HORA = 30
 const MAXIMO_FOTO_BASE64 = 60 * 1024
 const FOTOS_POR_HORA = 20
 const FOTO_NO_CACHE_S = 7 * 24 * 60 * 60
+const RECEBIMENTOS_POR_HORA = 30
 const ALFABETO_CODIGO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const TAMANHO_CODIGO = 8
 
@@ -187,6 +190,8 @@ async function excluirConta(pedido: Request, env: Ambiente) {
     env.DB.prepare('DELETE FROM registros WHERE usuario_id = ?1').bind(usuario.id),
     env.DB.prepare('DELETE FROM amizades WHERE solicitante_id = ?1 OR destinatario_id = ?1').bind(usuario.id),
     env.DB.prepare('DELETE FROM fotos WHERE usuario_id = ?1').bind(usuario.id),
+    env.DB.prepare('DELETE FROM conquistas WHERE usuario_id = ?1').bind(usuario.id),
+    env.DB.prepare('DELETE FROM itens WHERE usuario_id = ?1').bind(usuario.id),
     // na lista do adversário a partida continua, sem o nome de quem saiu
     env.DB.prepare("UPDATE salas SET brancas_nome = '—', brancas_id = NULL WHERE brancas_id = ?1").bind(usuario.id),
     env.DB.prepare("UPDATE salas SET pretas_nome = '—', pretas_id = NULL WHERE pretas_id = ?1").bind(usuario.id),
@@ -359,14 +364,76 @@ async function verPerfil(pedido: Request, env: Ambiente, idJogador: string) {
 // --- perfil ------------------------------------------------------------------------------
 async function lerMeuPerfil(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
-  const [eu, geral] = await Promise.all([
-    env.DB.prepare('SELECT id_jogador, nome, avatar, moldura, criado_em, tudo_liberado FROM usuarios WHERE id = ?1')
+  const [eu, geral, itens, recebidas] = await Promise.all([
+    env.DB.prepare('SELECT id_jogador, nome, avatar, moldura, criado_em, tudo_liberado, personalizacao FROM usuarios WHERE id = ?1')
       .bind(usuario.id)
-      .first<LinhaDeJogador & { criado_em: number; tudo_liberado: number }>(),
+      .first<LinhaDeJogador & { criado_em: number; tudo_liberado: number; personalizacao: string | null }>(),
     env.DB.prepare(RETROSPECTO).bind(usuario.id).first<Retrospecto>(),
+    env.DB.prepare('SELECT item FROM itens WHERE usuario_id = ?1').bind(usuario.id).all<{ item: string }>(),
+    env.DB.prepare('SELECT conquista FROM conquistas WHERE usuario_id = ?1').bind(usuario.id).all<{ conquista: string }>(),
   ])
   if (!eu) throw new Falha(401, 'sessao')
-  return responder({ ...jogadorPublico(eu), desde: eu.criado_em, geral: comDerrotas(geral), tudoLiberado: eu.tudo_liberado === 1 })
+  return responder({
+    ...jogadorPublico(eu),
+    desde: eu.criado_em,
+    geral: comDerrotas(geral),
+    tudoLiberado: eu.tudo_liberado === 1,
+    personalizacao: lerPersonalizacao(eu.personalizacao),
+    itens: itens.results.map((i) => i.item),
+    conquistas: recebidas.results.map((c) => c.conquista),
+  })
+}
+
+// --- personalização das peças ------------------------------------------------------------
+type Personalizacao = Record<string, Record<string, string>>
+
+const lerPersonalizacao = (texto: string | null): Personalizacao => {
+  try {
+    return JSON.parse(texto ?? '{}') as Personalizacao
+  } catch {
+    return {}
+  }
+}
+
+/** O que a parte aceita naquela peça; a primeira opção é a de sempre. Só o cavalo tem montaria, e ele não tem arma. */
+function opcoesDaParte(peca: string, parte: string): string[] | undefined {
+  if (!personalizacao.pecas.includes(peca)) return undefined
+  if (Object.hasOwn(personalizacao.corpo, parte)) return personalizacao.corpo[parte as keyof typeof personalizacao.corpo]
+  if (parte === 'arma') return personalizacao.armas[peca as keyof typeof personalizacao.armas]
+  if (peca === 'n' && Object.hasOwn(personalizacao.montaria, parte)) return personalizacao.montaria[parte as keyof typeof personalizacao.montaria]
+  return undefined
+}
+
+/** Equipamentos fora do básico: cada um libera com uma conquista ou com a compra na Loja. O que não está aqui é livre. */
+const ITENS = personalizacao.itens as Record<string, { conquista: string; preco: number }>
+
+/** Livre, liberado pela conquista ou comprado; a conta com tudo liberado usa tudo. Guarda só o que foge do padrão. */
+async function mudarPersonalizacao(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { peca, parte, opcao } = await lerCorpo<{ peca?: unknown; parte?: unknown; opcao?: unknown }>(pedido)
+  const opcoes = typeof peca === 'string' && typeof parte === 'string' ? opcoesDaParte(peca, parte) : undefined
+  if (!opcoes || typeof opcao !== 'string' || !opcoes.includes(opcao)) throw new Falha(422, 'opcao-invalida')
+  const conta = await env.DB.prepare('SELECT tudo_liberado, personalizacao FROM usuarios WHERE id = ?1')
+    .bind(usuario.id)
+    .first<{ tudo_liberado: number; personalizacao: string | null }>()
+  if (!conta) throw new Falha(401, 'sessao')
+  const item = Object.hasOwn(ITENS, `${parte}:${opcao}`) ? ITENS[`${parte}:${opcao}`] : undefined
+  if (item && conta.tudo_liberado !== 1) {
+    const [pelaConquista, comprado] = await Promise.all([
+      env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, item.conquista).first(),
+      env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${parte}:${opcao}`).first(),
+    ])
+    if (!pelaConquista && !comprado) throw new Falha(403, 'item-bloqueado')
+  }
+
+  const atual = lerPersonalizacao(conta.personalizacao)
+  const daPeca = { ...atual[peca as string] }
+  if (opcao === opcoes[0]) delete daPeca[parte as string]
+  else daPeca[parte as string] = opcao
+  if (Object.keys(daPeca).length > 0) atual[peca as string] = daPeca
+  else delete atual[peca as string]
+  await env.DB.prepare('UPDATE usuarios SET personalizacao = ?1 WHERE id = ?2').bind(JSON.stringify(atual), usuario.id).run()
+  return responder({ personalizacao: atual })
 }
 
 /** Escolher um avatar do jogo apaga a foto: ela não fica guardada à toa. As molduras, por enquanto, só pra conta com
@@ -413,6 +480,96 @@ async function verFoto(env: Ambiente, idJogador: string) {
   return new Response(deBase64(foto.dados), {
     headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': `public, max-age=${FOTO_NO_CACHE_S}`, 'X-Content-Type-Options': 'nosniff' },
   })
+}
+
+// --- loja ---------------------------------------------------------------------------------
+/** Compra um equipamento com óticoins. Quem já tem, pela compra ou pela conquista, não paga de novo. */
+async function comprarItem(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { item } = await lerCorpo<{ item?: unknown }>(pedido)
+  const daLoja = typeof item === 'string' && Object.hasOwn(ITENS, item) ? ITENS[item] : undefined
+  if (!daLoja) throw new Falha(422, 'item-invalido')
+  const jaTem = async () => {
+    const [pelaConquista, comprado] = await Promise.all([
+      env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, daLoja.conquista).first(),
+      env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, item).first(),
+    ])
+    return Boolean(pelaConquista || comprado)
+  }
+  if (await jaTem()) throw new Falha(409, 'ja-tem')
+
+  // o item só entra se havia saldo, e a moeda só sai se o item entrou: as duas coisas na mesma transação
+  const [entrada] = await env.DB.batch([
+    env.DB.prepare('INSERT INTO itens (usuario_id, item, comprado_em) SELECT ?1, ?2, ?3 WHERE (SELECT oticoins FROM usuarios WHERE id = ?1) >= ?4 ON CONFLICT DO NOTHING').bind(
+      usuario.id,
+      item,
+      Date.now(),
+      daLoja.preco,
+    ),
+    env.DB.prepare('UPDATE usuarios SET oticoins = oticoins - ?1 * changes() WHERE id = ?2').bind(daLoja.preco, usuario.id),
+  ])
+  if (!entrada.meta.changes) {
+    // ou faltou saldo, ou outro pedido comprou o mesmo item no meio tempo
+    const tem = await jaTem()
+    throw new Falha(tem ? 409 : 402, tem ? 'ja-tem' : 'saldo-insuficiente')
+  }
+  const [conta, itens] = await Promise.all([
+    env.DB.prepare('SELECT oticoins FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ oticoins: number }>(),
+    env.DB.prepare('SELECT item FROM itens WHERE usuario_id = ?1').bind(usuario.id).all<{ item: string }>(),
+  ])
+  return responder({ oticoins: conta?.oticoins ?? 0, itens: itens.results.map((i) => i.item) })
+}
+
+// --- conquistas e óticoins --------------------------------------------------------------
+const CONQUISTAS_POR_ID = new Map(conquistas.conquistas.map((c) => [c.id, c]))
+
+/** Amigos que a pessoa convidou e que aceitaram: é o que vale nas conquistas de convite. */
+const convitesAceitos = async (env: Ambiente, usuarioId: string) =>
+  (await env.DB.prepare("SELECT COUNT(*) AS n FROM amizades WHERE solicitante_id = ?1 AND status = 'aceita'").bind(usuarioId).first<{ n: number }>())?.n ?? 0
+
+async function lerConquistas(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const [conta, recebidas, convites] = await Promise.all([
+    env.DB.prepare('SELECT oticoins FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ oticoins: number }>(),
+    env.DB.prepare('SELECT conquista FROM conquistas WHERE usuario_id = ?1').bind(usuario.id).all<{ conquista: string }>(),
+    convitesAceitos(env, usuario.id),
+  ])
+  return responder({ oticoins: conta?.oticoins ?? 0, recebidas: recebidas.results.map((r) => r.conquista), convites })
+}
+
+/**
+ * O aparelho diz o que alcançou: capturas, xeques, roques e vitórias saem das partidas contra a máquina, jogadas nele,
+ * e refazer todas aqui não cabe no limite de processamento. Por isso cada conquista paga uma vez só: o máximo que uma
+ * conta junta é a soma do catálogo. Os convites, o servidor confere.
+ */
+async function receberConquistas(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { ids } = await lerCorpo<{ ids?: unknown }>(pedido)
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > CONQUISTAS_POR_ID.size) throw new Falha(422, 'conquistas-invalidas')
+  const pedidas = [...new Set(ids)].map((id) => (typeof id === 'string' ? CONQUISTAS_POR_ID.get(id) : undefined))
+  if (pedidas.some((c) => !c)) throw new Falha(422, 'conquistas-invalidas')
+  if ((await somarTentativa(env, `conquistas:${usuario.id}`, UMA_HORA)) > RECEBIMENTOS_POR_HORA) throw new Falha(429, 'muitas-tentativas')
+
+  const convites = await convitesAceitos(env, usuario.id)
+  const valem = pedidas.filter((c) => c && (c.medida !== 'convites' || convites >= c.meta)) as (typeof conquistas.conquistas)[number][]
+  let novas: string[] = []
+  if (valem.length > 0) {
+    const agora = Date.now()
+    // a moeda só entra se o recibo entrou: changes() é o que a instrução anterior gravou, na mesma transação
+    const resultados = await env.DB.batch(
+      valem.flatMap((c) => [
+        env.DB.prepare('INSERT INTO conquistas (usuario_id, conquista, recebida_em) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING').bind(usuario.id, c.id, agora),
+        env.DB.prepare('UPDATE usuarios SET oticoins = oticoins + ?1 * changes() WHERE id = ?2').bind(c.oticoins, usuario.id),
+      ]),
+    )
+    novas = valem.filter((_, i) => (resultados[i * 2].meta.changes ?? 0) > 0).map((c) => c.id)
+  }
+  // a lista inteira do que já foi pago: outro pedido pode ter pago alguma no meio tempo
+  const [conta, recebidas] = await Promise.all([
+    env.DB.prepare('SELECT oticoins FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ oticoins: number }>(),
+    env.DB.prepare('SELECT conquista FROM conquistas WHERE usuario_id = ?1').bind(usuario.id).all<{ conquista: string }>(),
+  ])
+  return responder({ oticoins: conta?.oticoins ?? 0, novas, recebidas: recebidas.results.map((r) => r.conquista) })
 }
 
 // --- salas -------------------------------------------------------------------------------
@@ -562,7 +719,11 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'GET' && caminho === '/perfil') return lerMeuPerfil(pedido, env)
   if (metodo === 'POST' && caminho === '/perfil/aparencia') return mudarAparencia(pedido, env)
   if (metodo === 'POST' && caminho === '/perfil/foto') return enviarFoto(pedido, env)
+  if (metodo === 'POST' && caminho === '/perfil/personalizacao') return mudarPersonalizacao(pedido, env)
   if (foto && metodo === 'GET') return verFoto(env, foto[1])
+  if (metodo === 'POST' && caminho === '/loja/comprar') return comprarItem(pedido, env)
+  if (metodo === 'GET' && caminho === '/conquistas') return lerConquistas(pedido, env)
+  if (metodo === 'POST' && caminho === '/conquistas/receber') return receberConquistas(pedido, env)
   if (metodo === 'GET' && caminho === '/amigos') return listarAmigos(pedido, env)
   if (metodo === 'POST' && caminho === '/amigos') return convidarAmigo(pedido, env)
   if (amigo && metodo === 'GET' && !amigo[2]) return verPerfil(pedido, env, amigo[1])

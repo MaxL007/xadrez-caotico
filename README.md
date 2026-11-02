@@ -2,7 +2,7 @@
 
 Xadrez 3D no navegador. As peças lutam de verdade a cada captura. Dá pra jogar contra a máquina, sem conta
 nenhuma, ou criar uma conta gratuita, montar o perfil com foto e moldura, adicionar amigos pelo nome ou pelo ID e
-chamá-los pra uma partida amistosa.
+chamá-los pra uma partida amistosa. As partidas contra a máquina rendem conquistas e óticoins, a moeda do jogo.
 
 ## Como funciona
 
@@ -33,6 +33,7 @@ node testes/testar-online.mjs      # dois navegadores virando amigos, jogando e 
 node testes/testar-promocao.mjs    # promoção, marreta e tabuleiro virando
 node testes/testar-volta-da-aba.mjs  # a tela volta inteira depois de perder o contexto gráfico
 node testes/fotos-online.mjs       # fotos das telas, com o 3D ligado
+node testes/fotos-personalizacao.mjs  # fotos de cada peça vestida, na vitrine da Personalização
 ```
 
 ## Publicação do servidor

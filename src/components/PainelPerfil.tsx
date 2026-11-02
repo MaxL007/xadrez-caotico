@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
 import type { ChaveTexto, Idioma, Traduzir } from '../chess/idiomas'
 import { AVATARES, MOLDURAS, urlDoAvatar } from '../conta/aparencia'
 import { prepararFoto } from '../conta/foto'
 import { enviarFoto, lerMeuPerfil, listarSalas, mudarAparencia, useSessao, type Jogador, type Retrospecto, type SalaNaLista } from '../db/servidor'
 import { resultadoDaPartida, type PartidaXadrez } from '../db/xadrezRepo'
-import { Avatar, MeuId, Placar } from './ElementosDoJogador'
+import type { SituacaoDasConquistas } from '../chess/conquistas'
+import { CONQUISTAS } from '../chess/conquistas'
+import { Avatar, MeuId, Oticoin, Placar } from './ElementosDoJogador'
+import { PainelConquistas } from './PainelConquistas'
 
 // Perfil de quem está jogando: quem é, a foto e a moldura, os números e o histórico das partidas.
 
@@ -150,6 +153,8 @@ export function PainelPerfil({
   onVerPartida,
   onAbrirSala,
   onEntrar,
+  conquistas,
+  children,
 }: {
   t: Traduzir
   idioma: Idioma
@@ -159,6 +164,10 @@ export function PainelPerfil({
   onVerPartida: (partida: PartidaXadrez) => void
   onAbrirSala: (codigo: string) => void
   onEntrar: () => void
+  /** O que já foi alcançado e o saldo de óticoins; null enquanto confere. */
+  conquistas: SituacaoDasConquistas | null
+  /** As configurações do jogo, que moram no fim do perfil. */
+  children: ReactNode
 }) {
   const sessao = useSessao()
   const token = sessao?.token
@@ -167,6 +176,7 @@ export function PainelPerfil({
   const [falhou, setFalhou] = useState(false)
   const [editando, setEditando] = useState(false)
   const [quantos, setQuantos] = useState(HISTORICO_POR_VEZ)
+  const [aba, setAba] = useState<'perfil' | 'conquistas' | 'configuracoes'>('perfil')
 
   useEffect(() => {
     if (!token) return
@@ -208,8 +218,50 @@ export function PainelPerfil({
     return itens.sort((a, b) => b.quando - a.quando)
   }, [partidas, salas, token, t, onVerPartida, onAbrirSala])
 
+  const feitas = conquistas ? CONQUISTAS.filter((c) => conquistas.contagem[c.medida] >= c.meta).length : 0
+  // o perfil em abas, pra não virar uma página só comprida: o perfil, as conquistas e as configurações
+  const abas = (
+    <div role="tablist" aria-label={t('menu.perfil')} className="grid grid-cols-3 gap-1">
+      {(
+        [
+          ['perfil', t('menu.perfil')],
+          ['conquistas', t('perfil.abaConquistas', { feitas, total: CONQUISTAS.length })],
+          ['configuracoes', t('menu.configuracoes')],
+        ] as const
+      ).map(([id, nome]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={aba === id}
+          onClick={() => setAba(id)}
+          className={`truncate rounded-lg border px-1 py-1.5 text-xs font-semibold transition ${aba === id ? 'border-[#e6c675] bg-[#c9a24a] text-[#1c120a]' : 'border-[#c9a24a]/40 text-[#f5e6c8] hover:bg-[#3a2614]'}`}
+        >
+          {nome}
+        </button>
+      ))}
+    </div>
+  )
+  if (aba === 'conquistas') {
+    return (
+      <div className="space-y-4">
+        {abas}
+        <PainelConquistas t={t} situacao={conquistas} />
+      </div>
+    )
+  }
+  if (aba === 'configuracoes') {
+    return (
+      <div className="space-y-2" data-configuracoes>
+        {abas}
+        <div>{children}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
+      {abas}
       {token && perfil ? (
         <>
           <div className="flex items-center gap-4 pt-2">
@@ -237,6 +289,13 @@ export function PainelPerfil({
         )
       )}
       {token && falhou && <p className="text-xs font-medium text-[#ffb4a8]">{t('conta.erroConexao')}</p>}
+
+      {conquistas?.oticoins != null && (
+        <p className="flex items-center gap-2 text-sm font-semibold" data-saldo-perfil>
+          <Oticoin tamanho={28} girando />
+          {t('perfil.oticoins', { n: conquistas.oticoins })}
+        </p>
+      )}
 
       <div className={secao}>
         <Placar t={t} retrospecto={total} />

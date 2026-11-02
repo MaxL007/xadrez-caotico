@@ -176,10 +176,20 @@ export const convidarAmigo = (busca: string) => pedir<Jogador & { status: 'pende
 export const removerAmigo = (idJogador: string) => pedir('POST', `/amigos/${idJogador}/remover`)
 export const verPerfil = (idJogador: string) => pedir<Perfil>('GET', `/amigos/${idJogador}`)
 
-/** `tudoLiberado`: a conta pode usar o que ainda não está aberto pra todos, como as molduras. */
-export const lerMeuPerfil = () => pedir<Omit<Perfil, 'entreVoces'> & { tudoLiberado: boolean }>('GET', '/perfil')
+/** O que cada peça veste: `{ p: { cabeca: 'elmo' } }`, só o que foge do padrão. */
+export type EscolhasDasPecas = Record<string, Record<string, string>>
+
+/** `tudoLiberado`: a conta pode usar o que ainda não está aberto pra todos, como as molduras e a personalização. */
+export const lerMeuPerfil = () =>
+  pedir<Omit<Perfil, 'entreVoces'> & { tudoLiberado: boolean; personalizacao: EscolhasDasPecas; itens: string[]; conquistas: string[] }>('GET', '/perfil')
+/** Compra um equipamento com óticoins; devolve o saldo e os itens comprados. */
+export const comprarNaLoja = (item: string) => pedir<{ oticoins: number; itens: string[] }>('POST', '/loja/comprar', { item })
+export const salvarEscolhaDaPeca = (peca: string, parte: string, opcao: string) =>
+  pedir<{ personalizacao: EscolhasDasPecas }>('POST', '/perfil/personalizacao', { peca, parte, opcao })
 export const mudarAparencia = (aparencia: { avatar?: string; moldura?: string }) => pedir('POST', '/perfil/aparencia', aparencia)
 export const enviarFoto = (foto: string) => pedir<{ avatar: string }>('POST', '/perfil/foto', { foto })
+export const lerConquistas = () => pedir<{ oticoins: number; recebidas: string[]; convites: number }>('GET', '/conquistas')
+export const receberConquistas = (ids: string[]) => pedir<{ oticoins: number; novas: string[]; recebidas: string[] }>('POST', '/conquistas/receber', { ids })
 export const enderecoDaFoto = (idJogador: string, versao: string) => `${API}/fotos/${idJogador}?v=${versao}`
 
 /** Confere de tempos em tempos, enquanto a aba está à vista: convites chegam sem precisar recarregar a página. */
