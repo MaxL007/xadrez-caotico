@@ -4,8 +4,9 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { ChaveTexto, Traduzir } from '../chess/idiomas'
 import type { VitrineDaPeca } from '../chess/equipamentos'
 import { CONQUISTAS } from '../chess/conquistas'
-import { escolhaDaParte, escolherOpcao, itemDaOpcao, opcaoLiberada, partesDaPeca, PECAS, usePersonalizacao, type ParteDaPeca, type Peca } from '../conta/personalizacao'
+import { acessoDaOpcao, escolhaDaParte, escolherOpcao, opcaoLiberada, partesDaPeca, PECAS, usePersonalizacao, type ParteDaPeca, type Peca } from '../conta/personalizacao'
 import { nomeDaConquista } from './PainelConquistas'
+import { criarExpositor, desenharNoExpositor, noSuporte } from './expositor'
 
 // Personalização, como no desenho do peão: a peça no meio e, dos lados, um quadrado por parte, ligado a ela por um
 // traço. O quadrado é um expositor: o equipamento daquela parte sozinho, girando sobre um pedestal, ou vazio. Na peça
@@ -36,17 +37,6 @@ function ossoDaParte(peca: Peca, parte: string): string {
 
 type MontarExpositor = (tipo: string, parte: string, opcao: string) => THREE.Object3D | null
 
-/** Centraliza o equipamento e deixa ele do mesmo tamanho em todo quadrado, num suporte que gira. */
-function noSuporte(equipamento: THREE.Object3D): THREE.Group {
-  const suporte = new THREE.Group()
-  suporte.add(equipamento)
-  const caixa = new THREE.Box3().setFromObject(equipamento)
-  const tamanho = caixa.getSize(new THREE.Vector3())
-  equipamento.position.sub(caixa.getCenter(new THREE.Vector3()))
-  suporte.scale.setScalar(1 / Math.max(tamanho.x, tamanho.y, tamanho.z, 0.001))
-  return suporte
-}
-
 const rotuloDaParte = (t: Traduzir, peca: Peca, parte: string) => t((parte === 'arma' ? `personalizacao.arma.${peca}` : `personalizacao.parte.${parte}`) as ChaveTexto)
 
 /** O corpo de cima vai à esquerda; o de baixo e a arma ou a montaria, à direita. */
@@ -58,8 +48,8 @@ const alturaDaVitrine = (peca: Peca) => {
   return Math.max(ALTURA_MINIMA, Math.max(4, partes - 4) * ALTURA_POR_QUADRADO + 22)
 }
 
-/** A arma sempre tem algo na mão; o resto só vai pro expositor quando foge do padrão. */
-const temAlgoVestido = (parte: ParteDaPeca, escolha: string) => parte.parte === 'arma' || escolha !== parte.opcoes[0]
+/** O expositor fica vazio quando a parte está no padrão (e a arma, quando a peça está sem arma). */
+const temAlgoVestido = (parte: ParteDaPeca, escolha: string) => escolha !== parte.opcoes[0]
 
 interface PropsDaVitrine {
   t: Traduzir
@@ -109,27 +99,8 @@ function Vitrine({ t, peca, escolhas, selecionada, onSelecionar, montarVitrine, 
     let vitrine: VitrineDaPeca | null = null
     let ossos: (THREE.Object3D | undefined)[] = []
 
-    // o expositor: uma cena à parte, com um pedestal de madeira e ouro, onde só o equipamento do quadrado aparece
-    const expositor = new THREE.Scene()
-    expositor.environment = reflexo.texture
-    expositor.environmentIntensity = 0.7
-    expositor.add(new THREE.HemisphereLight(0xfff6e6, 0x3a2a1a, 0.9))
-    const holofote = new THREE.DirectionalLight(0xfff1dc, 2.4)
-    holofote.position.set(1.5, 3, 3)
-    expositor.add(holofote)
-    const pedestal = new THREE.Group()
-    const madeira = new THREE.MeshStandardMaterial({ color: 0x4a2d15, roughness: 0.55, metalness: 0.1 })
-    const ouro = new THREE.MeshStandardMaterial({ color: 0xe0b93d, metalness: 1, roughness: 0.25 })
-    pedestal.add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.09, 32), madeira))
-    const aro = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.012, 8, 40), ouro)
-    aro.rotation.x = Math.PI / 2
-    aro.position.y = 0.045
-    pedestal.add(aro)
-    pedestal.position.y = -0.62
-    expositor.add(pedestal)
-    const cameraDoExpositor = new THREE.PerspectiveCamera(32, 1, 0.01, 20)
-    cameraDoExpositor.position.set(0, 0.3, 2.45)
-    cameraDoExpositor.lookAt(0, -0.12, 0)
+    // o expositor: uma cena à parte, com o pedestal, onde só o equipamento do quadrado aparece
+    const expositor = criarExpositor(reflexo.texture)
     let expositores: (THREE.Group | null)[] = []
 
     function enquadrar() {
@@ -166,9 +137,9 @@ function Vitrine({ t, peca, escolhas, selecionada, onSelecionar, montarVitrine, 
         cena.add(nova.grupo)
         enquadrar()
         ossos = partesDaPeca(tipo).map(({ parte }) => nova.grupo.getObjectByName(ossoDaParte(tipo, parte)))
-        for (const antigo of expositores) if (antigo) expositor.remove(antigo)
+        for (const antigo of expositores) if (antigo) expositor.cena.remove(antigo)
         expositores = equipamentos.map((equipamento) => (equipamento ? noSuporte(equipamento) : null))
-        for (const novo of expositores) if (novo) expositor.add(novo)
+        for (const novo of expositores) if (novo) expositor.cena.add(novo)
       },
     }
 
@@ -210,11 +181,8 @@ function Vitrine({ t, peca, escolhas, selecionada, onSelecionar, montarVitrine, 
         const x = quadrado.offsetLeft + (quadrado.offsetWidth - LADO_DO_QUADRADO) / 2 + 2
         const y = caixa!.clientHeight - quadrado.offsetTop - LADO_DO_QUADRADO + 2
         const lado = LADO_DO_QUADRADO - 4
-        for (const outro of expositores) if (outro) outro.visible = outro === equipamento
         equipamento.rotation.y = giroDoExpositor
-        renderer.setViewport(x, y, lado, lado)
-        renderer.setScissor(x, y, lado, lado)
-        renderer.render(expositor, cameraDoExpositor)
+        desenharNoExpositor(renderer, expositor, equipamento, expositores.filter((e): e is THREE.Group => e !== null), [x, y, lado, lado])
       })
       renderer.setScissorTest(false)
     }
@@ -375,9 +343,9 @@ export function PainelPersonalizacao({
         <p className="text-sm font-medium">{rotuloDaParte(t, peca, parte.parte)}</p>
         <div role="radiogroup" aria-label={rotuloDaParte(t, peca, parte.parte)} className="grid grid-cols-2 gap-2">
           {parte.opcoes.map((opcao) => {
-            const liberada = opcaoLiberada(personalizacao, parte.parte, opcao)
-            const item = itemDaOpcao(parte.parte, opcao)
-            const conquista = item && CONQUISTAS.find((c) => c.id === item.conquista)
+            const liberada = opcaoLiberada(personalizacao, peca, parte.parte, opcao)
+            const acesso = acessoDaOpcao(peca, parte.parte, opcao)
+            const conquista = acesso.tipo === 'conquista' ? CONQUISTAS.find((c) => c.id === acesso.conquista) : undefined
             return (
               <button
                 key={opcao}
@@ -397,8 +365,12 @@ export function PainelPersonalizacao({
                   {liberada ? '' : '🔒 '}
                   {t(`personalizacao.opcao.${opcao}` as ChaveTexto)}
                 </span>
-                {!liberada && personalizacao.conta && item && conquista && (
-                  <span className="mt-0.5 block text-[0.6rem] leading-snug text-[#c9b48a]">{t('personalizacao.desbloqueio', { conquista: nomeDaConquista(t, conquista), preco: item.preco })}</span>
+                {!liberada && personalizacao.conta && acesso.tipo !== 'livre' && (
+                  <span className="mt-0.5 block text-[0.6rem] leading-snug text-[#c9b48a]">
+                    {acesso.tipo === 'loja'
+                      ? t('personalizacao.naLoja', { preco: acesso.preco })
+                      : conquista && t('personalizacao.pelaConquista', { conquista: nomeDaConquista(t, conquista) })}
+                  </span>
                 )}
               </button>
             )

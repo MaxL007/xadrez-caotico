@@ -105,7 +105,23 @@ try {
   await esperarParar()
 
   // ===================== 2. marreta =====================
+  // a torre começa sem arma: captura com o golpe comum, e a marreta nem aparece
   const COM_TORRE = '1. a4 h5 2. a5 h4 3. a6 bxa6'
+  await h('carregarTeste', COM_TORRE, 'w')
+  await esperarParar()
+  await h('jogar', 'a1', 'a6')
+  let marretou = false
+  const jogou = Date.now()
+  while (Date.now() - jogou < 90000) {
+    if (await h('marretadas')) marretou = true
+    if (Date.now() - jogou > 1500 && !(await h('ocupado'))) break
+    await page.waitForTimeout(100)
+  }
+  await esperarParar()
+  conferir('sem arma, a torre captura com o golpe comum, sem marreta', !marretou && (await pecaEm('a6')) !== null && (await h('problemasDoTabuleiro')).length === 0)
+
+  // com a marreta liberada e vestida
+  await h('vestirParaTeste', { r: { arma: 'marreta' } })
   await h('carregarTeste', COM_TORRE, 'w')
   await esperarParar()
   await page.locator('canvas').first().scrollIntoViewIfNeeded()
@@ -139,6 +155,7 @@ try {
   await esperarParar()
   const sobrou = await h('problemasDoTabuleiro')
   conferir('outro jogo no meio do golpe: nada fica pela metade', (await h('marretadas')) === 0 && sobrou.length === 0, `marretadas ${await h('marretadas')} (saiu em ${demorou} ms); ${sobrou.join('; ')}`)
+  await h('vestirParaTeste', null)
 
   // ===================== 3. o tabuleiro gira pro lado de quem joga =====================
   const pararDeGirar = async () => {

@@ -399,13 +399,21 @@ const lerPersonalizacao = (texto: string | null): Personalizacao => {
 function opcoesDaParte(peca: string, parte: string): string[] | undefined {
   if (!personalizacao.pecas.includes(peca)) return undefined
   if (Object.hasOwn(personalizacao.corpo, parte)) return personalizacao.corpo[parte as keyof typeof personalizacao.corpo]
-  if (parte === 'arma') return personalizacao.armas[peca as keyof typeof personalizacao.armas]
+  if (parte === 'arma' && Object.hasOwn(personalizacao.armas, peca)) return personalizacao.armas[peca as keyof typeof personalizacao.armas]
   if (peca === 'n' && Object.hasOwn(personalizacao.montaria, parte)) return personalizacao.montaria[parte as keyof typeof personalizacao.montaria]
   return undefined
 }
 
-/** Equipamentos fora do básico: cada um libera com uma conquista ou com a compra na Loja. O que não está aqui é livre. */
-const ITENS = personalizacao.itens as Record<string, { conquista: string; preco: number }>
+/** Equipamentos que saem por conquista: valem pra toda peça que usa aquela parte. */
+const POR_CONQUISTA = personalizacao.itens as Record<string, { conquista: string }>
+/** O que cada peça compra na Loja, com o preço em óticoins: a compra vale só pra aquela peça. O que não está nem aqui
+ * nem em POR_CONQUISTA é livre. */
+const NA_LOJA = personalizacao.loja as Record<string, Record<string, number>>
+
+function precoNaLoja(peca: string, parte: string, opcao: string): number | undefined {
+  const daPeca = Object.hasOwn(NA_LOJA, peca) ? NA_LOJA[peca] : undefined
+  return daPeca && Object.hasOwn(daPeca, `${parte}:${opcao}`) ? daPeca[`${parte}:${opcao}`] : undefined
+}
 
 /** Livre, liberado pela conquista ou comprado; a conta com tudo liberado usa tudo. Guarda só o que foge do padrão. */
 async function mudarPersonalizacao(pedido: Request, env: Ambiente) {
@@ -417,13 +425,17 @@ async function mudarPersonalizacao(pedido: Request, env: Ambiente) {
     .bind(usuario.id)
     .first<{ tudo_liberado: number; personalizacao: string | null }>()
   if (!conta) throw new Falha(401, 'sessao')
-  const item = Object.hasOwn(ITENS, `${parte}:${opcao}`) ? ITENS[`${parte}:${opcao}`] : undefined
-  if (item && conta.tudo_liberado !== 1) {
-    const [pelaConquista, comprado] = await Promise.all([
-      env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, item.conquista).first(),
-      env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${parte}:${opcao}`).first(),
-    ])
-    if (!pelaConquista && !comprado) throw new Falha(403, 'item-bloqueado')
+  if (conta.tudo_liberado !== 1) {
+    const doCatalogo = `${parte}:${opcao}`
+    if (precoNaLoja(peca as string, parte as string, opcao) !== undefined) {
+      const comprado = await env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${peca}:${doCatalogo}`).first()
+      if (!comprado) throw new Falha(403, 'item-bloqueado')
+    } else if (Object.hasOwn(POR_CONQUISTA, doCatalogo)) {
+      const pelaConquista = await env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2')
+        .bind(usuario.id, POR_CONQUISTA[doCatalogo].conquista)
+        .first()
+      if (!pelaConquista) throw new Falha(403, 'item-bloqueado')
+    }
   }
 
   const atual = lerPersonalizacao(conta.personalizacao)
@@ -483,19 +495,15 @@ async function verFoto(env: Ambiente, idJogador: string) {
 }
 
 // --- loja ---------------------------------------------------------------------------------
-/** Compra um equipamento com óticoins. Quem já tem, pela compra ou pela conquista, não paga de novo. */
+/** Compra um equipamento de uma peça com óticoins: o item é 'peça:parte:opção', como 'p:cabeca:elmo'. Quem já tem não paga
+ * de novo. */
 async function comprarItem(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
   const { item } = await lerCorpo<{ item?: unknown }>(pedido)
-  const daLoja = typeof item === 'string' && Object.hasOwn(ITENS, item) ? ITENS[item] : undefined
-  if (!daLoja) throw new Falha(422, 'item-invalido')
-  const jaTem = async () => {
-    const [pelaConquista, comprado] = await Promise.all([
-      env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, daLoja.conquista).first(),
-      env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, item).first(),
-    ])
-    return Boolean(pelaConquista || comprado)
-  }
+  const [peca, parte, opcao] = typeof item === 'string' ? item.split(':') : []
+  const preco = peca && parte && opcao && item === `${peca}:${parte}:${opcao}` ? precoNaLoja(peca, parte, opcao) : undefined
+  if (preco === undefined) throw new Falha(422, 'item-invalido')
+  const jaTem = async () => Boolean(await env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, item).first())
   if (await jaTem()) throw new Falha(409, 'ja-tem')
 
   // o item só entra se havia saldo, e a moeda só sai se o item entrou: as duas coisas na mesma transação
@@ -504,9 +512,9 @@ async function comprarItem(pedido: Request, env: Ambiente) {
       usuario.id,
       item,
       Date.now(),
-      daLoja.preco,
+      preco,
     ),
-    env.DB.prepare('UPDATE usuarios SET oticoins = oticoins - ?1 * changes() WHERE id = ?2').bind(daLoja.preco, usuario.id),
+    env.DB.prepare('UPDATE usuarios SET oticoins = oticoins - ?1 * changes() WHERE id = ?2').bind(preco, usuario.id),
   ])
   if (!entrada.meta.changes) {
     // ou faltou saldo, ou outro pedido comprou o mesmo item no meio tempo

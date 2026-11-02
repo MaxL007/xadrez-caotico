@@ -62,13 +62,6 @@ function elmo(): Parte[] {
 
 const CABECA: Record<string, () => Parte[]> = {
   elmo,
-  chifres: () => [
-    ...elmo(),
-    ...porLado((s) => [
-      { geo: cone(0.02, 0.1), papel: 'coroa', osso: 'Head', pos: [s * 0.098, 0.762, 0], rot: [0, 0, -s * 0.75] },
-      { geo: cilindro(0.025, 0.025, 0.02, 10), papel: 'detalhe', osso: 'Head', pos: [s * 0.08, 0.745, 0], rot: [0, 0, -s * 0.75] },
-    ]),
-  ],
 }
 
 // --- ombros: trocam as ombreiras redondas do modelo -----------------------------------------------
@@ -120,7 +113,6 @@ function couraca(): Parte[] {
 }
 
 const PEITO: Record<string, () => Parte[]> = {
-  couraca,
   brasao: () => [
     ...couraca(),
     { geo: caixa(0.088, 0.092, 0.016, 0.008), papel: 'detalhe', osso: TRONCO, pos: [0, 0.522, 0.11], rot: [0.11, 0, 0] },
@@ -136,18 +128,6 @@ const CALCA: Record<string, () => Parte[]> = {
       { geo: esfera(0.032), papel: 'coroa', osso: `${lado}Leg`, pos: [s * 0.09, 0.178, 0.04] },
       { geo: caixa(0.07, 0.12, 0.03, 0.01), papel: 'detalhe', osso: `${lado}UpLeg`, pos: [s * 0.056, 0.265, 0.04] },
     ]),
-  saiote: () => {
-    const placas = Array.from({ length: 8 }, (_, i): Parte => {
-      const angulo = (i / 8) * Math.PI * 2
-      // pendura de leve pra fora, como as placas de um saiote de verdade
-      const matriz = new THREE.Matrix4()
-        .makeTranslation(Math.sin(angulo) * 0.1, 0.268, Math.cos(angulo) * 0.1)
-        .multiply(new THREE.Matrix4().makeRotationY(angulo))
-        .multiply(new THREE.Matrix4().makeRotationX(-0.2))
-      return { geo: caixa(0.07, 0.11, 0.012, 0.004), papel: i % 2 ? 'detalhe' : 'armadura', osso: 'Hips', pos: [0, 0, 0], matriz }
-    })
-    return [...placas, { geo: cilindro(0.09, 0.09, 0.03, 14), papel: 'coroa', osso: 'Hips', pos: [0, 0.33, 0] }]
-  },
 }
 
 // --- botas: o pé do modelo é o fim da perna, que segue o osso da perna -------------------------------
@@ -159,16 +139,7 @@ function ferro(): Parte[] {
   ])
 }
 
-const BOTAS: Record<string, () => Parte[]> = {
-  ferro,
-  esporas: () => [
-    ...ferro(),
-    ...porLado((s, lado) => [
-      { geo: cone(0.011, 0.045, 6), papel: 'coroa', osso: `${lado}Leg`, pos: [s * 0.09, 0.036, -0.066], rot: [-Math.PI / 2, 0, 0] },
-      { geo: cilindro(0.018, 0.018, 0.006, 10), papel: 'coroa', osso: `${lado}Leg`, pos: [s * 0.09, 0.036, -0.092], rot: [0, 0, Math.PI / 2] },
-    ]),
-  ],
-}
+const BOTAS: Record<string, () => Parte[]> = { ferro }
 
 // --- cajados do bispo, da rainha e do rei -----------------------------------------------------------
 // Ficam na mão como os do modelo: ao longo do braço aberto, com o enfeite do lado do corpo, que fica em
@@ -467,21 +438,19 @@ export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record
     if (parte === 'ombros') regras.push(ESCONDER.ombros)
   }
 
-  const arma = escolha('arma')
+  // sem escolha, a peça fica sem arma: as armas saem pelas conquistas. A katana e o cajado de sempre vêm no modelo
+  const arma = escolha('arma') ?? 'nenhuma'
   const maoDoCajado = MAO_DO_CAJADO[tipo]
-  if (maoDoCajado && arma && CAJADOS[arma]) {
-    partes.push(...CAJADOS[arma](...maoDoCajado))
+  if (maoDoCajado && arma !== 'cajado') {
     regras.push(ESCONDER.cajado)
+    if (CAJADOS[arma]) partes.push(...CAJADOS[arma](...maoDoCajado))
   }
-  if (tipo === 'r' && arma) grupo.userData.arma = arma
+  if (tipo === 'r') grupo.userData.arma = arma
 
-  let espadaNova = false
+  const semKatana = tipo === 'p' && arma !== 'katana'
   if (tipo === 'p' && arma === 'espada') {
     const linha = linhaDaBainha(malhas)
-    if (linha) {
-      partes.push(...espadaNaMao(), ...espadaNaBainha(linha.cabo, linha.ponta))
-      espadaNova = true
-    }
+    if (linha) partes.push(...espadaNaMao(), ...espadaNaBainha(linha.cabo, linha.ponta))
   }
 
   if (tipo === 'n') {
@@ -526,9 +495,9 @@ export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record
     if (camada === 'naBainha') naBainha.push(malha)
   }
 
-  // a katana some de vez: a espada nova toma o lugar dela no sacar e guardar
+  // a katana some de vez: a espada nova, se houver, toma o lugar dela no sacar e guardar
   const espada = grupo.userData.espadaRPG as EspadaDoPeao | undefined
-  if (espadaNova && espada) {
+  if (semKatana && espada) {
     for (const malha of malhas) {
       if (['EspadaLamina', 'EspadaCabo', 'CaboBainha', 'BainhaKatana'].includes(malha.userData.material as string)) malha.visible = false
     }

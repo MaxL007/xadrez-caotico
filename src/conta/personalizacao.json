@@ -10,8 +10,7 @@
   "corpo": {
     "cabeca": [
       "padrao",
-      "elmo",
-      "chifres"
+      "elmo"
     ],
     "ombros": [
       "padrao",
@@ -25,44 +24,46 @@
     ],
     "peito": [
       "padrao",
-      "couraca",
       "brasao"
     ],
     "calca": [
       "padrao",
-      "grevas",
-      "saiote"
+      "grevas"
     ],
     "botas": [
       "padrao",
-      "ferro",
-      "esporas"
+      "ferro"
     ]
   },
   "armas": {
     "p": [
+      "nenhuma",
       "katana",
       "espada"
     ],
     "r": [
+      "nenhuma",
       "marreta",
       "machado",
       "maca"
     ],
     "b": [
-      "padrao",
+      "nenhuma",
+      "cajado",
       "cristal",
       "cetro",
       "lua"
     ],
     "q": [
-      "padrao",
+      "nenhuma",
+      "cajado",
       "cristal",
       "cetro",
       "lua"
     ],
     "k": [
-      "padrao",
+      "nenhuma",
+      "cajado",
       "cristal",
       "cetro",
       "lua"
@@ -83,65 +84,97 @@
     ]
   },
   "itens": {
-    "cabeca:chifres": {
-      "conquista": "torres-30",
-      "preco": 15
-    },
-    "ombros:espinhos": {
-      "conquista": "cavalos-50",
-      "preco": 15
-    },
-    "maos:garras": {
-      "conquista": "bispos-30",
-      "preco": 15
-    },
-    "peito:brasao": {
-      "conquista": "rainhas-25",
-      "preco": 20
-    },
-    "calca:saiote": {
-      "conquista": "peoes-150",
-      "preco": 15
-    },
-    "botas:esporas": {
-      "conquista": "roque-1",
-      "preco": 10
+    "arma:katana": {
+      "conquista": "peoes-50"
     },
     "arma:espada": {
-      "conquista": "peoes-50",
-      "preco": 20
+      "conquista": "peoes-400"
+    },
+    "arma:marreta": {
+      "conquista": "torres-30"
     },
     "arma:machado": {
-      "conquista": "torres-60",
-      "preco": 30
+      "conquista": "torres-60"
     },
     "arma:maca": {
-      "conquista": "torres-180",
-      "preco": 45
+      "conquista": "torres-180"
+    },
+    "arma:cajado": {
+      "conquista": "bispos-30"
     },
     "arma:cristal": {
-      "conquista": "bispos-60",
-      "preco": 30
+      "conquista": "bispos-60"
     },
     "arma:cetro": {
-      "conquista": "rainhas-50",
-      "preco": 45
+      "conquista": "rainhas-50"
     },
     "arma:lua": {
-      "conquista": "rainhas-150",
-      "preco": 60
+      "conquista": "rainhas-150"
+    }
+  },
+  "loja": {
+    "p": {
+      "cabeca:elmo": 25,
+      "ombros:placas": 15,
+      "ombros:espinhos": 25,
+      "maos:manoplas": 10,
+      "maos:garras": 25,
+      "peito:brasao": 40,
+      "calca:grevas": 30,
+      "botas:ferro": 25
     },
-    "cavalo:armadura": {
-      "conquista": "cavalos-100",
-      "preco": 40
+    "r": {
+      "cabeca:elmo": 30,
+      "ombros:placas": 20,
+      "ombros:espinhos": 30,
+      "maos:manoplas": 15,
+      "maos:garras": 30,
+      "peito:brasao": 50,
+      "calca:grevas": 35,
+      "botas:ferro": 30
     },
-    "sela:guerra": {
-      "conquista": "cavalos-50",
-      "preco": 20
+    "n": {
+      "cabeca:elmo": 40,
+      "ombros:placas": 30,
+      "ombros:espinhos": 40,
+      "maos:manoplas": 15,
+      "maos:garras": 40,
+      "peito:brasao": 55,
+      "calca:grevas": 40,
+      "botas:ferro": 40,
+      "cavalo:armadura": 40,
+      "sela:guerra": 40,
+      "cabresto:guerra": 15
     },
-    "cabresto:guerra": {
-      "conquista": "cavalos-250",
-      "preco": 30
+    "b": {
+      "cabeca:elmo": 30,
+      "ombros:placas": 20,
+      "ombros:espinhos": 30,
+      "maos:manoplas": 15,
+      "maos:garras": 30,
+      "peito:brasao": 55,
+      "calca:grevas": 40,
+      "botas:ferro": 30
+    },
+    "q": {
+      "cabeca:elmo": 50,
+      "ombros:placas": 40,
+      "ombros:espinhos": 50,
+      "maos:manoplas": 25,
+      "maos:garras": 40,
+      "peito:brasao": 70,
+      "calca:grevas": 60,
+      "botas:ferro": 50
+    },
+    "k": {
+      "cabeca:elmo": 50,
+      "ombros:placas": 40,
+      "ombros:espinhos": 50,
+      "maos:manoplas": 25,
+      "maos:garras": 40,
+      "peito:brasao": 70,
+      "calca:grevas": 60,
+      "botas:ferro": 50
     }
   }
 }

@@ -793,6 +793,8 @@ function materiaisDaPeca(cor: 'w' | 'b'): MateriaisDaPeca {
 /** Quem joga veste as próprias peças com o que escolheu na Personalização; o adversário e a máquina, não. No menu,
  * as vestidas são as brancas. */
 let vestimenta: { cor: 'w' | 'b'; escolhas: Record<string, Record<string, string>> } = { cor: 'w', escolhas: {} }
+/** Só nos testes: veste as peças de quem joga sem passar pela conta. */
+let vestimentaDeTeste: Record<string, Record<string, string>> | null = null
 const assinaturaDaVestimenta = (tipo: string, cor: 'w' | 'b') => (cor === vestimenta.cor ? JSON.stringify(vestimenta.escolhas[tipo] ?? {}) : '{}')
 
 function criarEspadaDoPeao(): THREE.Group {
@@ -840,8 +842,9 @@ function buildPieceMesh(tipo: string, cor: 'w' | 'b'): THREE.Group {
   const modeloRPG = modelosRPG[tipo]
   if (modeloRPG) {
     const grupo = buildPecaRPG(modeloRPG, cor)
+    // toda peça passa por aqui: sem escolha (o adversário, a máquina), fica sem arma
     const escolhas = cor === vestimenta.cor ? vestimenta.escolhas[tipo] : undefined
-    if (escolhas) vestirPeca(grupo, tipo, escolhas, materiaisDaPeca(cor))
+    vestirPeca(grupo, tipo, escolhas ?? {}, materiaisDaPeca(cor))
     grupo.userData.vestimenta = assinaturaDaVestimenta(tipo, cor)
     grupo.userData.tipo = tipo
     grupo.userData.cor = cor
@@ -1952,6 +1955,8 @@ const geoGemaMarreta = new THREE.SphereGeometry(0.036, 16, 12)
 /** A marreta é da peça: os mesmos materiais do corpo (armadura), dos detalhes, do dourado da coroa e
  * do brilho, e as ameias da torre nas duas faces. Montada com a ponta do cabo na origem, o cabo pra
  * cima (+Y) e as faces da cabeça em Z: girando em X, ela desce batendo com a face. */
+const ARMAS_DA_TORRE = ['marreta', 'machado', 'maca']
+
 function criarMarreta(cor: 'w' | 'b', arma = 'marreta'): THREE.Group {
   const { armadura, detalhe, brilho } = materiaisPorFaccao[cor]
   const marreta = new THREE.Group()
@@ -2206,7 +2211,7 @@ function montarVitrine(tipo: string, escolhas: Record<string, string>): VitrineD
   vestirPeca(grupo, tipo, escolhas, materiaisDaPeca('w'))
   mostrarEspadaRPG(grupo, true)
   const mixer = grupo.userData.mixer as THREE.AnimationMixer
-  if (tipo !== 'r') return { grupo, atualizar: (delta) => mixer.update(delta) }
+  if (tipo !== 'r' || !ARMAS_DA_TORRE.includes(grupo.userData.arma as string)) return { grupo, atualizar: (delta) => mixer.update(delta) }
   const marreta = criarMarreta('w', grupo.userData.arma as string | undefined)
   marreta.position.set(0, POSE_MARRETA_GUARDA.y, POSE_MARRETA_GUARDA.z)
   marreta.rotation.x = POSE_MARRETA_GUARDA.angulo
@@ -2227,9 +2232,9 @@ function montarVitrine(tipo: string, escolhas: Record<string, string>): VitrineD
 /** O equipamento sozinho, pro expositor da Personalização: a marreta vem de criarMarreta, a katana e os cajados de
  * sempre são recortados do próprio modelo, e o resto é montado em código. */
 function montarExpositor(tipo: string, parte: string, opcao: string): THREE.Object3D | null {
-  if (parte === 'arma' && tipo === 'r') return criarMarreta('w', opcao)
+  if (parte === 'arma' && tipo === 'r') return ARMAS_DA_TORRE.includes(opcao) ? criarMarreta('w', opcao) : null
   const modelo = modelosRPG[tipo]
-  if (parte === 'arma' && modelo && (opcao === 'katana' || opcao === 'padrao')) {
+  if (parte === 'arma' && modelo && (opcao === 'katana' || opcao === 'cajado')) {
     const peca = buildPecaRPG(modelo, 'w')
     return tipo === 'p' ? katanaDoModelo(peca) : cajadoDoModelo(peca, tipo)
   }
@@ -3307,7 +3312,7 @@ export function ChessBoard3D() {
     // as peças usam geometria/material compartilhados (cache por tipo/cor), então aqui só
     // desmonta o grupo — nunca chama dispose(), senão quebraria as peças que ainda usam o cache
     function sincronizarPecas(recriar = false) {
-      vestimenta = { cor: corHumanoRef.current, escolhas: personalizacaoAtual().escolhas }
+      vestimenta = { cor: corHumanoRef.current, escolhas: vestimentaDeTeste ?? personalizacaoAtual().escolhas }
       if (recriar) {
         // inclusive as que estavam caindo/sumindo de uma captura em andamento
         piecesGroup.clear()
@@ -3845,7 +3850,8 @@ export function ChessBoard3D() {
           comemorarAliadas()
         }
         const golpear = () => {
-          if (tipoAtacante === 'r' && ehRPG) {
+          // a torre só bate de marreta (ou machado, ou maça) se tiver uma na mão; sem arma, golpeia como as outras
+          if (tipoAtacante === 'r' && ehRPG && ARMAS_DA_TORRE.includes(atacante.userData.arma as string)) {
             pararRPG(atacante)
             tocarSom('marreta:ergue')
             baterComMarreta(
@@ -4458,6 +4464,11 @@ export function ChessBoard3D() {
     if (import.meta.env.DEV) {
       ;(window as unknown as { __xadrez?: object }).__xadrez = {
         casaEmXeque: () => (xequeMesh.visible ? (xequeMesh.userData.casa as string) : null),
+        /** Veste as peças de quem joga como se fosse a escolha da conta. */
+        vestirParaTeste: (escolhas: Record<string, Record<string, string>> | null) => {
+          vestimentaDeTeste = escolhas
+          sincronizarPecas()
+        },
         /** O que as conquistas contam nessas partidas. */
         contarConquistas: (partidas: PartidaXadrez[]) => contarPartidas(partidas),
         /** As partes da personalização que a peça daquela casa está vestindo. */
@@ -4467,6 +4478,15 @@ export function ChessBoard3D() {
             if (filho.name.startsWith('vestimenta:')) nomes.push(filho.name)
           })
           return nomes
+        },
+        /** As partes da katana do modelo que aparecem na peça da casa. */
+        katanaDaCasa: (casa: string) => {
+          const partes: string[] = []
+          pieceMeshBySquare.get(casa)?.traverse((filho) => {
+            const material = filho.userData.material as string | undefined
+            if (filho.visible && material && ['EspadaLamina', 'EspadaCabo', 'CaboBainha', 'BainhaKatana'].includes(material)) partes.push(material)
+          })
+          return partes
         },
         distanciaCamera: () => camera.position.distanceTo(controls.target),
         /** Lance ou máquina ainda em andamento. */

@@ -22,14 +22,21 @@ export function partesDaPeca(peca: Peca): ParteDaPeca[] {
   return [...corpo, { parte: 'arma', opcoes: catalogo.armas[peca] }]
 }
 
-export interface ItemDaLoja {
-  conquista: string
-  preco: number
+/** Equipamentos que saem por conquista: valem pra toda peça que usa aquela parte. */
+const POR_CONQUISTA = catalogo.itens as Record<string, { conquista: string }>
+/** O que cada peça compra na Loja e o preço em óticoins: a compra vale só pra aquela peça. */
+export const NA_LOJA = catalogo.loja as Record<Peca, Record<string, number>>
+
+/** Como a opção se libera: é livre, sai por conquista ou se compra na Loja (o item é 'peça:parte:opção'). */
+export type Acesso = { tipo: 'livre' } | { tipo: 'conquista'; conquista: string } | { tipo: 'loja'; preco: number; item: string }
+
+export function acessoDaOpcao(peca: Peca, parte: string, opcao: string): Acesso {
+  const preco = NA_LOJA[peca]?.[`${parte}:${opcao}`]
+  if (preco !== undefined) return { tipo: 'loja', preco, item: `${peca}:${parte}:${opcao}` }
+  const porConquista = POR_CONQUISTA[`${parte}:${opcao}`]
+  if (porConquista) return { tipo: 'conquista', conquista: porConquista.conquista }
+  return { tipo: 'livre' }
 }
-export const ITENS = catalogo.itens as Record<string, ItemDaLoja>
-export const idDoItem = (parte: string, opcao: string) => `${parte}:${opcao}`
-/** Undefined quando a opção é do básico. */
-export const itemDaOpcao = (parte: string, opcao: string): ItemDaLoja | undefined => ITENS[idDoItem(parte, opcao)]
 
 const CHAVE = 'xadrezCaotico:personalizacao'
 
@@ -90,13 +97,20 @@ export function usePersonalizacao() {
   return useSyncExternalStore(ouvirPersonalizacao, personalizacaoAtual)
 }
 
-export const escolhaDaParte = (escolhas: EscolhasDasPecas, peca: Peca, { parte, opcoes }: ParteDaPeca) => escolhas[peca]?.[parte] ?? opcoes[0]
+/** O que a peça veste naquela parte; uma opção que saiu do catálogo volta a ser a de sempre. */
+export function escolhaDaParte(escolhas: EscolhasDasPecas, peca: Peca, { parte, opcoes }: ParteDaPeca) {
+  const escolhida = escolhas[peca]?.[parte]
+  return escolhida && opcoes.includes(escolhida) ? escolhida : opcoes[0]
+}
 
-/** A conta pode vestir essa opção: é do básico, veio de uma conquista ou foi comprada. */
-export function opcaoLiberada(atual: Estado, parte: string, opcao: string): boolean {
+/** A conta pode vestir essa opção na peça: é do básico, veio de uma conquista ou foi comprada pra ela. */
+export function opcaoLiberada(atual: Estado, peca: Peca, parte: string, opcao: string): boolean {
   if (!atual.conta) return false
-  const item = itemDaOpcao(parte, opcao)
-  return !item || atual.tudoLiberado || atual.itens.includes(idDoItem(parte, opcao)) || atual.conquistas.includes(item.conquista)
+  if (atual.tudoLiberado) return true
+  const acesso = acessoDaOpcao(peca, parte, opcao)
+  if (acesso.tipo === 'loja') return atual.itens.includes(acesso.item)
+  if (acesso.tipo === 'conquista') return atual.conquistas.includes(acesso.conquista)
+  return true
 }
 
 /** Traz da conta o que cada peça veste e o que ela pode usar. */

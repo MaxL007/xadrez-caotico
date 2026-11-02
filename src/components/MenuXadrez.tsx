@@ -325,7 +325,12 @@ export function MenuXadrez({
             )}
           </div>
           {painel === 'loja' && (
-            <PainelLoja t={t} saldo={conquistas?.oticoins ?? null} onSaldo={(oticoins) => setConquistas((atual) => atual && { ...atual, oticoins })} />
+            <PainelLoja
+              t={t}
+              saldo={conquistas?.oticoins ?? null}
+              onSaldo={(oticoins) => setConquistas((atual) => atual && { ...atual, oticoins })}
+              montarExpositor={montarExpositor}
+            />
           )}
           {painel === 'personalizacao' && <PainelPersonalizacao t={t} montarVitrine={montarVitrine} montarExpositor={montarExpositor} />}
           {painel === 'conta' && <PainelConta t={t} onConcluir={() => setPainel('inicio')} onCodigoNaTela={setMostrandoCodigo} />}

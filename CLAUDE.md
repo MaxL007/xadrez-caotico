@@ -57,14 +57,19 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 
 ## Personalização das peças
 
-- Aberta a toda conta, mas só o básico é livre: o padrão de cada parte e o primeiro equipamento de cada uma. O resto está
-  em `itens` do catálogo (`src/conta/personalizacao.json`, o mesmo que o Worker confere): cada item libera com uma
-  conquista ou com a compra na Loja (tabela `itens`). A conta com `tudo_liberado` usa tudo. A escolha fica em
-  `usuarios.personalizacao`, só o que foge do padrão.
+- Aberta a toda conta, mas só o padrão de cada parte é livre. Catálogo em `src/conta/personalizacao.json`, o mesmo que o
+  Worker confere: `loja` traz, por peça, o que se compra e o preço (tabela do usuário; a compra vale só pra aquela peça,
+  item `peça:parte:opção` na tabela `itens`); `itens` traz as armas, que saem só por conquista. A conta com
+  `tudo_liberado` usa tudo. A escolha fica em `usuarios.personalizacao`, só o que foge do padrão; opção que saiu do
+  catálogo é ignorada.
+- Toda peça começa sem arma, inclusive as da máquina e as do adversário: a katana, a espada, as armas da torre e os
+  cajados aparecem só em quem liberou e vestiu. Torre sem arma bate com o golpe comum (`ARMAS_DA_TORRE`).
 - A compra na Loja grava o item e tira as óticoins no mesmo lote: o item só entra se havia saldo (`INSERT ... SELECT ...
   WHERE oticoins >= preço`), e a moeda só sai se o item entrou (`changes()`).
-- Na aba, cada quadrado é um expositor: o equipamento sozinho, girando num pedestal, montado por `montarExpositor`
-  (ChessBoard3D) e `equipamentoSozinho` (equipamentos.ts). A katana e os cajados de sempre são recortados do modelo.
+- Na aba, cada quadrado é um expositor: o equipamento sozinho, girando num pedestal (`src/components/expositor.ts`),
+  montado por `montarExpositor` (ChessBoard3D) e `equipamentoSozinho` (equipamentos.ts). A katana e o cajado de sempre
+  são recortados do modelo. A Loja usa o mesmo expositor: um canvas por cima dela desenha cada cartão no seu retângulo,
+  e tocar no cartão abre o equipamento grande, pra girar.
 - `src/chess/equipamentos.ts` monta as armaduras e armas: cada parte vira malha com esqueleto presa ao osso que cobre,
   medida no corpo em pose de braços abertos (igual nas seis peças). O que a parte nova substitui (ombreira redonda,
   cajado, sela, katana) some do modelo pela regra de `ESCONDER`, numa cópia da geometria.
@@ -109,7 +114,7 @@ Todas usam o mesmo esqueleto Mixamo, construído por `scripts/blender/importar_a
 sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
 
 - Clipes: Parado, Gesto1/2, Walk, Attack1..N, Mortal, MortalTombo. Materiais: Corpo/Detalhe/Coroa/Brilho.
-- Só o peão tem katana. Rainha e rei batem com cetro e cajado. O bispo lança um orbe. O cavalo é um cavaleiro
+- Só o peão tem katana (e só depois de liberar). Rainha e rei batem com cetro e cajado. O bispo lança um orbe. O cavalo é um cavaleiro
   com ossos de cavalo e clipes procedurais. A torre usa a marreta feita em código (`posarComMarreta`, IK de dois
   ossos depois do mixer).
 - O AnimationMixer só reescreve um osso quando o valor do clipe muda: rotações somadas acumulam de quadro em

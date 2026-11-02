@@ -489,15 +489,16 @@ try {
   const vestiu = await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'elmo' })
   conferir('escolhe uma parte da peça', vestiu.status === 200 && vestiu.json?.personalizacao?.p?.cabeca === 'elmo', JSON.stringify(vestiu.json))
   await personalizar({ peca: 'p', parte: 'arma', opcao: 'espada' })
-  await personalizar({ peca: 'n', parte: 'sela', opcao: 'guerra' })
+  await personalizar({ peca: 'n', parte: 'botas', opcao: 'ferro' })
   await personalizar({ peca: 'k', parte: 'arma', opcao: 'lua' })
   const guardada = (await api('GET', '/perfil', { token: ana.token })).json?.personalizacao
-  conferir('guarda cada peça e soma as escolhas', guardada?.p?.cabeca === 'elmo' && guardada?.p?.arma === 'espada' && guardada?.n?.sela === 'guerra' && guardada?.k?.arma === 'lua', JSON.stringify(guardada))
+  conferir('guarda cada peça e soma as escolhas', guardada?.p?.cabeca === 'elmo' && guardada?.p?.arma === 'espada' && guardada?.n?.botas === 'ferro' && guardada?.k?.arma === 'lua', JSON.stringify(guardada))
   const semElmo = (await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'padrao' })).json?.personalizacao
   conferir('voltar ao padrão apaga a escolha e mantém as outras', semElmo?.p?.cabeca === undefined && semElmo?.p?.arma === 'espada', JSON.stringify(semElmo))
   const invalidas = [
     ['peça que não existe', { peca: 'x', parte: 'cabeca', opcao: 'elmo' }],
     ['sela fora do cavalo', { peca: 'p', parte: 'sela', opcao: 'guerra' }],
+    ['opção que saiu do catálogo', { peca: 'p', parte: 'cabeca', opcao: 'chifres' }],
     ['arma no cavalo', { peca: 'n', parte: 'arma', opcao: 'espada' }],
     ['arma de outra peça', { peca: 'p', parte: 'arma', opcao: 'machado' }],
     ['opção inventada', { peca: 'p', parte: 'cabeca', opcao: 'coroa-de-diamante' }],
@@ -506,10 +507,12 @@ try {
   ]
   for (const [nome, corpo] of invalidas) conferir(`personalização recusada: ${nome}`, (await personalizar(corpo)).status === 422)
   conferir('sem sessão não personaliza', (await api('POST', '/perfil/personalizacao', { corpo: { peca: 'p', parte: 'cabeca', opcao: 'elmo' } })).status === 401)
-  const comum = await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'elmo' }, bia.token)
-  conferir('conta comum veste o básico', comum.status === 200 && comum.json?.personalizacao?.p?.cabeca === 'elmo', String(comum.status))
-  const fora = await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'chifres' }, bia.token)
+  const comum = await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'padrao' }, bia.token)
+  conferir('conta comum veste o básico', comum.status === 200 && (await personalizar({ peca: 'p', parte: 'arma', opcao: 'nenhuma' }, bia.token)).status === 200, String(comum.status))
+  const fora = await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'elmo' }, bia.token)
   conferir('o resto fica trancado até a conquista ou a compra, mesmo chamando o servidor direto', fora.status === 403 && fora.json?.erro === 'item-bloqueado')
+  conferir('a peça começa sem arma: a katana também fica trancada', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'katana' }, bia.token)).status === 403)
+  conferir('e o cajado do bispo', (await personalizar({ peca: 'b', parte: 'arma', opcao: 'cajado' }, bia.token)).status === 403)
 
   // =================== conquistas e óticoins ===================
   const receber = (ids, token = ana.token) => api('POST', '/conquistas/receber', { token, corpo: { ids } })
@@ -535,25 +538,38 @@ try {
 
   // =================== loja e equipamentos liberados ===================
   const comprar = (item, token = bia.token) => api('POST', '/loja/comprar', { token, corpo: { item } })
-  conferir('sem óticoins não compra', (await comprar('cabeca:chifres')).status === 402)
-  conferir('item inventado não está à venda', (await comprar('cabeca:coroa')).status === 422)
-  conferir('item do básico não está à venda', (await comprar('cabeca:elmo')).status === 422)
+  conferir('sem óticoins não compra', (await comprar('p:ombros:placas')).status === 402)
+  for (const [nome, item] of [
+    ['item inventado', 'p:cabeca:coroa'],
+    ['item sem a peça', 'cabeca:elmo'],
+    ['peça que não existe', 'x:cabeca:elmo'],
+    ['a opção padrão', 'p:cabeca:padrao'],
+    ['arma, que sai pela conquista', 'r:arma:marreta'],
+    ['opção que saiu do catálogo', 'p:cabeca:chifres'],
+    ['sela fora do cavalo', 'p:sela:guerra'],
+  ]) {
+    conferir(`fora da loja: ${nome}`, (await comprar(item)).status === 422)
+  }
   await receber(['peoes-50', 'peoes-150', 'torres-60'], bia.token)
-  const compra = await comprar('cabeca:chifres')
-  conferir('compra o equipamento com óticoins', compra.status === 200 && compra.json?.oticoins === 0 && compra.json?.itens?.includes('cabeca:chifres'), JSON.stringify(compra.json))
-  conferir('comprado, pode vestir', (await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'chifres' }, bia.token)).status === 200)
-  conferir('não compra duas vezes', (await comprar('cabeca:chifres')).status === 409)
-  conferir('as esporas ficam trancadas antes do primeiro roque', (await personalizar({ peca: 'p', parte: 'botas', opcao: 'esporas' }, bia.token)).status === 403)
-  await receber(['roque-1'], bia.token)
-  conferir('a conquista do roque libera as esporas sem comprar', (await personalizar({ peca: 'p', parte: 'botas', opcao: 'esporas' }, bia.token)).status === 200)
-  conferir('o que já veio da conquista não precisa ser comprado', (await comprar('botas:esporas')).status === 409)
-  conferir('a espada também veio da conquista dos 50 peões', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'espada' }, bia.token)).status === 200)
+  const compra = await comprar('p:ombros:placas')
+  conferir('compra as placas do peão pelo preço da tabela', compra.status === 200 && compra.json?.oticoins === 0 && compra.json?.itens?.includes('p:ombros:placas'), JSON.stringify(compra.json))
+  conferir('comprado, o peão pode vestir', (await personalizar({ peca: 'p', parte: 'ombros', opcao: 'placas' }, bia.token)).status === 200)
+  conferir('a compra vale só pra aquela peça', (await personalizar({ peca: 'r', parte: 'ombros', opcao: 'placas' }, bia.token)).status === 403)
+  conferir('não compra duas vezes', (await comprar('p:ombros:placas')).status === 409)
+  conferir('a conquista dos 50 peões libera a katana', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'katana' }, bia.token)).status === 200)
+  conferir('a espada espera os 400 peões', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'espada' }, bia.token)).status === 403)
+  conferir('a marreta fica trancada antes das 30 torres', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'marreta' }, bia.token)).status === 403)
+  await receber(['torres-30'], bia.token)
+  conferir('as 30 torres liberam a marreta', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'marreta' }, bia.token)).status === 200)
+  conferir('e as 60 torres, o machado', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'machado' }, bia.token)).status === 200)
+  conferir('a sela de guerra só se veste comprada', (await personalizar({ peca: 'n', parte: 'sela', opcao: 'guerra' }, bia.token)).status === 403)
+  conferir('o cabresto de guerra está à venda pelo preço da tabela', (await comprar('n:cabresto:guerra')).status === 402)
   const doPerfil = (await api('GET', '/perfil', { token: bia.token })).json
-  conferir('o perfil traz os itens comprados e as conquistas', doPerfil.itens?.includes('cabeca:chifres') && doPerfil.conquistas?.includes('roque-1'), JSON.stringify({ itens: doPerfil.itens, conquistas: doPerfil.conquistas }))
+  conferir('o perfil traz os itens comprados e as conquistas', doPerfil.itens?.includes('p:ombros:placas') && doPerfil.conquistas?.includes('torres-30'), JSON.stringify({ itens: doPerfil.itens, conquistas: doPerfil.conquistas }))
   const saldoAntes = (await api('GET', '/conquistas', { token: ana.token })).json.oticoins
-  const juntas = await Promise.all([comprar('calca:saiote', ana.token), comprar('calca:saiote', ana.token), comprar('calca:saiote', ana.token)])
+  const juntas = await Promise.all([comprar('p:maos:manoplas', ana.token), comprar('p:maos:manoplas', ana.token), comprar('p:maos:manoplas', ana.token)])
   const saldoDepois = (await api('GET', '/conquistas', { token: ana.token })).json.oticoins
-  conferir('três compras do mesmo item ao mesmo tempo cobram uma vez só', juntas.filter((r) => r.status === 200).length === 1 && saldoDepois === saldoAntes - 15, `${saldoAntes} → ${saldoDepois}`)
+  conferir('três compras do mesmo item ao mesmo tempo cobram uma vez só', juntas.filter((r) => r.status === 200).length === 1 && saldoDepois === saldoAntes - 10, `${saldoAntes} → ${saldoDepois}`)
 
   let limitouFoto = false
   for (let i = 0; i < 25 && !limitouFoto; i++) limitouFoto = (await mandarFoto(jpeg.toString('base64'), bia.token)).status === 429
