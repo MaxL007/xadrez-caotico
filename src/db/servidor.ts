@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { derivarChave } from '../conta/senha'
 
 // Conversa com o servidor público do jogo, na Cloudflare. Quem não entrou numa conta joga contra a
@@ -7,6 +7,7 @@ import { derivarChave } from '../conta/senha'
 const API = (import.meta.env.VITE_API_URL as string | undefined) ?? ''
 const CHAVE_SESSAO = 'xadrezCaotico:sessao'
 const TEMPO_LIMITE_MS = 8000
+const CONFERIR_AMIGOS_MS = 15000
 
 export interface Usuario {
   id: string
@@ -138,19 +139,80 @@ export async function enviarLote(registros: { store: string; dados: unknown }[])
   await pedir('POST', '/registros', { registros })
 }
 
+// --- amigos ------------------------------------------------------------------------------
+export interface Jogador {
+  idJogador: string
+  nome: string
+}
+
+export interface Amigos {
+  meuId: string
+  amigos: Jogador[]
+  convitesRecebidos: Jogador[]
+  convitesEnviados: Jogador[]
+  partidasRecebidas: (Jogador & { codigo: string; minhaCor: 'w' | 'b' })[]
+}
+
+export interface Retrospecto {
+  partidas: number
+  vitorias: number
+  derrotas: number
+  empates: number
+}
+
+export interface Perfil extends Jogador {
+  desde: number
+  geral: Retrospecto
+  entreVoces: Retrospecto
+}
+
+export const listarAmigos = () => pedir<Amigos>('GET', '/amigos')
+/** Aceitar um convite recebido é convidar de volta. */
+export const convidarAmigo = (busca: string) => pedir<Jogador & { status: 'pendente' | 'aceita' }>('POST', '/amigos', { busca })
+/** Serve também pra recusar um convite recebido e cancelar um enviado. */
+export const removerAmigo = (idJogador: string) => pedir('POST', `/amigos/${idJogador}/remover`)
+export const verPerfil = (idJogador: string) => pedir<Perfil>('GET', `/amigos/${idJogador}`)
+
+/** Confere de tempos em tempos, enquanto a aba está à vista: convites chegam sem precisar recarregar a página. */
+export function useAmigos() {
+  const token = useSessao()?.token
+  const [lido, setLido] = useState<{ token: string; amigos: Amigos } | null>(null)
+
+  const atualizar = useCallback(async () => {
+    if (!token) return
+    try {
+      setLido({ token, amigos: await listarAmigos() })
+    } catch (erro) {
+      if (erro instanceof ErroDoServidor && erro.status === 401) esquecerSessao()
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    void atualizar()
+    const relogio = setInterval(() => {
+      if (!document.hidden) void atualizar()
+    }, CONFERIR_AMIGOS_MS)
+    return () => clearInterval(relogio)
+  }, [token, atualizar])
+
+  return { amigos: lido && lido.token === token ? lido.amigos : null, atualizar }
+}
+
 // --- salas -------------------------------------------------------------------------------
 export interface SalaNaLista {
   codigo: string
   minhaCor: 'w' | 'b'
   brancas: string | null
   pretas: string | null
-  status: 'aguardando' | 'andamento' | 'fim' | 'expirada'
+  status: 'aguardando' | 'andamento' | 'fim' | 'expirada' | 'recusada'
   resultado: 'brancas' | 'pretas' | 'empate' | null
   motivo: string | null
   atualizadaEm: number
 }
 
-export const criarSala = (cor: 'w' | 'b' | 'sorteio') => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', '/salas', { cor })
+export const criarSala = (cor: 'w' | 'b' | 'sorteio', amigo: string) => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', '/salas', { cor, amigo })
 export const entrarEmSala = (codigo: string) => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', `/salas/${codigo}/entrar`)
+export const recusarSala = (codigo: string) => pedir('POST', `/salas/${codigo}/recusar`)
 export const listarSalas = () => pedir<{ salas: SalaNaLista[] }>('GET', '/salas')
 export const enderecoDaSala = (codigo: string) => `${API.replace(/^http/, 'ws')}/salas/${codigo}/ws`

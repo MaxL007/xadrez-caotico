@@ -6,7 +6,7 @@ import { enderecoDaSala } from '../db/servidor'
 const BATIMENTO_MS = 30000
 const ESPERA_MAXIMA_MS = 15000
 
-export type StatusDaSala = 'aguardando' | 'andamento' | 'fim' | 'expirada'
+export type StatusDaSala = 'aguardando' | 'andamento' | 'fim' | 'expirada' | 'recusada'
 export type ResultadoDaSala = 'brancas' | 'pretas' | 'empate'
 
 export interface EstadoDaSala {

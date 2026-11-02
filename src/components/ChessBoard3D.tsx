@@ -16,7 +16,7 @@ import { tradutor, type ChaveTexto, type Traduzir } from '../chess/idiomas'
 import { MenuXadrez } from './MenuXadrez'
 import { listPartidas, novaPartida, salvarPartida, type PartidaXadrez } from '../db/xadrezRepo'
 import { ouvirDados } from '../db/db'
-import { sessaoAtual, useSessao } from '../db/servidor'
+import { recusarSala, sessaoAtual, useSessao } from '../db/servidor'
 import { abrirConexaoDaSala, type ConexaoDaSala, type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../online/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../db/xadrezAprendizadoRepo'
 
@@ -2856,8 +2856,6 @@ export function ChessBoard3D() {
   const salaRef = useRef<{ conexao: ConexaoDaSala; estado: EstadoDaSala | null } | null>(null)
   const [sala, setSala] = useState<EstadoDaSala | null>(null)
   const [conectadoNaSala, setConectadoNaSala] = useState(true)
-  const [conviteCopiado, setConviteCopiado] = useState(false)
-  const [codigoDoConvite, setCodigoDoConvite] = useState(() => new URLSearchParams(location.search).get('sala')?.toUpperCase() ?? null)
   // a tela inicial por cima do tabuleiro, ou a partida
   const [tela, setTela] = useState<'menu' | 'jogo'>('menu')
   const [statusTexto, setStatusTexto] = useState('')
@@ -3400,15 +3398,17 @@ export function ChessBoard3D() {
       const partidaDoJogador = partidaAtualRef.current
       const salaAtual = salaRef.current?.estado ?? null
       const adversario = (salaAtual?.minhaCor === 'w' ? salaAtual.pretas : salaAtual?.brancas) ?? ''
-      setPodeDesistir(!!partidaDoJogador && partidaDoJogador.status !== 'FINALIZADA' && !chess.isGameOver() && salaAtual?.status !== 'aguardando')
+      setPodeDesistir(!!partidaDoJogador && partidaDoJogador.status !== 'FINALIZADA' && !chess.isGameOver() && (!salaAtual || salaAtual.status === 'andamento'))
       const corHumano = corHumanoRef.current
       const t = tRef.current
       const nomeCor = (c: 'w' | 'b') => t(c === 'w' ? 'status.brancas' : 'status.pretas')
       const venciASala = !!salaAtual?.resultado && (salaAtual.resultado === 'brancas') === (salaAtual.minhaCor === 'w')
       if (salaAtual?.status === 'aguardando') {
-        setStatusTexto(t('online.aguardando'))
+        setStatusTexto(t('online.aguardando', { nome: adversario }))
       } else if (salaAtual?.status === 'expirada') {
         setStatusTexto(t('online.expirou'))
+      } else if (salaAtual?.status === 'recusada') {
+        setStatusTexto(t('online.recusou', { nome: adversario }))
       } else if (salaAtual?.motivo === 'desistencia') {
         setStatusTexto(t(venciASala ? 'online.adversarioDesistiu' : 'online.voceDesistiu', { nome: adversario }))
       } else if (salaAtual?.motivo === 'tempo') {
@@ -4458,15 +4458,12 @@ export function ChessBoard3D() {
     salaRef.current = null
     setSala(null)
     setConectadoNaSala(true)
-    setConviteCopiado(false)
   }
 
   function abrirSala(codigo: string) {
     const token = sessaoAtual()?.token
     if (!token) return
     fecharSala()
-    setCodigoDoConvite(null)
-    if (location.search.includes('sala=')) history.replaceState(null, '', location.pathname)
 
     const conexao = abrirConexaoDaSala(codigo, token, {
       estado(estado) {
@@ -4477,7 +4474,7 @@ export function ChessBoard3D() {
         } else {
           atual.estado = estado
           const agora = Date.now()
-          const encerrada = estado.status === 'fim' || estado.status === 'expirada'
+          const encerrada = estado.status === 'fim' || estado.status === 'expirada' || estado.status === 'recusada'
           partidaAtualRef.current = { id: `sala-${codigo}`, jogador, corJogador: estado.minhaCor, pgn: '', status: encerrada ? 'FINALIZADA' : 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora }
           acoesRef.current?.carregarSala()
         }
@@ -4507,10 +4504,10 @@ export function ChessBoard3D() {
     salaRef.current = { conexao, estado: null }
   }
 
-  const linkDoConvite = sala ? `${location.origin}${import.meta.env.BASE_URL}?sala=${sala.codigo}` : ''
-
-  function copiarConvite() {
-    void navigator.clipboard?.writeText(linkDoConvite).then(() => setConviteCopiado(true))
+  // espera o servidor: a lista de partidas do menu não pode trazer de volta o convite cancelado
+  async function handleCancelarConvite() {
+    if (sala) await recusarSala(sala.codigo).catch(() => {})
+    handleMenu()
   }
 
   function handleNovoJogo() {
@@ -4642,21 +4639,11 @@ export function ChessBoard3D() {
       )}
 
       {sala?.status === 'aguardando' && (
-        <div className="space-y-2 rounded-xl border border-ink-200 bg-ink-50 p-3" role="status" data-convite>
-          <p className="text-sm font-semibold text-ink-900">{t('online.convite')}</p>
-          <p className="break-all font-mono text-xs text-ink-700">{linkDoConvite}</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" onClick={copiarConvite}>
-              {t(conviteCopiado ? 'conta.copiado' : 'online.copiarConvite')}
-            </Button>
-            {'share' in navigator && (
-              <Button variant="secondary" onClick={() => void navigator.share({ title: t('titulo'), url: linkDoConvite }).catch(() => {})}>
-                {t('online.compartilhar')}
-              </Button>
-            )}
-            <span className="font-mono text-xs text-ink-600">{t('online.codigoDaPartida', { codigo: sala.codigo })}</span>
-          </div>
-          <p className="text-xs text-ink-400">{t('online.conviteDica')}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-200 bg-ink-50 p-3" role="status" data-convite>
+          <p className="text-xs text-ink-600">{t('online.esperaDica')}</p>
+          <Button variant="secondary" onClick={handleCancelarConvite}>
+            {t('online.cancelarConvite')}
+          </Button>
         </div>
       )}
 
@@ -4721,7 +4708,6 @@ export function ChessBoard3D() {
             telaCheia={telaCheia}
             onExpandir={entrarEmTelaCheia}
             onTelaNormal={sairDaTelaCheia}
-            codigoDoConvite={codigoDoConvite}
             onAbrirSala={abrirSala}
             onImportou={atualizarListaDePartidas}
           />

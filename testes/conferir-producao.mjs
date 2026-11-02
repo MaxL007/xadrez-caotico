@@ -95,9 +95,14 @@ try {
   conferir('lê os 200 de volta', (await api('GET', '/registros', { token: a.token })).json?.registros?.length === 200)
   conferir('outra pessoa não vê', (await api('GET', '/registros', { token: b.token })).json?.registros?.length === 0)
 
-  const sala = (await api('POST', '/salas', { token: a.token, corpo: { cor: 'w' } })).json
+  const convite = await api('POST', '/amigos', { token: a.token, corpo: { busca: contas[1] } })
+  const aceite = await api('POST', '/amigos', { token: b.token, corpo: { busca: contas[0] } })
+  conferir('convida pelo nome e o outro aceita', convite.json?.status === 'pendente' && aceite.json?.status === 'aceita', aceite.texto.slice(0, 100))
+  const idB = (await api('GET', '/amigos', { token: b.token })).json?.meuId
+  conferir('a lista de amigos responde', (await api('GET', '/amigos', { token: a.token })).json?.amigos?.[0]?.idJogador === idB, idB)
+  const sala = (await api('POST', '/salas', { token: a.token, corpo: { cor: 'w', amigo: idB } })).json
   const entrou = await api('POST', `/salas/${sala.codigo}/entrar`, { token: b.token })
-  conferir('cria a sala e o convidado entra', entrou.json?.cor === 'b', sala.codigo)
+  conferir('chama pra partida amistosa e o amigo aceita', entrou.json?.cor === 'b', sala.codigo)
   const brancas = await conectar(sala.codigo, a.token)
   const pretas = await conectar(sala.codigo, b.token)
   await brancas.esperar((m) => m.t === 'estado')
@@ -134,6 +139,7 @@ try {
   }
   const lista = (await api('GET', '/salas', { token: b.token })).json?.salas ?? []
   conferir('a partida aparece encerrada na lista', lista.some((s) => s.codigo === sala.codigo && s.status === 'fim'))
+  conferir('o perfil conta a partida', (await api('GET', `/amigos/${idB}`, { token: a.token })).json?.geral?.partidas === 1)
   brancas.fechar()
   pretas.fechar()
 } catch (erro) {

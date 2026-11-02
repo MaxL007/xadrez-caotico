@@ -1,5 +1,5 @@
-// Testa o jogo de verdade: dois navegadores, duas contas e uma partida inteira entre elas, do convite
-// ao xeque-mate, mais a queda de conexão, e o jogador sem conta salvando no aparelho e levando as
+// Testa o jogo de verdade: dois navegadores, duas contas e uma partida inteira entre elas, do convite de
+// amizade ao xeque-mate, mais a queda de conexão, e o jogador sem conta salvando no aparelho e levando as
 // partidas pra conta ao entrar.
 // Precisa do simulador (worker: npm run dev) e do site (npm run dev) no ar.
 import { createRequire } from 'module'
@@ -41,6 +41,8 @@ async function novoJogador(viewport = { width: 1100, height: 760 }) {
 }
 
 const botao = (page, nome) => page.locator('main').getByRole('button', { name: nome, exact: true })
+// o botão ganha um número quando há novidade
+const abrirAmigos = (page) => page.locator('main').getByRole('button', { name: /^Amigos/ }).click()
 const foto = (page, nome) => page.screenshot({ path: path.join(FOTOS, nome), timeout: 150000 }).catch((e) => console.log(`  (sem foto ${nome}: ${e.message.split('\n')[0]})`))
 const h = (page, fn, ...args) => page.evaluate(({ fn, args }) => window.__xadrez[fn](...args), { fn, args })
 
@@ -118,30 +120,74 @@ try {
   conferir('em outro aparelho, a mesma conta traz a partida', true)
   await anaOutro.context().close()
 
-  // =================== convite ===================
-  await botao(ana, 'Jogar com um amigo').click()
-  await botao(ana, 'Brancas').click()
-  await ana.locator('[data-convite]').waitFor()
-  await foto(ana, 'online-convite.png')
-  const link = await ana.locator('[data-convite] .font-mono').first().innerText()
-  conferir('o convite vira um link', link.includes('?sala='), link)
-  conferir('sem adversário a partida espera', (await ana.getByText('Esperando o adversário entrar…').count()) === 1)
-  await h(ana, 'jogar', 'f2', 'f3')
-  await ana.waitForTimeout(600)
-  conferir('sem adversário não dá pra mexer', (await h(ana, 'fen')).startsWith('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP'))
+  // =================== amigos ===================
+  await abrirAmigos(ana)
+  await ana.locator('[data-meu-id]').waitFor()
+  const idAna = await ana.locator('[data-meu-id]').innerText()
+  conferir('Jogar com um amigo virou Amigos, com o ID do jogador', /^[A-Z2-9]{8}$/.test(idAna), idAna)
+  await ana.getByText('Você ainda não tem amigos').waitFor()
+  conferir('sem amigos, a lista explica como convidar', true)
 
   const bia = await novoJogador({ width: 390, height: 844 })
-  await abrir(bia, link)
-  await bia.getByText('Você recebeu um convite').waitFor()
-  conferir('quem abre o link sem conta recebe o convite e pode criar conta ali', true)
+  await abrir(bia)
+  await abrirAmigos(bia)
+  await bia.getByText('Entre na sua conta para adicionar amigos').waitFor()
+  conferir('sem conta, Amigos pede a conta e deixa criar ali', true)
   await criarConta(bia, nomeBia, 'senha-da-bia')
+  await bia.locator('[data-meu-id]').waitFor()
+  const idBia = await bia.locator('[data-meu-id]').innerText()
+  conferir('cada um tem o seu ID', idBia !== idAna, idBia)
+
+  await ana.getByPlaceholder('Nome ou ID do jogador').fill('Ninguem Com Esse Nome')
+  await botao(ana, 'Convidar').click()
+  await ana.getByText('Não achei nenhum jogador com esse nome ou ID.').waitFor()
+  conferir('nome errado avisa', true)
+  await ana.getByPlaceholder('Nome ou ID do jogador').fill(nomeBia)
+  await botao(ana, 'Convidar').click()
+  await ana.getByText(`Convite enviado para ${nomeBia}.`).waitFor()
+  await ana.getByText('Convites enviados').waitFor()
+  conferir('convida pelo nome', true)
+
+  await bia.getByText('Convites de amizade').waitFor({ timeout: 30000 })
+  conferir('o convite chega sozinho, sem recarregar a página', true)
+  await botao(bia, 'Aceitar').click()
+  await bia.locator(`[data-amigo="${idAna}"]`).waitFor()
+  await ana.locator(`[data-amigo="${idBia}"]`).waitFor({ timeout: 30000 })
+  conferir('aceitou: os dois se veem na lista de amigos', true)
+  conferir('cada amigo tem partida amistosa e ver perfil', (await botao(ana, 'Partida amistosa').count()) === 1 && (await botao(ana, 'Ver perfil').count()) === 1)
+
+  await botao(ana, 'Ver perfil').click()
+  await ana.locator('[data-perfil]').getByText(`ID: ${idBia}`).waitFor()
+  await ana.locator('[data-perfil]').getByText('Joga desde').waitFor()
+  conferir('o perfil mostra o ID e desde quando joga', true)
+  await foto(ana, 'amigos-perfil.png')
+  await botao(ana, 'Voltar para os amigos').click()
+  await foto(ana, 'amigos-lista.png')
+
+  // =================== partida amistosa ===================
+  await botao(ana, 'Partida amistosa').click()
+  await botao(ana, 'Brancas').click()
+  await ana.locator('[data-convite]').waitFor()
+  await foto(ana, 'amigos-esperando.png')
+  await ana.getByText(`Esperando ${nomeBia} aceitar a partida…`).first().waitFor()
+  conferir('quem chamou espera o amigo aceitar', true)
+  await h(ana, 'jogar', 'f2', 'f3')
+  await ana.waitForTimeout(600)
+  conferir('sem o amigo não dá pra mexer', (await h(ana, 'fen')).startsWith('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP'))
+
+  await botao(bia, 'Voltar').click()
+  await bia.locator('main').getByRole('button', { name: 'Amigos 1', exact: true }).waitFor({ timeout: 30000 })
+  conferir('a chamada aparece como novidade no botão Amigos', true)
+  await abrirAmigos(bia)
+  await bia.getByText(`${nomeAna} chamou você`).waitFor()
+  await foto(bia, 'amigos-chamada-celular.png')
+  await botao(bia, 'Jogar').click()
   await bia.waitForFunction(() => window.__xadrez.sala()?.status === 'andamento', null, { timeout: 30000, polling: 300 })
-  conferir('criou a conta e já caiu na partida, com a outra cor', (await h(bia, 'sala')).minhaCor === 'b')
-  conferir('o link sai da barra de endereço', !bia.url().includes('sala='), bia.url())
+  conferir('aceitou e já caiu na partida, com a outra cor', (await h(bia, 'sala')).minhaCor === 'b')
   await ana.waitForFunction(() => window.__xadrez.sala()?.status === 'andamento', null, { timeout: 30000, polling: 300 })
-  conferir('a criadora vê o adversário chegar', (await h(ana, 'sala')).pretas === nomeBia)
+  conferir('quem chamou vê o amigo chegar', (await h(ana, 'sala')).pretas === nomeBia)
   await ana.locator('[data-convite]').waitFor({ state: 'detached' })
-  conferir('o convite some quando a partida começa', true)
+  conferir('a espera some quando a partida começa', true)
   await bia.waitForFunction(() => !window.__xadrez.camera().girando, null, { timeout: 30000, polling: 300 })
   conferir('o tabuleiro de quem joga de pretas fica virado', (await h(bia, 'camera')).z < 0, String((await h(bia, 'camera')).z))
 
@@ -183,17 +229,22 @@ try {
   conferir('os dois tabuleiros terminam iguais', (await h(ana, 'fen')) === (await h(bia, 'fen')), await h(ana, 'fen'))
   await foto(bia, 'online-fim.png')
 
-  // nova partida: desistência e lista
+  // nova partida, chamada pelo perfil: desistência e lista
   await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
-  await botao(ana, 'Jogar com um amigo').click()
+  await abrirAmigos(ana)
   await ana.getByText('Minhas partidas').waitFor()
   conferir('a partida aparece na lista, com o resultado', (await ana.getByText('Perdeu', { exact: true }).count()) === 1)
+  await botao(ana, 'Ver perfil').click()
+  await ana.getByText(`Entre vocês: você 0, ${nomeBia} 1, empates 0`).waitFor()
+  conferir('o perfil mostra o placar entre os dois', true)
+  await botao(ana, 'Partida amistosa').click()
   await botao(ana, 'Pretas').click()
   await ana.locator('[data-convite]').waitFor()
-  const link2 = await ana.locator('[data-convite] .font-mono').first().innerText()
-  await bia.goto(link2, { waitUntil: 'load' })
+  await bia.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+  await abrirAmigos(bia)
+  await botao(bia, 'Jogar').click({ timeout: 30000 })
   await bia.waitForFunction(() => window.__xadrez?.sala?.()?.status === 'andamento', null, { timeout: 60000, polling: 300 })
-  conferir('quem já tem conta entra direto pelo link', (await h(bia, 'sala')).minhaCor === 'w')
+  conferir('do perfil também dá pra chamar, e o amigo pega a outra cor', (await h(bia, 'sala')).minhaCor === 'w')
   await ana.waitForFunction(() => window.__xadrez.sala()?.status === 'andamento', null, { timeout: 30000, polling: 300 })
   await ana.locator('main').getByRole('button', { name: 'Desistir', exact: true }).first().click()
   await ana.locator('main').getByRole('button', { name: 'Sim, desistir', exact: true }).first().click()
@@ -202,14 +253,48 @@ try {
   await ana.getByText('Você desistiu').first().waitFor({ timeout: 30000 })
   conferir('desistir: os dois veem o fim', true)
 
-  // contra a máquina continua igual, depois de uma partida online
+  // recusar e cancelar
   await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+  await abrirAmigos(ana)
+  await botao(ana, 'Partida amistosa').click()
+  await botao(ana, 'Brancas').click()
+  await ana.locator('[data-convite]').waitFor()
+  await bia.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+  await abrirAmigos(bia)
+  await botao(bia, 'Recusar').click({ timeout: 30000 })
+  await ana.getByText(`${nomeBia} não aceitou a partida.`).first().waitFor({ timeout: 30000 })
+  conferir('recusar avisa quem chamou, na hora', (await ana.locator('[data-convite]').count()) === 0)
+  conferir('recusada, a partida não oferece desistir', (await ana.locator('main').getByRole('button', { name: 'Desistir', exact: true }).count()) === 0)
+  await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+  await abrirAmigos(ana)
+  await botao(ana, 'Partida amistosa').click()
+  await botao(ana, 'Sortear').click()
+  await ana.locator('[data-convite]').waitFor()
+  await botao(ana, 'Cancelar convite').click()
+  await abrirAmigos(ana)
+  await ana.locator('[data-meu-id]').waitFor()
+  await ana.waitForTimeout(1000)
+  conferir('cancelar volta ao menu e a partida some', (await ana.getByText('Aguardando', { exact: true }).count()) === 0)
+  await botao(ana, 'Voltar').click()
+
+  // contra a máquina continua igual, depois de uma partida online
   await botao(ana, 'Continuar partida').click()
   await ana.waitForFunction(() => window.__xadrez.sala() === null && !window.__xadrez.ocupado(), null, { polling: 300 })
   conferir('a partida contra a máquina continua de onde parou', (await h(ana, 'fen')).includes('4P3'), await h(ana, 'fen'))
 
-  // sair da conta
+  // remover um amigo pede confirmação
   await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()
+  await abrirAmigos(ana)
+  await botao(ana, 'Ver perfil').click()
+  await botao(ana, 'Remover amigo').click()
+  await ana.waitForTimeout(300)
+  conferir('o primeiro clique em remover não remove', (await botao(ana, 'Clique de novo para remover').count()) === 1)
+  await botao(ana, 'Clique de novo para remover').click()
+  await ana.getByText('Você ainda não tem amigos').waitFor()
+  conferir('removeu: o amigo sai da lista', true)
+  await botao(ana, 'Voltar').click()
+
+  // sair da conta
   await botao(ana, nomeAna).click()
   await botao(ana, 'Sair da conta').click()
   await botao(ana, 'Voltar').click()

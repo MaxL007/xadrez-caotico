@@ -1,5 +1,5 @@
 // Confere o site publicado de verdade, falando com o servidor publicado: um navegador cria uma conta pela
-// tela e convida; um cliente aqui no Node faz o papel do adversário. Sem placa de vídeo só cabe um 3D por
+// tela e chama um amigo; um cliente aqui no Node faz o papel do amigo. Sem placa de vídeo só cabe um 3D por
 // vez, e no site publicado não há os ganchos de teste: os cliques são nas casas, pela posição na tela.
 // As duas contas são apagadas no fim. Cada rodada gasta 2 das 5 contas por hora do endereço.
 import crypto from 'crypto'
@@ -61,7 +61,7 @@ try {
   await page.getByRole('heading', { name: 'Xadrez Caótico' }).waitFor()
   await page.waitForTimeout(2500)
 
-  await botao('Jogar com um amigo').click()
+  await page.locator('main').getByRole('button', { name: /^Amigos/ }).click()
   await page.getByRole('button', { name: 'Criar uma conta' }).click()
   await page.getByLabel('Nome de jogador').fill(nomeTela)
   await page.getByLabel('Senha', { exact: true }).fill(SENHA)
@@ -74,14 +74,20 @@ try {
   conferir('nesse momento não dá pra sair da tela do código', (await botao('Voltar').count()) === 0)
   await botao('Já guardei').click()
 
+  await page.locator('[data-meu-id]').waitFor()
+  rival = (await api('POST', '/contas', null, { nome: nomeRival, chave: derivar(nomeRival, 1000) })).json
+  conferir('o amigo convida pelo nome', (await api('POST', '/amigos', rival.token, { busca: nomeTela })).json?.status === 'pendente')
+  await botao('Aceitar').click({ timeout: 60000 })
+  await page.locator('[data-amigo]').waitFor()
+  conferir('o convite chega à tela e vira amizade', true)
+
+  await botao('Partida amistosa').click()
   await botao('Brancas').click()
   await page.locator('[data-convite]').waitFor()
-  const link = await page.locator('[data-convite] .font-mono').first().innerText()
-  const codigo = link.split('sala=')[1]
-  conferir('o convite usa o endereço público', link.startsWith(SITE), link)
-
-  rival = (await api('POST', '/contas', null, { nome: nomeRival, chave: derivar(nomeRival, 1000) })).json
-  conferir('o adversário entra com o código', (await api('POST', `/salas/${codigo}/entrar`, rival.token)).json?.cor === 'b')
+  const chamada = (await api('GET', '/amigos', rival.token)).json?.partidasRecebidas?.[0]
+  const codigo = chamada?.codigo
+  conferir('o amigo recebe a partida amistosa', chamada?.nome === nomeTela, codigo)
+  conferir('o amigo aceita', (await api('POST', `/salas/${codigo}/entrar`, rival.token)).json?.cor === 'b')
   await page.getByText(`Contra ${nomeRival}`).first().waitFor()
   conferir('a tela mostra contra quem é a partida', true)
 

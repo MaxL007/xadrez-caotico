@@ -15,7 +15,7 @@ const CONVITE_VALE_MS = 3 * 24 * 60 * 60 * 1000
 const TAMANHO_MAXIMO_MENSAGEM = 512
 
 type Cor = 'w' | 'b'
-type Status = 'aguardando' | 'andamento' | 'fim' | 'expirada'
+type Status = 'aguardando' | 'andamento' | 'fim' | 'expirada' | 'recusada'
 type Resultado = 'brancas' | 'pretas' | 'empate'
 type Motivo = 'xeque-mate' | 'afogamento' | 'repeticao' | 'material' | 'cinquenta-lances' | 'desistencia' | 'tempo'
 
@@ -46,12 +46,12 @@ export class Sala extends DurableObject<Ambiente> {
     await this.ctx.storage.put('estado', estado)
   }
 
-  async criar(codigo: string, criador: Usuario, corDoCriador: Cor) {
+  async criar(codigo: string, brancas: Usuario, pretas: Usuario, corDoCriador: Cor) {
     const fen = new Chess().fen()
     await this.gravar({
       codigo,
-      brancas: corDoCriador === 'w' ? criador : null,
-      pretas: corDoCriador === 'b' ? criador : null,
+      brancas,
+      pretas,
       corDoCriador,
       fen,
       lances: [],
@@ -61,26 +61,32 @@ export class Sala extends DurableObject<Ambiente> {
     await this.ctx.storage.setAlarm(Date.now() + CONVITE_VALE_MS)
   }
 
-  /** Quem criou ou já entrou continua no lugar; outra pessoa só senta se ainda houver lugar. */
+  /** Os dois lugares têm dono desde a criação: a partida começa quando o amigo chamado aceita. */
   async entrar(usuario: Usuario): Promise<{ ok: true; cor: Cor } | { ok: false; erro: 'sala-nao-existe' | 'sala-cheia' | 'sala-encerrada' }> {
     const estado = await this.ler()
     if (!estado) return { ok: false, erro: 'sala-nao-existe' }
     const cor = this.corDe(estado, usuario.id)
-    if (cor) return { ok: true, cor }
-    if (estado.status === 'expirada' || estado.status === 'fim') return { ok: false, erro: 'sala-encerrada' }
-    if (estado.status !== 'aguardando') return { ok: false, erro: 'sala-cheia' }
+    if (!cor) return { ok: false, erro: 'sala-cheia' }
+    if (cor === estado.corDoCriador || estado.status === 'andamento' || estado.status === 'fim') return { ok: true, cor }
+    if (estado.status !== 'aguardando') return { ok: false, erro: 'sala-encerrada' }
 
-    const corNova: Cor = estado.brancas ? 'b' : 'w'
-    if (corNova === 'w') estado.brancas = usuario
-    else estado.pretas = usuario
     estado.status = 'andamento'
     await this.gravar(estado)
     await this.ctx.storage.setAlarm(Date.now() + SEM_LANCE_LIMITE_MS)
-    await this.env.DB.prepare('UPDATE salas SET brancas_id = ?1, pretas_id = ?2, brancas_nome = ?3, pretas_nome = ?4, status = ?5, atualizada_em = ?6 WHERE codigo = ?7')
-      .bind(estado.brancas!.id, estado.pretas!.id, estado.brancas!.nome, estado.pretas!.nome, 'andamento', Date.now(), estado.codigo)
-      .run()
+    await this.env.DB.prepare('UPDATE salas SET status = ?1, atualizada_em = ?2 WHERE codigo = ?3').bind('andamento', Date.now(), estado.codigo).run()
     this.avisarTodos(estado)
-    return { ok: true, cor: corNova }
+    return { ok: true, cor }
+  }
+
+  /** O amigo chamado recusou ou quem chamou desistiu de esperar. */
+  async recusar(usuarioId: string) {
+    const estado = await this.ler()
+    if (!estado || estado.status !== 'aguardando' || !this.corDe(estado, usuarioId)) return
+    estado.status = 'recusada'
+    await this.gravar(estado)
+    await this.ctx.storage.deleteAlarm()
+    await this.env.DB.prepare('UPDATE salas SET status = ?1, atualizada_em = ?2 WHERE codigo = ?3').bind('recusada', Date.now(), estado.codigo).run()
+    this.avisarTodos(estado)
   }
 
   /** Só chega aqui depois de o Worker conferir a sessão: ele manda quem é em X-Usuario-Id. */

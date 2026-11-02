@@ -1,7 +1,7 @@
 # Xadrez Caótico
 
 Xadrez 3D no navegador. As peças lutam de verdade a cada captura. Dá pra jogar contra a máquina, sem conta
-nenhuma, ou criar uma conta gratuita e convidar outra pessoa por um link.
+nenhuma, ou criar uma conta gratuita, adicionar amigos pelo nome ou pelo ID e chamá-los pra uma partida amistosa.
 
 ## Como funciona
 
@@ -27,8 +27,8 @@ npm run dev                                                                     
 Testes, com os dois no ar:
 
 ```sh
-node testes/testar-servidor.mjs    # contas, dados de cada pessoa e tentativas de trapaça
-node testes/testar-online.mjs      # dois navegadores jogando uma partida inteira
+node testes/testar-servidor.mjs    # contas, amigos, dados de cada pessoa e tentativas de trapaça
+node testes/testar-online.mjs      # dois navegadores virando amigos e jogando uma partida inteira
 node testes/testar-promocao.mjs    # promoção, marreta e tabuleiro virando
 node testes/fotos-online.mjs       # fotos das telas, com o 3D ligado
 ```

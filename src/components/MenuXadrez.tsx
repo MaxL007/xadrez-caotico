@@ -2,11 +2,11 @@ import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import type { ConfigXadrez, QualidadeXadrez } from '../chess/configXadrez'
 import { IDIOMAS, type ChaveTexto, type Idioma, type Traduzir } from '../chess/idiomas'
 import { useResumoDaNuvem } from '../db/db'
-import { useSessao } from '../db/servidor'
+import { useAmigos, useSessao } from '../db/servidor'
 import { importarPartidas } from '../db/xadrezRepo'
 import { useFecharComEsc } from '../teclaEsc'
+import { PainelAmigos } from './PainelAmigos'
 import { PainelConta } from './PainelConta'
-import { PainelOnline } from './PainelOnline'
 
 // -----------------------------------------------------------------------
 // Tela inicial do jogo: fica por cima do próprio tabuleiro 3D, visto de lado
@@ -157,13 +157,13 @@ function Configuracoes({ t, config, onConfig, onImportou }: { t: Traduzir; confi
   )
 }
 
-type Painel = 'inicio' | 'loja' | 'config' | 'conta' | 'online'
+type Painel = 'inicio' | 'loja' | 'config' | 'conta' | 'amigos'
 
 const TITULOS: Record<Exclude<Painel, 'inicio'>, ChaveTexto> = {
   loja: 'menu.loja',
   config: 'menu.configuracoes',
   conta: 'conta.titulo',
-  online: 'menu.online',
+  amigos: 'menu.amigos',
 }
 
 export function MenuXadrez({
@@ -176,7 +176,6 @@ export function MenuXadrez({
   telaCheia,
   onExpandir,
   onTelaNormal,
-  codigoDoConvite,
   onAbrirSala,
   onImportou,
 }: {
@@ -190,13 +189,13 @@ export function MenuXadrez({
   telaCheia: boolean
   onExpandir: () => void
   onTelaNormal: () => void
-  /** Veio por um link de convite: a tela já abre na partida contra outra pessoa. */
-  codigoDoConvite: string | null
   onAbrirSala: (codigo: string) => void
   onImportou: () => void
 }) {
   const sessao = useSessao()
-  const [painel, setPainel] = useState<Painel>(codigoDoConvite ? 'online' : 'inicio')
+  const { amigos, atualizar: atualizarAmigos } = useAmigos()
+  const novidades = (amigos?.convitesRecebidos.length ?? 0) + (amigos?.partidasRecebidas.length ?? 0)
+  const [painel, setPainel] = useState<Painel>('inicio')
   // o código de recuperação só aparece uma vez: nem Esc nem Voltar fecham essa tela sem querer
   const [mostrandoCodigo, setMostrandoCodigo] = useState(false)
   useFecharComEsc(() => setPainel('inicio'), painel !== 'inicio' && !mostrandoCodigo)
@@ -223,8 +222,8 @@ export function MenuXadrez({
           <button type="button" className={`${botaoMenu} ${temPartida ? '' : 'col-span-2 sm:col-span-1'}`} onClick={onNovoJogo}>
             {t('menu.novoJogo')}
           </button>
-          <button type="button" className={`${botaoMenu} col-span-2 sm:col-span-1`} onClick={() => setPainel('online')}>
-            {t('menu.online')}
+          <button type="button" className={`${botaoMenu} col-span-2 sm:col-span-1`} onClick={() => setPainel('amigos')}>
+            {t('menu.amigos')} {novidades > 0 && <span className="ml-1 rounded-full bg-[#c9a24a] px-1.5 text-xs font-bold text-[#1c120a]">{novidades}</span>}
           </button>
           <button type="button" className={botaoMenu} onClick={() => setPainel('loja')}>
             {t('menu.loja')}
@@ -258,7 +257,7 @@ export function MenuXadrez({
           {painel === 'loja' && <p className="py-6 text-center text-sm text-[#c9b48a]">{t('loja.vazia')}</p>}
           {painel === 'config' && <Configuracoes t={t} config={config} onConfig={onConfig} onImportou={onImportou} />}
           {painel === 'conta' && <PainelConta t={t} onConcluir={() => setPainel('inicio')} onCodigoNaTela={setMostrandoCodigo} />}
-          {painel === 'online' && <PainelOnline t={t} codigoDoConvite={codigoDoConvite} onAbrirSala={onAbrirSala} onCodigoNaTela={setMostrandoCodigo} />}
+          {painel === 'amigos' && <PainelAmigos t={t} idioma={config.idioma} amigos={amigos} onAtualizar={atualizarAmigos} onAbrirSala={onAbrirSala} onCodigoNaTela={setMostrandoCodigo} />}
         </section>
       )}
     </div>

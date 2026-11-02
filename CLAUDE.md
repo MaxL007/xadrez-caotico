@@ -17,12 +17,22 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 - `src/components/ChessBoard3D.tsx`: o jogo inteiro em three.js, num `useEffect` grande. `geracao` invalida
   animações de um tabuleiro antigo; `acoesRef` é a ponte do React pra cena; `window.__xadrez` tem os ganchos
   dos testes, só em desenvolvimento.
-- `src/components/MenuXadrez.tsx`, `PainelConta.tsx`, `PainelOnline.tsx`: tela inicial, conta e convite.
+- `src/components/MenuXadrez.tsx`, `PainelConta.tsx`, `PainelAmigos.tsx`: tela inicial, conta e amigos.
 - `src/db/db.ts`: salva primeiro no aparelho (IndexedDB, um banco por conta) e depois na nuvem, com fila.
 - `src/db/servidor.ts`: chamadas ao servidor e sessão.
 - `src/online/salaAoVivo.ts`: WebSocket da partida, com reconexão. O token vai como subprotocolo.
 - `src/conta/senha.ts`: PBKDF2 no aparelho. A fórmula do sal não pode mudar sem migrar as contas.
 - `worker/src/index.ts` (rotas), `conta.ts` (senhas e limites), `sala.ts` (Durable Object, o árbitro).
+
+## Amigos
+
+- Cada conta tem um `id_jogador` público de 8 caracteres. É o único identificador que o cliente vê: o `id` interno
+  nunca sai do servidor. Convite por nome só acha o nome exato, e o ID ganha de um nome igual a ele.
+- `amizades` tem uma linha por par. Aceitar é convidar de volta; recusar, cancelar e remover apagam a linha.
+- Partida só entre amigos aceitos, e os dois lugares têm dono desde a criação (`status: 'aguardando'`). Não existe mais
+  link nem código de convite. Quem chamou pode cancelar, e o amigo pode recusar (`status: 'recusada'`).
+- O menu confere `/amigos` a cada 15 s (`useAmigos`), só com a aba à vista: conta nos 100 mil pedidos por dia. Durante
+  uma partida não confere; a novidade aparece ao voltar ao menu.
 
 ## Limites do plano gratuito da Cloudflare
 
