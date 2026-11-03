@@ -10,10 +10,12 @@ import { PainelConta } from './PainelConta'
 import { PainelPerfil } from './PainelPerfil'
 import { PainelPersonalizacao } from './PainelPersonalizacao'
 import { nomeDaConquista } from './PainelConquistas'
-import { Oticoin } from './ElementosDoJogador'
+import { Avatar, Oticoin } from './ElementosDoJogador'
 import { verificarConquistas, type Conquista, type SituacaoDasConquistas } from '../chess/conquistas'
 import { carregarPersonalizacao } from '../conta/personalizacao'
 import { PainelLoja } from './PainelLoja'
+import { instalarAplicativo, useAplicativo } from '../aplicativo'
+import { dispensarAvisoDoConvite, guardarPedidosAvisados, pedidosAvisados, useConviteDeAmizade } from '../conta/conviteDeAmizade'
 import type { VitrineDaPeca } from '../chess/equipamentos'
 import type * as THREE from 'three'
 
@@ -25,6 +27,7 @@ import type * as THREE from 'three'
 
 const botaoMenu =
   'w-full rounded-xl border border-[#c9a24a]/70 bg-[#1c120a]/90 px-2 py-1.5 font-display text-sm font-semibold text-[#f5e6c8] shadow-lg transition hover:bg-[#3a2614] hover:border-[#e6c675] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c675] sm:px-5 sm:py-2.5 sm:text-base'
+const avisoFlutuante = 'flex items-center gap-2 rounded-xl border border-[#e6c675] bg-[#1c120a]/95 text-sm font-semibold text-[#f5e6c8] shadow-xl'
 const painelMenu =
   'w-full max-w-md max-h-full overflow-y-auto rounded-2xl border border-[#c9a24a]/60 bg-[#1c120a]/95 p-5 text-[#f5e6c8] shadow-2xl max-sm:fixed max-sm:inset-2 max-sm:z-20 max-sm:max-h-none max-sm:w-auto max-sm:max-w-none max-sm:bg-[#1c120a]'
 
@@ -219,6 +222,9 @@ export function MenuXadrez({
   const { amigos, atualizar: atualizarAmigos } = useAmigos()
   const novidades = (amigos?.convitesRecebidos.length ?? 0) + (amigos?.partidasRecebidas.length ?? 0)
   const [painel, setPainel] = useState<Painel>('inicio')
+  const aplicativo = useAplicativo()
+  const podeInstalar = !aplicativo.instalado && (aplicativo.pedido !== null || aplicativo.noIphone)
+  const [dicaDoIphone, setDicaDoIphone] = useState(false)
   const [conquistas, setConquistas] = useState<SituacaoDasConquistas | null>(null)
   const [conquistasNovas, setConquistasNovas] = useState<Conquista[]>([])
 
@@ -248,6 +254,48 @@ export function MenuXadrez({
     const prazo = window.setTimeout(() => setConquistasNovas([]), 7000)
     return () => window.clearTimeout(prazo)
   }, [conquistasNovas])
+  // pedidos de amizade: a tela inicial avisa cada um uma vez; tocar abre a aba Amigos, onde se confirma ou recusa
+  const [avisados, setAvisados] = useState<{ usuario: string; ids: string[] } | null>(null)
+  const idsAvisados = sessao ? (avisados?.usuario === sessao.usuario.id ? avisados.ids : pedidosAvisados(sessao.usuario.id)) : []
+  const pedidoNovo = sessao && amigos ? amigos.convitesRecebidos.find((j) => !idsAvisados.includes(j.idJogador)) : undefined
+  function marcarAvisados(ids: string[]) {
+    if (!sessao || !amigos) return
+    // fica só o que ainda está aberto, pra lista não crescer pra sempre
+    const abertos = new Set(amigos.convitesRecebidos.map((j) => j.idJogador))
+    const novos = [...new Set([...idsAvisados, ...ids])].filter((id) => abertos.has(id))
+    guardarPedidosAvisados(sessao.usuario.id, novos)
+    setAvisados({ usuario: sessao.usuario.id, ids: novos })
+  }
+  function abrirAmigos() {
+    marcarAvisados(amigos?.convitesRecebidos.map((j) => j.idJogador) ?? [])
+    setPainel('amigos')
+  }
+
+  // o convite do link: o pedido que chegou entra na lista na hora (e vira o aviso de cima); o resto avisa aqui
+  const avisoDoLink = useConviteDeAmizade().aviso
+  useEffect(() => {
+    if (avisoDoLink?.tipo === 'pedido' || avisoDoLink?.tipo === 'amigos') void atualizarAmigos()
+    if (avisoDoLink?.tipo === 'pedido' || avisoDoLink?.tipo === 'semConexao') dispensarAvisoDoConvite()
+  }, [avisoDoLink, atualizarAmigos])
+  useEffect(() => {
+    // quem ainda não entrou na conta precisa do aviso até entrar
+    if (!avisoDoLink || avisoDoLink.tipo === 'semConta') return
+    const prazo = window.setTimeout(dispensarAvisoDoConvite, 10000)
+    return () => window.clearTimeout(prazo)
+  }, [avisoDoLink])
+  const textoDoLink =
+    avisoDoLink?.tipo === 'semConta'
+      ? t('convite.semConta', { nome: avisoDoLink.de.nome })
+      : avisoDoLink?.tipo === 'amigos'
+        ? t('convite.viraramAmigos', { nome: avisoDoLink.de.nome })
+        : avisoDoLink?.tipo === 'jaAmigos'
+          ? t('convite.jaAmigos')
+          : avisoDoLink?.tipo === 'proprio'
+            ? t('convite.proprio')
+            : avisoDoLink?.tipo === 'invalido'
+              ? t('convite.invalido')
+              : null
+
   // o código de recuperação só aparece uma vez: nem Esc nem Voltar fecham essa tela sem querer
   const [mostrandoCodigo, setMostrandoCodigo] = useState(false)
   useFecharComEsc(() => setPainel('inicio'), painel !== 'inicio' && !mostrandoCodigo)
@@ -266,7 +314,11 @@ export function MenuXadrez({
         // no celular em pé o tabuleiro fica de lado, numa faixa no meio: o título vai logo acima dele e os botões em grade
         // logo abaixo. Na tela muito baixa, o título vai pro canto pra não cobrir as peças
         <div className="mt-3 grid w-full max-w-[17rem] grid-cols-2 gap-1.5 max-sm:mb-14 max-sm:self-end sm:mt-0 sm:max-w-[15rem] sm:grid-cols-1 sm:gap-2.5 [@media(max-height:520px)]:!grid-cols-2 [@media(max-height:520px)]:!max-w-sm [@media(max-height:520px)]:!gap-1.5">
-          <h2 className="absolute left-4 top-3 font-display text-xl font-bold tracking-wide text-[#f5e6c8] [text-shadow:0_2px_10px_rgba(0,0,0,0.8)] max-sm:bottom-[calc(50%+22vw)] max-sm:left-1/2 max-sm:top-auto max-sm:-translate-x-1/2 max-sm:whitespace-nowrap max-sm:text-3xl sm:static sm:mb-1 sm:justify-self-center sm:whitespace-nowrap sm:text-center sm:text-4xl [@media(max-height:520px)]:!absolute [@media(max-height:520px)]:!bottom-auto [@media(max-height:520px)]:!left-4 [@media(max-height:520px)]:!top-3 [@media(max-height:520px)]:!translate-x-0 [@media(max-height:520px)]:!text-xl">{t('titulo')}</h2>
+          <h2 className="absolute left-4 top-3 font-display text-xl font-bold tracking-wide text-[#f5e6c8] [text-shadow:0_2px_10px_rgba(0,0,0,0.8)] max-sm:bottom-[calc(50%+22vw)] max-sm:left-1/2 max-sm:top-auto max-sm:-translate-x-1/2 max-sm:whitespace-nowrap max-sm:text-3xl sm:static sm:mb-1 sm:justify-self-center sm:whitespace-nowrap sm:text-center sm:text-4xl [@media(max-height:520px)]:!absolute [@media(max-height:520px)]:!bottom-auto [@media(max-height:520px)]:!left-4 [@media(max-height:520px)]:!top-3 [@media(max-height:520px)]:!translate-x-0 [@media(max-height:520px)]:!text-xl flex items-center justify-center gap-2">
+            {/* a óticoin é a logo do jogo */}
+            <img src={`${import.meta.env.BASE_URL}icones/icone-192.png`} alt="" aria-hidden className="h-[1.2em] w-[1.2em] shrink-0 drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]" data-logo />
+            {t('titulo')}
+          </h2>
           {temPartida && (
             <button type="button" className={botaoMenu} onClick={onContinuar}>
               {t('menu.continuar')}
@@ -275,7 +327,7 @@ export function MenuXadrez({
           <button type="button" className={`${botaoMenu} ${temPartida ? '' : 'col-span-2 sm:col-span-1 [@media(max-height:520px)]:!col-span-2'}`} onClick={onNovoJogo}>
             {t('menu.novoJogo')}
           </button>
-          <button type="button" className={botaoMenu} onClick={() => setPainel('amigos')}>
+          <button type="button" className={botaoMenu} onClick={abrirAmigos}>
             {t('menu.amigos')} {novidades > 0 && <span className="ml-1 rounded-full bg-[#c9a24a] px-1.5 text-xs font-bold text-[#1c120a]">{novidades}</span>}
           </button>
           <button type="button" className={botaoMenu} onClick={() => setPainel('perfil')}>
@@ -290,17 +342,50 @@ export function MenuXadrez({
         </div>
       )}
 
-      {painel === 'inicio' && conquistasNovas.length > 0 && (
-        <div
-          role="status"
-          className="absolute left-1/2 top-14 z-20 flex w-max max-w-[90%] -translate-x-1/2 items-center gap-2 rounded-xl border border-[#e6c675] bg-[#1c120a]/95 px-4 py-2 text-sm font-semibold text-[#f5e6c8] shadow-xl"
-          data-aviso-conquista
-        >
-          <Oticoin tamanho={34} girando />
-          <span>
-            {t('conquistas.nova', { nome: nomeDaConquista(t, conquistasNovas[0]), n: conquistasNovas[0].oticoins })}
-            {conquistasNovas.length > 1 ? ` ${t('conquistas.maisNovas', { n: conquistasNovas.length - 1 })}` : ''}
-          </span>
+      {painel === 'inicio' && (conquistasNovas.length > 0 || pedidoNovo || textoDoLink) && (
+        <div className="absolute left-1/2 top-14 z-20 flex w-max max-w-[90%] -translate-x-1/2 flex-col items-center gap-2">
+          {conquistasNovas.length > 0 && (
+            <div role="status" className={`${avisoFlutuante} px-4 py-2`} data-aviso-conquista>
+              <Oticoin tamanho={34} girando />
+              <span>
+                {t('conquistas.nova', { nome: nomeDaConquista(t, conquistasNovas[0]), n: conquistasNovas[0].oticoins })}
+                {conquistasNovas.length > 1 ? ` ${t('conquistas.maisNovas', { n: conquistasNovas.length - 1 })}` : ''}
+              </span>
+            </div>
+          )}
+          {pedidoNovo && (
+            <div role="status" className={avisoFlutuante} data-aviso-amizade={pedidoNovo.idJogador}>
+              <button type="button" onClick={abrirAmigos} className="flex min-w-0 items-center gap-2 py-2 pl-3 text-left">
+                <Avatar jogador={pedidoNovo} tamanho={30} />
+                <span>{t('convite.pedido', { nome: pedidoNovo.nome })}</span>
+              </button>
+              <button type="button" aria-label={t('convite.fechar')} onClick={() => marcarAvisados([pedidoNovo.idJogador])} className="self-stretch px-3 text-[#c9b48a] hover:text-[#f5e6c8]">
+                ✕
+              </button>
+            </div>
+          )}
+          {textoDoLink && (
+            <div role="status" className={avisoFlutuante} data-aviso-link={avisoDoLink?.tipo}>
+              {avisoDoLink?.tipo === 'semConta' || avisoDoLink?.tipo === 'amigos' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispensarAvisoDoConvite()
+                    abrirAmigos()
+                  }}
+                  className="flex min-w-0 items-center gap-2 py-2 pl-3 text-left"
+                >
+                  <Avatar jogador={avisoDoLink.de} tamanho={30} />
+                  <span>{textoDoLink}</span>
+                </button>
+              ) : (
+                <span className="py-2 pl-4">{textoDoLink}</span>
+              )}
+              <button type="button" aria-label={t('convite.fechar')} onClick={dispensarAvisoDoConvite} className="self-stretch px-3 text-[#c9b48a] hover:text-[#f5e6c8]">
+                ✕
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -308,10 +393,40 @@ export function MenuXadrez({
         <button
           type="button"
           onClick={() => setPainel('conta')}
-          className="absolute bottom-3 left-3 z-10 max-w-[60%] truncate rounded-lg border border-[#c9a24a]/60 bg-[#1c120a]/80 px-3 py-1.5 text-xs font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614]"
+          className="absolute bottom-3 left-3 z-10 max-w-[48%] truncate rounded-lg border border-[#c9a24a]/60 bg-[#1c120a]/80 px-3 py-1.5 text-xs font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614]"
         >
           {sessao ? sessao.usuario.nome : t('menu.entrar')}
         </button>
+      )}
+
+      {painel === 'inicio' && (podeInstalar || aplicativo.versaoNova) && (
+        <div className="absolute bottom-3 right-3 z-10 flex max-w-[48%] flex-col items-end gap-1.5">
+          {dicaDoIphone && (
+            <p role="status" className="rounded-lg border border-[#c9a24a]/60 bg-[#1c120a]/95 px-3 py-2 text-[0.7rem] leading-snug text-[#f5e6c8] shadow-xl">
+              {t('app.dicaIphone')}
+            </p>
+          )}
+          {aplicativo.versaoNova && (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="max-w-full truncate rounded-lg border border-[#e6c675] bg-[#c9a24a] px-3 py-1.5 text-xs font-semibold text-[#1c120a] transition hover:bg-[#e6c675]"
+              data-versao-nova
+            >
+              ↻ {t('app.atualizar')}
+            </button>
+          )}
+          {podeInstalar && (
+            <button
+              type="button"
+              onClick={() => (aplicativo.pedido ? void instalarAplicativo() : setDicaDoIphone((aberta) => !aberta))}
+              className="max-w-full truncate rounded-lg border border-[#c9a24a]/60 bg-[#1c120a]/80 px-3 py-1.5 text-xs font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614]"
+              data-instalar
+            >
+              ⬇ {t('app.instalar')}
+            </button>
+          )}
+        </div>
       )}
 
       {painel !== 'inicio' && (

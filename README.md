@@ -1,8 +1,10 @@
 # Xadrez Caótico
 
 Xadrez 3D no navegador. As peças lutam de verdade a cada captura. Dá pra jogar contra a máquina, sem conta
-nenhuma, ou criar uma conta gratuita, montar o perfil com foto e moldura, adicionar amigos pelo nome ou pelo ID e
-chamá-los pra uma partida amistosa. As partidas contra a máquina rendem conquistas e óticoins, a moeda do jogo.
+nenhuma, ou criar uma conta gratuita, montar o perfil com foto e moldura, adicionar amigos pelo nome, pelo ID, por um
+link de convite ou pelo QR Code, e chamá-los pra uma partida amistosa. As partidas contra a máquina rendem conquistas e
+óticoins, a moeda do jogo. O site se instala como aplicativo no celular e no computador, e abre sem internet pra jogar
+contra a máquina.
 
 ## Como funciona
 
@@ -32,8 +34,16 @@ node testes/testar-servidor.mjs    # contas, amigos, perfil, dados de cada pesso
 node testes/testar-online.mjs      # dois navegadores virando amigos, jogando e montando o perfil
 node testes/testar-promocao.mjs    # promoção, marreta e tabuleiro virando
 node testes/testar-volta-da-aba.mjs  # a tela volta inteira depois de perder o contexto gráfico
+node testes/testar-convites.mjs    # convite por link e QR Code, com a câmera falsa do Chrome
 node testes/fotos-online.mjs       # fotos das telas, com o 3D ligado
 node testes/fotos-personalizacao.mjs  # fotos de cada peça vestida, na vitrine da Personalização
+```
+
+O aplicativo instalável só existe no build de produção, e o teste dele sobe o próprio servidor:
+
+```sh
+npm run build                      # gera também o dist/sw.js, com a lista de arquivos guardados no aparelho
+node testes/testar-aplicativo.mjs  # instalável, sem internet, versão nova baixando só o que mudou
 ```
 
 ## Publicação do servidor

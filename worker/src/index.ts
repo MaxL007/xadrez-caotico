@@ -53,6 +53,9 @@ const FOTO_NO_CACHE_S = 7 * 24 * 60 * 60
 const RECEBIMENTOS_POR_HORA = 30
 const ALFABETO_CODIGO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const TAMANHO_CODIGO = 8
+/** O código do convite por link: secreto, então mais longo que o ID (31^12, uns 59 bits). */
+const TAMANHO_CONVITE = 12
+const CONSULTAS_DE_CONVITE_POR_HORA = 60
 
 const QUINZE_MINUTOS = 15 * 60 * 1000
 const UMA_HORA = 60 * 60 * 1000
@@ -106,10 +109,13 @@ async function exigirUsuario(pedido: Request, env: Ambiente): Promise<Usuario> {
 
 const enderecoDe = (pedido: Request) => pedido.headers.get('CF-Connecting-IP') ?? 'local'
 
-/** Código das salas e ID público dos jogadores: curtos, sem letras que se confundem. */
-function novoCodigo(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(TAMANHO_CODIGO)), (b) => ALFABETO_CODIGO[b % ALFABETO_CODIGO.length]).join('')
+/** Código das salas, ID público dos jogadores e código de convite: sem letras que se confundem. */
+function novoCodigo(tamanho = TAMANHO_CODIGO): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(tamanho)), (b) => ALFABETO_CODIGO[b % ALFABETO_CODIGO.length]).join('')
 }
+
+const FORMATO_CONVITE = new RegExp(`^[${ALFABETO_CODIGO}]{${TAMANHO_CONVITE}}$`)
+const conviteValido = (codigo: unknown): codigo is string => typeof codigo === 'string' && FORMATO_CONVITE.test(codigo)
 
 // --- contas ------------------------------------------------------------------------------
 async function criarConta(pedido: Request, env: Ambiente) {
@@ -255,7 +261,7 @@ const jogadorPublico = (linha: LinhaDeJogador) => ({ idJogador: linha.id_jogador
 async function listarAmigos(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
   const [eu, ligacoes, chamadas] = await Promise.all([
-    env.DB.prepare('SELECT id_jogador FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ id_jogador: string }>(),
+    env.DB.prepare('SELECT id_jogador, codigo_convite FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ id_jogador: string; codigo_convite: string | null }>(),
     env.DB.prepare(
       `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, a.solicitante_id, a.status FROM amizades a
        JOIN usuarios u ON u.id = CASE a.solicitante_id WHEN ?1 THEN a.destinatario_id ELSE a.solicitante_id END
@@ -274,6 +280,7 @@ async function listarAmigos(pedido: Request, env: Ambiente) {
   const pendentes = ligacoes.results.filter((l) => l.status === 'pendente')
   return responder({
     meuId: eu?.id_jogador,
+    meuConvite: eu?.codigo_convite ?? (await sortearConvite(env, usuario.id)),
     amigos: amigos.map(jogadorPublico),
     convitesRecebidos: pendentes.filter((l) => l.solicitante_id !== usuario.id).map(jogadorPublico),
     convitesEnviados: pendentes.filter((l) => l.solicitante_id === usuario.id).map(jogadorPublico),
@@ -298,15 +305,10 @@ async function convidarAmigo(pedido: Request, env: Ambiente) {
   if (!alvo) throw new Falha(404, 'jogador-nao-encontrado')
   if (alvo.id === usuario.id) throw new Falha(422, 'voce-mesmo')
 
-  const ligacao = await env.DB.prepare('SELECT solicitante_id, status FROM amizades WHERE (solicitante_id = ?1 AND destinatario_id = ?2) OR (solicitante_id = ?2 AND destinatario_id = ?1)')
-    .bind(usuario.id, alvo.id)
-    .first<{ solicitante_id: string; status: string }>()
+  const ligacao = await ligacaoEntre(env, usuario.id, alvo.id)
   if (ligacao?.status === 'aceita') throw new Falha(409, 'ja-amigos')
   if (ligacao?.solicitante_id === usuario.id) return responder({ ...jogadorPublico(alvo), status: 'pendente' })
-
-  // convites recebidos não contam: senão daria pra encher a lista de alguém e travar a conta dessa pessoa
-  const ocupados = await env.DB.prepare("SELECT COUNT(*) AS n FROM amizades WHERE solicitante_id = ?1 OR (destinatario_id = ?1 AND status = 'aceita')").bind(usuario.id).first<{ n: number }>()
-  if ((ocupados?.n ?? 0) >= MAXIMO_DE_AMIGOS) throw new Falha(409, 'muitos-amigos')
+  await exigirVaga(env, usuario.id)
 
   // o outro já tinha convidado: os dois querem, então aceitar é convidar de volta
   if (ligacao) {
@@ -315,6 +317,65 @@ async function convidarAmigo(pedido: Request, env: Ambiente) {
   }
   await env.DB.prepare("INSERT INTO amizades (solicitante_id, destinatario_id, status, criada_em) VALUES (?1, ?2, 'pendente', ?3) ON CONFLICT DO NOTHING").bind(usuario.id, alvo.id, Date.now()).run()
   return responder({ ...jogadorPublico(alvo), status: 'pendente' }, 201)
+}
+
+function ligacaoEntre(env: Ambiente, um: string, outro: string) {
+  return env.DB.prepare('SELECT solicitante_id, status FROM amizades WHERE (solicitante_id = ?1 AND destinatario_id = ?2) OR (solicitante_id = ?2 AND destinatario_id = ?1)')
+    .bind(um, outro)
+    .first<{ solicitante_id: string; status: string }>()
+}
+
+/** Convites recebidos não contam: senão daria pra encher a lista de alguém e travar a conta dessa pessoa. */
+async function exigirVaga(env: Ambiente, usuarioId: string) {
+  const ocupados = await env.DB.prepare("SELECT COUNT(*) AS n FROM amizades WHERE solicitante_id = ?1 OR (destinatario_id = ?1 AND status = 'aceita')").bind(usuarioId).first<{ n: number }>()
+  if ((ocupados?.n ?? 0) >= MAXIMO_DE_AMIGOS) throw new Falha(409, 'muitos-amigos')
+}
+
+// --- convite por link e QR Code ------------------------------------------------------------
+/** Sorteado na primeira vez que a pessoa abre a aba Amigos; se dois pedidos sortearem juntos, vale o que gravou primeiro. */
+async function sortearConvite(env: Ambiente, usuarioId: string): Promise<string> {
+  const [, lido] = await env.DB.batch([
+    env.DB.prepare('UPDATE usuarios SET codigo_convite = ?1 WHERE id = ?2 AND codigo_convite IS NULL').bind(novoCodigo(TAMANHO_CONVITE), usuarioId),
+    env.DB.prepare('SELECT codigo_convite FROM usuarios WHERE id = ?1').bind(usuarioId),
+  ])
+  return (lido.results[0] as { codigo_convite: string }).codigo_convite
+}
+
+const donoDoConvite = (env: Ambiente, codigo: string) =>
+  env.DB.prepare('SELECT id, id_jogador, nome, avatar, moldura FROM usuarios WHERE codigo_convite = ?1').bind(codigo).first<LinhaDeJogador & { id: string }>()
+
+/** Quem convidou, pra tela mostrar o nome antes de a pessoa entrar na conta. */
+async function verConvite(pedido: Request, env: Ambiente, codigo: string) {
+  if ((await somarTentativa(env, `convite:${enderecoDe(pedido)}`, UMA_HORA)) > CONSULTAS_DE_CONVITE_POR_HORA) throw new Falha(429, 'muitas-tentativas')
+  const dono = await donoDoConvite(env, codigo)
+  if (!dono) throw new Falha(404, 'convite-nao-encontrado')
+  return responder(jogadorPublico(dono))
+}
+
+/**
+ * Quem abriu o link (ou leu o QR Code) recebe o pedido de amizade do dono do código, e confirma ou recusa na aba
+ * Amigos. Se essa pessoa já tinha convidado o dono, os dois querem: a amizade fica aceita na hora.
+ */
+async function receberConvite(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { codigo } = await lerCorpo<{ codigo?: unknown }>(pedido)
+  if (!conviteValido(codigo)) throw new Falha(422, 'convite-invalido')
+  if ((await somarTentativa(env, `amigo:${usuario.id}`, UMA_HORA)) > CONVITES_DE_AMIZADE_POR_HORA) throw new Falha(429, 'muitas-tentativas')
+  const dono = await donoDoConvite(env, codigo)
+  if (!dono) throw new Falha(404, 'convite-nao-encontrado')
+  if (dono.id === usuario.id) throw new Falha(422, 'voce-mesmo')
+
+  const ligacao = await ligacaoEntre(env, usuario.id, dono.id)
+  if (ligacao?.status === 'aceita') throw new Falha(409, 'ja-amigos')
+  if (ligacao?.solicitante_id === usuario.id) {
+    await env.DB.prepare("UPDATE amizades SET status = 'aceita' WHERE solicitante_id = ?1 AND destinatario_id = ?2").bind(usuario.id, dono.id).run()
+    return responder({ ...jogadorPublico(dono), status: 'aceita' })
+  }
+  if (ligacao) return responder({ ...jogadorPublico(dono), status: 'pendente' })
+  // o pedido sai em nome do dono do link: conta na lista dele
+  await exigirVaga(env, dono.id)
+  await env.DB.prepare("INSERT INTO amizades (solicitante_id, destinatario_id, status, criada_em) VALUES (?1, ?2, 'pendente', ?3) ON CONFLICT DO NOTHING").bind(dono.id, usuario.id, Date.now()).run()
+  return responder({ ...jogadorPublico(dono), status: 'pendente' }, 201)
 }
 
 /** Remover um amigo, recusar um convite recebido e cancelar um enviado são a mesma coisa: a ligação some. */
@@ -710,6 +771,7 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   const sala = caminho.match(/^\/salas\/([^/]+)(\/entrar|\/recusar|\/revanche|\/ws)?$/)
   const amigo = caminho.match(/^\/amigos\/([A-Z2-9]{8})(\/remover)?$/)
   const foto = caminho.match(/^\/fotos\/([A-Z2-9]{8})$/)
+  const convite = caminho.match(/^\/convites\/([A-Z2-9]{12})$/)
 
   if (metodo === 'GET' && caminho === '/saude') return responder({ ok: true, jogo: 'xadrez-caotico' })
   if (metodo === 'POST' && caminho === '/contas') return criarConta(pedido, env)
@@ -734,6 +796,8 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'POST' && caminho === '/conquistas/receber') return receberConquistas(pedido, env)
   if (metodo === 'GET' && caminho === '/amigos') return listarAmigos(pedido, env)
   if (metodo === 'POST' && caminho === '/amigos') return convidarAmigo(pedido, env)
+  if (metodo === 'POST' && caminho === '/amigos/convite') return receberConvite(pedido, env)
+  if (convite && metodo === 'GET') return verConvite(pedido, env, convite[1])
   if (amigo && metodo === 'GET' && !amigo[2]) return verPerfil(pedido, env, amigo[1])
   if (amigo && metodo === 'POST' && amigo[2]) return removerAmigo(pedido, env, amigo[1])
   if (metodo === 'GET' && caminho === '/salas') return listarSalas(pedido, env)

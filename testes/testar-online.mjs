@@ -206,9 +206,9 @@ try {
   await ana.getByText('Convites enviados').waitFor()
   conferir('convida pelo nome', true)
 
-  await bia.getByText('Convites de amizade').waitFor({ timeout: 30000 })
+  await bia.getByText('Pedidos de amizade').waitFor({ timeout: 30000 })
   conferir('o convite chega sozinho, sem recarregar a página', true)
-  await botao(bia, 'Aceitar').click()
+  await botao(bia, 'Confirmar').click()
   await bia.locator(`[data-amigo="${idAna}"]`).waitFor()
   await ana.locator(`[data-amigo="${idBia}"]`).waitFor({ timeout: 30000 })
   conferir('aceitou: os dois se veem na lista de amigos', true)

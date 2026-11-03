@@ -150,6 +150,8 @@ export interface Jogador {
 
 export interface Amigos {
   meuId: string
+  /** O código do convite por link e QR Code: fixo, e só quem recebe o link conhece. */
+  meuConvite: string
   amigos: Jogador[]
   convitesRecebidos: Jogador[]
   convitesEnviados: Jogador[]
@@ -175,6 +177,10 @@ export const convidarAmigo = (busca: string) => pedir<Jogador & { status: 'pende
 /** Serve também pra recusar um convite recebido e cancelar um enviado. */
 export const removerAmigo = (idJogador: string) => pedir('POST', `/amigos/${idJogador}/remover`)
 export const verPerfil = (idJogador: string) => pedir<Perfil>('GET', `/amigos/${idJogador}`)
+/** Quem mandou o convite do link: não precisa de conta. */
+export const verConvite = (codigo: string) => pedir<Jogador>('GET', `/convites/${codigo}`)
+/** O pedido de amizade do dono do link chega pra conta aberta; 'aceita' quando ela já tinha convidado o dono. */
+export const receberConvite = (codigo: string) => pedir<Jogador & { status: 'pendente' | 'aceita' }>('POST', '/amigos/convite', { codigo })
 
 /** O que cada peça veste: `{ p: { cabeca: 'elmo' } }`, só o que foge do padrão. */
 export type EscolhasDasPecas = Record<string, Record<string, string>>

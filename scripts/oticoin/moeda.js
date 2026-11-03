@@ -136,8 +136,47 @@ for (const [i, url] of quadros.entries()) {
   miniatura.src = url
   document.getElementById('folha').append(miniatura)
 }
+// a óticoin também é a logo do jogo: o lado do peão em alta, pros ícones do aplicativo e do site
+const ALTA = 512
+renderer.setSize(ALTA, ALTA, false)
+moeda.rotation.y = 0
+renderer.render(cena, camera)
+const logo = new Image()
+logo.src = renderer.domElement.toDataURL('image/png')
+await logo.decode()
+
+/** A moeda num quadrado de `lado`, ocupando `parte` dele, sobre o fundo do jogo (ou transparente). */
+function icone(lado, parte, comFundo) {
+  const tela = document.createElement('canvas')
+  tela.width = lado
+  tela.height = lado
+  const c = tela.getContext('2d')
+  if (comFundo) {
+    const fundo = c.createRadialGradient(lado / 2, lado / 2, 0, lado / 2, lado / 2, lado * 0.72)
+    fundo.addColorStop(0, '#3a2614')
+    fundo.addColorStop(1, '#1c120a')
+    c.fillStyle = fundo
+    c.fillRect(0, 0, lado, lado)
+  }
+  c.imageSmoothingQuality = 'high'
+  // a moeda ocupa uns 87% da largura do quadro renderizado; inclinada, um pouco mais da altura
+  const tamanho = (lado * parte) / 0.87
+  c.drawImage(logo, (lado - tamanho) / 2, (lado - tamanho) / 2, tamanho, tamanho)
+  return tela.toDataURL('image/png')
+}
+
 window.__oticoin = {
   giro: folha.toDataURL('image/webp', 0.92),
   peao: quadros[0],
   rei: quadros[QUADROS / 2],
+  icones: {
+    // o normal, sem fundo: aba do navegador, janela no computador e a abertura do aplicativo
+    'icone-192.png': icone(192, 0.86, false),
+    'icone-512.png': icone(512, 0.86, false),
+    // o do Android, que recorta em círculo ou gota: a moeda dentro da zona segura, com o fundo inteiro
+    'icone-mascara-512.png': icone(512, 0.64, true),
+    // o do iPhone, que não aceita transparência e arredonda os cantos
+    'apple-touch-icon.png': icone(180, 0.78, true),
+    'favicon-64.png': icone(64, 0.9, false),
+  },
 }

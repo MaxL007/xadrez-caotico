@@ -222,6 +222,39 @@ try {
   conferir('um nome igual ao ID de alguém perde pro ID', (await convidar(tokenCaio, idBia)).json?.nome === nomeBia)
   await api('POST', `/amigos/${idBia}/remover`, { token: tokenCaio })
 
+  // =================== convite por link e QR Code ===================
+  const conviteAna = dadosAna.meuConvite
+  const convites = [conviteAna, dadosBia.meuConvite, dadosCaio.meuConvite]
+  conferir('cada jogador tem um código de convite de 12 caracteres', convites.every((c) => /^[A-Z2-9]{12}$/.test(c ?? '')) && new Set(convites).size === 3, conviteAna)
+  conferir('o código do convite é fixo', (await meusAmigos(ana.token)).meuConvite === conviteAna)
+  conferir('o código não sai na lista de amigos dos outros', !JSON.stringify(listaBia).includes(conviteAna))
+  const doLink = await api('GET', `/convites/${conviteAna}`)
+  conferir('sem conta, o link mostra quem convidou', doLink.status === 200 && doLink.json?.nome === nomeAna && doLink.json?.idJogador === idAna && !('id' in (doLink.json ?? {})), JSON.stringify(doLink.json))
+  conferir('código de convite que não existe', (await api('GET', '/convites/AAAAAAAAAAAA')).status === 404)
+  conferir('o ID público não serve de convite', (await api('GET', `/convites/${idAna}`)).status === 404)
+  const abrirConvite = (token, codigo) => api('POST', '/amigos/convite', { token, corpo: { codigo } })
+  conferir('sem sessão o pedido do link não sai', (await abrirConvite(undefined, conviteAna)).status === 401)
+  for (const [nome, codigo] of [['curto', 'ABC'], ['o ID público', idAna], ['número', 123], ['minúsculas', conviteAna.toLowerCase()]]) {
+    conferir(`convite recusado: ${nome}`, (await abrirConvite(tokenCaio, codigo)).status === 422)
+  }
+  conferir('o próprio convite não vale', (await abrirConvite(ana.token, conviteAna)).json?.erro === 'voce-mesmo')
+  conferir('convite que não existe não vale', (await abrirConvite(tokenCaio, 'AAAAAAAAAAAA')).status === 404)
+  const peloLink = await abrirConvite(tokenCaio, conviteAna)
+  conferir('abrir o link faz o pedido do dono chegar pra quem abriu', peloLink.status === 201 && peloLink.json?.status === 'pendente' && peloLink.json?.nome === nomeAna, JSON.stringify(peloLink.json))
+  conferir(
+    'o pedido aparece pra confirmar ou recusar, e como enviado pro dono',
+    (await meusAmigos(tokenCaio)).convitesRecebidos.some((j) => j.idJogador === idAna) && (await meusAmigos(ana.token)).convitesEnviados.some((j) => j.idJogador === idCaio),
+  )
+  conferir('abrir de novo não duplica', (await abrirConvite(tokenCaio, conviteAna)).json?.status === 'pendente' && (await meusAmigos(tokenCaio)).convitesRecebidos.filter((j) => j.idJogador === idAna).length === 1)
+  conferir('confirmar o pedido do link vira amizade', (await convidar(tokenCaio, idAna)).json?.status === 'aceita')
+  conferir('o link de quem já é amigo avisa', (await abrirConvite(tokenCaio, conviteAna)).json?.erro === 'ja-amigos')
+  await api('POST', `/amigos/${idAna}/remover`, { token: tokenCaio })
+  await convidar(tokenCaio, idAna)
+  const jaQueria = await abrirConvite(tokenCaio, conviteAna)
+  conferir('quem já tinha convidado o dono do link vira amigo na hora', jaQueria.json?.status === 'aceita' && (await meusAmigos(ana.token)).amigos.some((a) => a.idJogador === idCaio), JSON.stringify(jaQueria.json))
+  await api('POST', `/amigos/${idCaio}/remover`, { token: ana.token })
+  conferir('recusar o pedido do link apaga ele', (await abrirConvite(tokenCaio, conviteAna)).status === 201 && (await api('POST', `/amigos/${idAna}/remover`, { token: tokenCaio })).status === 200 && (await meusAmigos(ana.token)).convitesEnviados.every((j) => j.idJogador !== idCaio))
+
   // =================== salas ===================
   conferir('sem sessão não cria sala', (await api('POST', '/salas', { corpo: { cor: 'w', amigo: idBia } })).status === 401)
   conferir('cor inválida recusada', (await api('POST', '/salas', { token: ana.token, corpo: { cor: 'x', amigo: idBia } })).status === 422)

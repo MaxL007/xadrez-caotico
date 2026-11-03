@@ -21,6 +21,7 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   e perfil. `ElementosDoJogador.tsx` tem o avatar com moldura, o ID e o placar que amigos e perfil dividem.
 - `src/db/db.ts`: salva primeiro no aparelho (IndexedDB, um banco por conta) e depois na nuvem, com fila.
 - `src/db/servidor.ts`: chamadas ao servidor e sessão.
+- `src/aplicativo.ts`: o jogo instalado como aplicativo (service worker, instalar, versão nova).
 - `src/online/salaAoVivo.ts`: WebSocket da partida, com reconexão. O token vai como subprotocolo.
 - `src/conta/senha.ts`: PBKDF2 no aparelho. A fórmula do sal não pode mudar sem migrar as contas.
 - `worker/src/index.ts` (rotas), `conta.ts` (senhas e limites), `sala.ts` (Durable Object, o árbitro).
@@ -30,8 +31,16 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 - Cada conta tem um `id_jogador` público de 8 caracteres. É o único identificador que o cliente vê: o `id` interno
   nunca sai do servidor. Convite por nome só acha o nome exato, e o ID ganha de um nome igual a ele.
 - `amizades` tem uma linha por par. Aceitar é convidar de volta; recusar, cancelar e remover apagam a linha.
-- Partida só entre amigos aceitos, e os dois lugares têm dono desde a criação (`status: 'aguardando'`). Não existe mais
-  link nem código de convite. Quem chamou pode cancelar, e o amigo pode recusar (`status: 'recusada'`).
+- Partida só entre amigos aceitos, e os dois lugares têm dono desde a criação (`status: 'aguardando'`). Não existe link
+  nem código de partida. Quem chamou pode cancelar, e o amigo pode recusar (`status: 'recusada'`).
+- Convite de amizade por link e QR Code (`src/conta/conviteDeAmizade.ts`): o link é `?convite=<codigo_convite>`, um
+  código fixo e secreto de 12 caracteres, sorteado na primeira vez que a pessoa abre Amigos. Não pode ser o ID público:
+  com ele, qualquer um forjaria o convite de qualquer pessoa. Quem abre o link recebe o pedido do dono do código
+  (`POST /amigos/convite`) e confirma ou recusa; sem conta, o código fica no aparelho e vai ao entrar ou criar a conta.
+  `GET /convites/<código>` mostra quem convidou, sem sessão. O QR Code é o mesmo link: a câmera do celular abre o site,
+  e a do jogo lê em Amigos (`QrCode.tsx`: o leitor do navegador quando há, senão o jsQR, baixado só nessa hora).
+- Todo pedido de amizade novo vira aviso na tela inicial, uma vez por pedido (`pedidosAvisados`, no aparelho); tocar
+  abre Amigos, onde os pedidos ficam no topo com Confirmar e Recusar.
 - "Novo jogo" numa partida amistosa chama o mesmo amigo (`/salas/<código>/revanche`), não a máquina. O aviso chega pela
   conexão da partida aberta; se os dois pedem, o segundo entra na partida do primeiro.
 - O menu confere `/amigos` a cada 15 s (`useAmigos`), só com a aba à vista: conta nos 100 mil pedidos por dia. Durante
@@ -54,6 +63,19 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 - Os números do perfil somam as partidas contra a máquina, contadas no aparelho, com as amistosas, contadas no servidor.
 - O Perfil tem três abas: Perfil, Conquistas e Configurações. O botão do menu que era Configurações agora é
   Personalização.
+
+## Aplicativo instalável
+
+- O site é um PWA: `public/manifest.webmanifest`, ícones em `public/icones` (a óticoin é a logo; saem de
+  `node scripts/gerar-oticoin.mjs`, junto com as imagens da moeda) e o service worker `scripts/aplicativo/sw.js`.
+- `npm run build` roda `scripts/gerar-sw.mjs`, que grava `dist/sw.js` com a lista de arquivos e o hash de cada um. O
+  aparelho guarda tudo e, a cada versão, baixa só o que mudou. Os arquivos da versão anterior ficam mais uma rodada,
+  porque uma tela aberta há tempo ainda pode pedir algum.
+- A página vem sempre da rede quando há internet: ninguém fica com o site velho falando com o servidor novo. Sem
+  internet, vem do aparelho e dá pra jogar contra a máquina. O servidor do jogo (outro endereço) nunca passa pelo cache.
+- O service worker só é registrado no build de produção (`src/aplicativo.ts`). Ao voltar pro aplicativo, ele compara o
+  código da tela aberta com o publicado e oferece "Versão nova: atualizar". O botão "Instalar app" aparece quando o
+  navegador oferece (Android, computador) e, no iPhone, explica o "Adicionar à Tela de Início".
 
 ## Personalização das peças
 
@@ -104,6 +126,11 @@ Ver README. Armadilhas:
   com `Get-NetTCPConnection -LocalPort 8787`.
 - O limite de 5 contas por hora vale no simulador também: `LIMITE_CONTAS` em `worker/.dev.vars` afrouxa.
 - Entrar em tela cheia leva segundos sem GPU e o canvas fica 12 px menor nesse meio-tempo: medir em laço.
+- O build de produção não tem `__semDesenho`: no teste do aplicativo, uma tela 3D por vez e o iPhone simulado em 1x,
+  senão passa do tempo.
+- A câmera do teste de convites é a falsa do Chrome (`--use-file-for-fake-video-capture`), com um .y4m montado a partir
+  do QR Code que o jogo desenhou. Dependência nova pede reiniciar o Vite antes dos testes, senão ele recarrega a página
+  no meio ao descobrir a dependência.
 - O celular perde o contexto gráfico com a aba em segundo plano. Tudo que é desenhado na placa (o reflexo do ambiente)
   precisa ser refeito em `webglcontextrestored`, e os canvas das texturas usam `willReadFrequently` pra ficar na memória
   comum. `testes/testar-volta-da-aba.mjs` simula a perda; a queda do processo gráfico inteiro não dá pra simular aqui.

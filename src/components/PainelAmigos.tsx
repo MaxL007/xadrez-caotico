@@ -1,10 +1,13 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ChaveTexto, Idioma, Traduzir } from '../chess/idiomas'
 import { convidarAmigo, criarSala, entrarEmSala, ErroDoServidor, listarSalas, recusarSala, removerAmigo, useSessao, verPerfil, type Amigos, type Jogador, type Perfil, type SalaNaLista } from '../db/servidor'
 import { Avatar, MeuId, Placar } from './ElementosDoJogador'
 import { PainelConta } from './PainelConta'
+import { LeitorDeQrCode, QrCode } from './QrCode'
+import { linkDoConvite, receberConviteLido, type ResultadoDoConvite } from '../conta/conviteDeAmizade'
 
-// Amigos: o ID de quem joga, os convites, a lista de amigos e as partidas amistosas com eles.
+// Amigos: os pedidos de amizade, o ID e o convite por link e QR Code de quem joga, a lista de amigos e as partidas
+// amistosas com eles.
 
 const botaoCor = 'rounded-lg border border-[#c9a24a]/40 px-3 py-2 text-sm font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614] disabled:opacity-50'
 const botaoPequeno = 'rounded-lg border border-[#c9a24a]/40 px-2 py-1 text-xs font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614] disabled:opacity-50'
@@ -74,6 +77,85 @@ function ConvidarAmigos({ t, onConvidou }: { t: Traduzir; onConvidou: () => Prom
         </p>
       )}
     </form>
+  )
+}
+
+const mensagemDoConvite = (t: Traduzir, resultado: ResultadoDoConvite) => {
+  if (resultado.tipo === 'pedido') return t('amigos.conviteLido', { nome: resultado.de.nome })
+  if (resultado.tipo === 'amigos') return t('convite.viraramAmigos', { nome: resultado.de.nome })
+  if (resultado.tipo === 'jaAmigos') return t('convite.jaAmigos')
+  if (resultado.tipo === 'proprio') return t('convite.proprio')
+  if (resultado.tipo === 'invalido') return t('convite.invalido')
+  return t('conta.erroConexao')
+}
+
+/** O convite fixo de quem joga: o link pra mandar, o QR Code pra mostrar e a câmera pra ler o de um amigo. */
+function ConvitePorLink({ t, codigo, onLido }: { t: Traduzir; codigo: string; onLido: () => Promise<void> }) {
+  const link = linkDoConvite(codigo)
+  const [copiado, setCopiado] = useState(false)
+  const [mostrandoQr, setMostrandoQr] = useState(false)
+  const [lendo, setLendo] = useState(false)
+  const [aviso, setAviso] = useState('')
+  const lidoRef = useRef('')
+
+  async function aoLer(texto: string) {
+    // a câmera lê o mesmo código várias vezes por segundo: cada leitura vale uma vez
+    if (texto === lidoRef.current) return
+    lidoRef.current = texto
+    const resultado = await receberConviteLido(texto)
+    if (!resultado) {
+      setAviso(t('amigos.qrNaoEConvite'))
+      return
+    }
+    setLendo(false)
+    setAviso(mensagemDoConvite(t, resultado))
+    await onLido()
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg bg-[#2a1c10] px-3 py-2.5" data-convite-link>
+      <p className="text-sm font-medium">{t('amigos.conviteTitulo')}</p>
+      <p className="text-xs text-[#c9b48a]">{t('amigos.conviteDica')}</p>
+      <p className="select-all break-all font-mono text-[0.7rem] text-[#f5e6c8]" data-meu-link>
+        {link}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={botaoPequeno} onClick={() => void navigator.clipboard?.writeText(link).then(() => setCopiado(true))}>
+          {t(copiado ? 'amigos.linkCopiado' : 'amigos.copiarLink')}
+        </button>
+        {typeof navigator.share === 'function' && (
+          <button type="button" className={botaoPequeno} onClick={() => void navigator.share({ title: t('titulo'), text: t('amigos.textoDoConvite'), url: link }).catch(() => undefined)}>
+            {t('amigos.compartilhar')}
+          </button>
+        )}
+        <button type="button" className={botaoPequeno} aria-expanded={mostrandoQr} onClick={() => setMostrandoQr((aberto) => !aberto)}>
+          {t(mostrandoQr ? 'amigos.esconderQr' : 'amigos.mostrarQr')}
+        </button>
+      </div>
+      {mostrandoQr && (
+        <div className="flex justify-center py-1">
+          <QrCode texto={link} tamanho={208} rotulo={t('amigos.mostrarQr')} />
+        </div>
+      )}
+      <button
+        type="button"
+        className={`${botaoCor} w-full`}
+        aria-expanded={lendo}
+        onClick={() => {
+          lidoRef.current = ''
+          setAviso('')
+          setLendo((aberto) => !aberto)
+        }}
+      >
+        {t(lendo ? 'amigos.fecharCamera' : 'amigos.lerQr')}
+      </button>
+      {lendo && <LeitorDeQrCode t={t} onLido={(texto) => void aoLer(texto)} />}
+      {aviso && (
+        <p role="status" className="text-xs font-medium text-[#c9b48a]" data-aviso-convite>
+          {aviso}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -253,7 +335,29 @@ export function PainelAmigos({
 
   return (
     <div className="space-y-4">
+      {!!amigos?.convitesRecebidos.length && (
+        <div className="space-y-2 rounded-xl border border-[#e6c675]/60 bg-[#2a1c10] p-3" data-pedidos>
+          <p className="text-sm font-semibold">{t('amigos.convitesRecebidos')}</p>
+          {amigos.convitesRecebidos.map((j) => (
+            <div key={j.idJogador} className="space-y-2" data-pedido={j.idJogador}>
+              <p className="flex items-center gap-2 text-sm">
+                <Avatar jogador={j} tamanho={32} />
+                <span className="min-w-0">{t('amigos.querSerAmigo', { nome: j.nome })}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className={botaoCor} disabled={enviando} onClick={() => void mudar(() => convidarAmigo(j.idJogador))}>
+                  {t('amigos.aceitar')}
+                </button>
+                <button type="button" className={botaoCor} disabled={enviando} onClick={() => void mudar(() => removerAmigo(j.idJogador))}>
+                  {t('amigos.recusar')}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {amigos && <MeuId t={t} id={amigos.meuId} />}
+      {amigos && <ConvitePorLink t={t} codigo={amigos.meuConvite} onLido={onAtualizar} />}
       <ConvidarAmigos t={t} onConvidou={onAtualizar} />
       {avisoDeErro}
 
@@ -268,25 +372,6 @@ export function PainelAmigos({
                   {t('amigos.jogar')}
                 </button>
                 <button type="button" className={botaoPequeno} disabled={enviando} onClick={() => void mudar(() => recusarSala(p.codigo))}>
-                  {t('amigos.recusar')}
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!!amigos?.convitesRecebidos.length && (
-        <div className={secao}>
-          <p className="mb-1 text-sm font-medium">{t('amigos.convitesRecebidos')}</p>
-          {amigos.convitesRecebidos.map((j) => (
-            <div key={j.idJogador} className="flex items-center justify-between gap-2 py-1">
-              <p className="min-w-0 truncate text-sm">{j.nome}</p>
-              <span className="flex shrink-0 gap-1.5">
-                <button type="button" className={botaoPequeno} disabled={enviando} onClick={() => void mudar(() => convidarAmigo(j.idJogador))}>
-                  {t('amigos.aceitar')}
-                </button>
-                <button type="button" className={botaoPequeno} disabled={enviando} onClick={() => void mudar(() => removerAmigo(j.idJogador))}>
                   {t('amigos.recusar')}
                 </button>
               </span>

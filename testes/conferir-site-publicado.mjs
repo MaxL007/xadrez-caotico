@@ -77,7 +77,7 @@ try {
   await page.locator('[data-meu-id]').waitFor()
   rival = (await api('POST', '/contas', null, { nome: nomeRival, chave: derivar(nomeRival, 1000) })).json
   conferir('o amigo convida pelo nome', (await api('POST', '/amigos', rival.token, { busca: nomeTela })).json?.status === 'pendente')
-  await botao('Aceitar').click({ timeout: 60000 })
+  await botao('Confirmar').click({ timeout: 60000 })
   await page.locator('[data-amigo]').waitFor()
   conferir('o convite chega à tela e vira amizade', true)
 

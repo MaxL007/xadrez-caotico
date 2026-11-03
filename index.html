@@ -5,9 +5,18 @@
     <meta name="theme-color" content="#1c120a" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Xadrez Caótico</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <meta name="description" content="Xadrez em 3D, com peças que lutam: contra a máquina ou com os amigos." />
+    <!-- instalável como aplicativo; a óticoin é a logo -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/icones/favicon-64.png" />
+    <link rel="apple-touch-icon" href="/icones/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Xadrez Caótico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- crossorigin: o aplicativo guarda as fontes no aparelho, e só guarda o que vem com CORS -->
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin />
   </head>
   <body>
     <div id="root"></div>
