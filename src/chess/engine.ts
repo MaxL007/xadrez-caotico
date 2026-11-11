@@ -87,7 +87,9 @@ interface OrcamentoBusca {
 
 /** Busca negamax com poda alfa-beta, limitada por um orçamento de tempo (aprofundamento iterativo). */
 function negamax(chess: Chess, profundidade: number, alfa: number, beta: number, sinal: 1 | -1, orcamento: OrcamentoBusca): number {
-  if (chess.isCheckmate()) return sinal * (-100000 - profundidade)
+  // levou mate: péssimo pra quem tem a vez, seja de que cor for (e quanto mais cedo, pior). Multiplicar pelo sinal,
+  // como a avaliação, fazia o mate nas pretas parecer bom pra elas, e a máquina de brancas fugia de dar mate
+  if (chess.isCheckmate()) return -100000 - profundidade
   if (chess.isDraw() || chess.isStalemate()) return 0
   if (profundidade === 0 || performance.now() > orcamento.fim) return sinal * avaliarPosicao(chess)
 
@@ -104,40 +106,77 @@ function negamax(chess: Chess, profundidade: number, alfa: number, beta: number,
   return melhor
 }
 
-function melhorJogadaEmProfundidade(chess: Chess, profundidade: number, orcamento: OrcamentoBusca): string | null {
-  const jogadas = ordenarLances(chess)
-  if (jogadas.length === 0) return null
+interface Avaliado {
+  san: string
+  valor: number
+}
 
+/**
+ * A nota de cada lance da raiz nessa profundidade; `completo` diz se deu tempo de ver todos. O melhor da profundidade
+ * anterior vai primeiro: se o tempo acabar no meio, ele já foi visto de novo e só perde pra um lance melhor que ele.
+ */
+function avaliarNaProfundidade(chess: Chess, profundidade: number, orcamento: OrcamentoBusca, primeiro: string | null): { avaliados: Avaliado[]; completo: boolean } {
   const sinal: 1 | -1 = chess.turn() === 'w' ? 1 : -1
-  let melhorMove = jogadas[0]
-  let melhorValor = -Infinity
-
-  for (const san of jogadas) {
+  const avaliados: Avaliado[] = []
+  const lances = ordenarLances(chess).sort((a, b) => Number(b === primeiro) - Number(a === primeiro))
+  for (const san of lances) {
     chess.move(san)
     const valor = -negamax(chess, profundidade - 1, -Infinity, Infinity, (sinal * -1) as 1 | -1, orcamento)
     chess.undo()
-    if (valor > melhorValor) {
-      melhorValor = valor
-      melhorMove = san
-    }
-    if (performance.now() > orcamento.fim) break
+    avaliados.push({ san, valor })
+    if (performance.now() > orcamento.fim) return { avaliados, completo: false }
   }
-
-  return melhorMove
+  return { avaliados, completo: true }
 }
 
-/** Tempo máximo (ms) que a máquina pode "pensar" por lance — aprofunda o quanto der dentro desse orçamento. */
+/** Tempo máximo (ms) que a máquina pode "pensar" por lance no difícil — aprofunda o quanto der dentro desse orçamento. */
 const ORCAMENTO_BUSCA_MS = 900
 const PROFUNDIDADE_MAXIMA = 6
 
-/** Aprofundamento iterativo: tenta profundidade 1, 2, 3... até o orçamento de tempo acabar, ficando com o melhor lance encontrado no nível mais profundo concluído. */
-function melhorJogadaPorBusca(chess: Chess): string | null {
-  const orcamento: OrcamentoBusca = { fim: performance.now() + ORCAMENTO_BUSCA_MS }
+export type Dificuldade = 'facil' | 'intermediario' | 'dificil'
+export const DIFICULDADES: Dificuldade[] = ['facil', 'intermediario', 'dificil']
+
+/** Como a máquina joga em cada dificuldade. */
+interface Nivel {
+  /** Abre com o livro de partidas de referência. */
+  livro: boolean
+  /** Usa o que aprendeu jogando. */
+  aprendizado: boolean
+  profundidade: number
+  tempoMs: number
+  /** Chance de, num lance, não jogar o melhor: sorteia entre os `entre` melhores (Infinity: qualquer lance legal). */
+  descuido: number
+  entre: number
+}
+
+const NIVEIS: Record<Dificuldade, Nivel> = {
+  // olha só um lance à frente e se distrai bastante: bom pra quem está aprendendo
+  facil: { livro: false, aprendizado: false, profundidade: 1, tempoMs: 200, descuido: 0.4, entre: Infinity },
+  // abre pelo livro, pensa até três lances à frente e de vez em quando joga um lance bom, mas não o melhor
+  intermediario: { livro: true, aprendizado: false, profundidade: 3, tempoMs: 450, descuido: 0.2, entre: 3 },
+  // tudo o que ela tem: o livro, o que aprendeu e a busca mais funda
+  dificil: { livro: true, aprendizado: true, profundidade: PROFUNDIDADE_MAXIMA, tempoMs: ORCAMENTO_BUSCA_MS, descuido: 0, entre: 1 },
+}
+
+/**
+ * Aprofundamento iterativo: tenta profundidade 1, 2, 3... até a do nível ou o tempo acabar, ficando com o melhor lance
+ * do nível mais fundo que chegou a ver. No descuido, sorteia entre os melhores da última profundidade vista inteira.
+ */
+function jogadaPorBusca(chess: Chess, nivel: Nivel): string | null {
+  const orcamento: OrcamentoBusca = { fim: performance.now() + nivel.tempoMs }
   let melhor: string | null = null
-  for (let profundidade = 1; profundidade <= PROFUNDIDADE_MAXIMA; profundidade++) {
-    const candidato = melhorJogadaEmProfundidade(chess, profundidade, orcamento)
-    if (candidato) melhor = candidato
+  let ultimaInteira: Avaliado[] = []
+  for (let profundidade = 1; profundidade <= nivel.profundidade; profundidade++) {
+    const { avaliados, completo } = avaliarNaProfundidade(chess, profundidade, orcamento, melhor)
+    // o primeiro de nota mais alta, mesmo se o tempo acabou no meio da profundidade (o melhor de antes foi visto primeiro)
+    const doNivel = avaliados.reduce<Avaliado | null>((atual, a) => (!atual || a.valor > atual.valor ? a : atual), null)
+    if (doNivel) melhor = doNivel.san
+    if (completo) ultimaInteira = avaliados
     if (performance.now() > orcamento.fim) break
+  }
+  if (nivel.descuido > 0 && Math.random() < nivel.descuido && ultimaInteira.length > 0) {
+    const opcoes = [...ultimaInteira].sort((a, b) => b.valor - a.valor).slice(0, nivel.entre)
+    return opcoes[Math.floor(Math.random() * opcoes.length)].san
   }
   return melhor
 }
@@ -173,7 +212,7 @@ function escolherLanceAprendido(lances: LanceAprendido[] | undefined): string | 
 }
 
 /**
- * Escolhe o lance da máquina, em três camadas:
+ * Escolhe o lance da máquina, em três camadas (cada dificuldade usa as dela, ver NIVEIS):
  * 1. Livro de partidas de referência (livro.json), se a posição aparecer nele — resposta na hora;
  * 2. O que a própria máquina já aprendeu jogando (vitórias/derrotas/empates registrados a partir
  *    dessa posição, tanto em partidas reais quanto no modo demonstração) — quanto mais partidas
@@ -181,15 +220,39 @@ function escolherLanceAprendido(lances: LanceAprendido[] | undefined): string | 
  * 3. Busca própria com aprofundamento iterativo (material + tabelas de posição + mobilidade,
  *    ~900ms de orçamento por lance) quando nenhuma das anteriores tem uma resposta.
  */
-export async function escolherJogadaDaMaquina(chess: Chess, livro: LivroDeAberturas): Promise<string | null> {
-  const entradasLivro = buscarNoLivro(chess, livro)
+export async function escolherJogadaDaMaquina(chess: Chess, livro: LivroDeAberturas, dificuldade: Dificuldade = 'dificil'): Promise<string | null> {
+  const nivel = NIVEIS[dificuldade]
+  const entradasLivro = nivel.livro ? buscarNoLivro(chess, livro) : null
   if (entradasLivro && entradasLivro.length > 0) {
     return escolherPeso(entradasLivro).move
   }
 
-  const aprendizado = await buscarAprendizado(chavePosicao(chess.fen())).catch(() => undefined)
-  const lanceAprendido = escolherLanceAprendido(aprendizado)
-  if (lanceAprendido) return lanceAprendido
+  if (nivel.aprendizado) {
+    const aprendizado = await buscarAprendizado(chavePosicao(chess.fen())).catch(() => undefined)
+    const lanceAprendido = escolherLanceAprendido(aprendizado)
+    if (lanceAprendido) return lanceAprendido
+  }
 
-  return melhorJogadaPorBusca(chess)
+  return jogadaPorBusca(chess, nivel)
 }
+
+/** Até quantos centésimos de peão de vantagem a máquina aceita empatar: quanto mais fácil, mais boazinha. */
+const VANTAGEM_PRA_EMPATAR: Record<Dificuldade, number> = { facil: 300, intermediario: 150, dificil: 50 }
+/** Partida longa: depois de 50 lances de cada lado, a máquina aceita o empate com mais folga. */
+const LANCES_DE_PARTIDA_LONGA = 100
+
+/**
+ * A máquina aceita o empate quando não está claramente na frente, olhando dois lances adiante. Se está perdendo,
+ * aceita na hora; numa partida longa, aceita mesmo um pouco na frente.
+ */
+export function maquinaAceitaEmpate(chess: Chess, corDaMaquina: 'w' | 'b', dificuldade: Dificuldade): boolean {
+  const sinal: 1 | -1 = chess.turn() === 'w' ? 1 : -1
+  // a nota sai do lado de quem tem a vez
+  const nota = negamax(chess, 2, -Infinity, Infinity, sinal, { fim: performance.now() + 400 })
+  const daMaquina = chess.turn() === corDaMaquina ? nota : -nota
+  const folga = chess.history().length >= LANCES_DE_PARTIDA_LONGA ? 250 : 0
+  return daMaquina <= VANTAGEM_PRA_EMPATAR[dificuldade] + folga
+}
+
+/** A máquina dessa dificuldade abre pelo livro (e responde mais rápido enquanto está nele). */
+export const usaLivro = (dificuldade: Dificuldade) => NIVEIS[dificuldade].livro

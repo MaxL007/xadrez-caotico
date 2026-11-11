@@ -112,6 +112,8 @@ export async function recuperarConta(nome: string, codigo: string, senhaNova: st
 }
 
 export async function sairDaConta() {
+  // a bolinha verde apaga antes de a sessão acabar
+  if (sessao) await pedir('POST', '/presenca/sair', { token: sessao.token }).catch(() => undefined)
   await pedir('POST', '/sessoes/sair').catch(() => {
     // sem conexão: a sessão vence sozinha no servidor
   })
@@ -146,6 +148,8 @@ export interface Jogador {
   /** Sugestão do jogo ('peao-brancas') ou foto própria ('foto:<versão>'). */
   avatar: string | null
   moldura: string | null
+  /** Só nos amigos aceitos: está com o jogo aberto agora. */
+  online?: boolean
 }
 
 export interface Amigos {
@@ -169,6 +173,8 @@ export interface Perfil extends Jogador {
   desde: number
   geral: Retrospecto
   entreVoces: Retrospecto
+  /** As conquistas do amigo: as recebidas e quanto ele já contou de cada medida. */
+  conquistas: { recebidas: string[]; contagem: Record<string, number> }
 }
 
 export const listarAmigos = () => pedir<Amigos>('GET', '/amigos')
@@ -195,6 +201,14 @@ export const salvarEscolhaDaPeca = (peca: string, parte: string, opcao: string) 
 export const mudarAparencia = (aparencia: { avatar?: string; moldura?: string }) => pedir('POST', '/perfil/aparencia', aparencia)
 export const enviarFoto = (foto: string) => pedir<{ avatar: string }>('POST', '/perfil/foto', { foto })
 export const lerConquistas = () => pedir<{ oticoins: number; recebidas: string[]; convites: number }>('GET', '/conquistas')
+/** O progresso contado neste aparelho, pros amigos verem no perfil. */
+export const guardarProgresso = (contagem: Record<string, number>) => pedir('POST', '/conquistas/progresso', { contagem })
+/** O jogo está aberto e à vista: os amigos veem a bolinha verde. */
+export const marcarPresenca = () => pedir('POST', '/presenca')
+/** Saiu do jogo. O sendBeacon chega mesmo com a página fechando, mas não manda cabeçalho: o token vai no corpo. */
+export function avisarQueSaiu() {
+  if (sessao && typeof navigator.sendBeacon === 'function') navigator.sendBeacon(`${API}/presenca/sair`, JSON.stringify({ token: sessao.token }))
+}
 export const receberConquistas = (ids: string[]) => pedir<{ oticoins: number; novas: string[]; recebidas: string[] }>('POST', '/conquistas/receber', { ids })
 export const enderecoDaFoto = (idJogador: string, versao: string) => `${API}/fotos/${idJogador}?v=${versao}`
 

@@ -24,7 +24,7 @@ const erros = []
 page.on('pageerror', (e) => erros.push(e.message.slice(0, 300)))
 await page.addInitScript(() => {
   window.__semDesenho = true
-  if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+  if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
 })
 const servidor = { kill() {} }
 const foto = async () => {}

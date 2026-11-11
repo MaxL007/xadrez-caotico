@@ -47,7 +47,7 @@ page.on('console', (m) => {
   if (m.type() === 'error') erros.push(m.text().slice(0, 200))
 })
 await page.addInitScript(() => {
-  if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+  if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
 })
 const botao = (nome) => page.locator('main').getByRole('button', { name: nome, exact: true })
 

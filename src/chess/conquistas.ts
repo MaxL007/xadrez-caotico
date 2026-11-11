@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js'
-import { lerConquistas, receberConquistas, sessaoAtual } from '../db/servidor'
+import { guardarProgresso, lerConquistas, receberConquistas, sessaoAtual } from '../db/servidor'
 import { resultadoDaPartida, type PartidaXadrez } from '../db/xadrezRepo'
 import catalogo from './conquistas.json'
 
@@ -72,10 +72,25 @@ export interface SituacaoDasConquistas {
   novas: Conquista[]
 }
 
+// o último progresso que o servidor guardou, por conta: só manda de novo quando muda
+const progressoEnviado = new Map<string, string>()
+
+/** Manda o progresso pros amigos verem no perfil. Os convites o servidor conta sozinho. */
+function enviarProgresso(contagem: Contagem) {
+  const usuario = sessaoAtual()?.usuario.id
+  if (!usuario) return
+  const { convites: _, ...doAparelho } = contagem
+  const texto = JSON.stringify(doAparelho)
+  if (progressoEnviado.get(usuario) === texto) return
+  progressoEnviado.set(usuario, texto)
+  void guardarProgresso(doAparelho).catch(() => progressoEnviado.delete(usuario))
+}
+
 /** Confere o que foi alcançado e recebe as óticoins do que ainda não foi pago. */
 export async function verificarConquistas(partidas: PartidaXadrez[]): Promise<SituacaoDasConquistas> {
   const contagem = await contarPartidas(partidas)
   if (!sessaoAtual()) return { contagem, oticoins: null, recebidas: [], novas: [] }
+  enviarProgresso(contagem)
   const conta = await lerConquistas()
   contagem.convites = conta.convites
   const alcancadas = CONQUISTAS.filter((c) => contagem[c.medida] >= c.meta && !conta.recebidas.includes(c.id))

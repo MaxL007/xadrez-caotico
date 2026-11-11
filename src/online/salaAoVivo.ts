@@ -19,6 +19,8 @@ export interface EstadoDaSala {
   resultado?: ResultadoDaSala
   motivo?: string
   adversarioConectado: boolean
+  /** Pedido de empate esperando resposta: de quem é. */
+  empate?: 'w' | 'b' | null
 }
 
 export interface LanceDaSala {
@@ -39,11 +41,17 @@ export interface AoReceberDaSala {
   recusada: () => void
   /** O adversário pediu outra partida: o código é o da sala nova. */
   revanche: (codigo: string) => void
+  /** Alguém pediu empate (eu ou o adversário). */
+  empate: (de: 'w' | 'b') => void
+  /** O pedido de empate de `de` foi recusado. */
+  empateRecusado: (de: 'w' | 'b') => void
 }
 
 export interface ConexaoDaSala {
   enviarLance: (n: number, de: string, para: string, promocao?: string) => void
   desistir: () => void
+  pedirEmpate: () => void
+  responderEmpate: (aceito: boolean) => void
   fechar: () => void
 }
 
@@ -73,6 +81,8 @@ export function abrirConexaoDaSala(codigo: string, token: string, ao: AoReceberD
       else if (m.t === 'fim') ao.fim(m.resultado, m.motivo)
       else if (m.t === 'presenca') ao.presenca(m.adversarioConectado)
       else if (m.t === 'revanche') ao.revanche(m.codigo)
+      else if (m.t === 'empate') ao.empate(m.de)
+      else if (m.t === 'empateRecusado') ao.empateRecusado(m.de)
     }
     conexao.onclose = () => {
       if (batimento) clearInterval(batimento)
@@ -98,6 +108,8 @@ export function abrirConexaoDaSala(codigo: string, token: string, ao: AoReceberD
   return {
     enviarLance: (n, de, para, promocao) => enviar({ t: 'lance', n, de, para, promocao }),
     desistir: () => enviar({ t: 'desistir' }),
+    pedirEmpate: () => enviar({ t: 'empate' }),
+    responderEmpate: (aceito) => enviar({ t: 'responderEmpate', aceito }),
     fechar() {
       fechada = true
       ws?.close()

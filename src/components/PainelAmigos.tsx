@@ -5,9 +5,29 @@ import { Avatar, MeuId, Placar } from './ElementosDoJogador'
 import { PainelConta } from './PainelConta'
 import { LeitorDeQrCode, QrCode } from './QrCode'
 import { linkDoConvite, receberConviteLido, type ResultadoDoConvite } from '../conta/conviteDeAmizade'
+import { PainelConquistas } from './PainelConquistas'
+import { CONQUISTAS, type Contagem } from '../chess/conquistas'
 
-// Amigos: os pedidos de amizade, o ID e o convite por link e QR Code de quem joga, a lista de amigos e as partidas
-// amistosas com eles.
+// Amigos: os pedidos de amizade, o ID e o convite por link e QR Code de quem joga, a lista de amigos (com a bolinha de
+// quem está com o jogo aberto) e as partidas amistosas com eles.
+
+/** As conquistas que o amigo já recebeu ou alcançou. */
+const conquistasFeitas = ({ conquistas }: Perfil) =>
+  CONQUISTAS.filter((c) => conquistas.recebidas.includes(c.id) || (conquistas.contagem[c.medida] ?? 0) >= c.meta).length
+
+/** Acesa e verde: o amigo está com o jogo aberto agora. Só o contorno: está fora. */
+function BolinhaOnline({ t, online }: { t: Traduzir; online?: boolean }) {
+  const rotulo = t(online ? 'amigos.online' : 'amigos.offline')
+  return (
+    <span
+      role="img"
+      aria-label={rotulo}
+      title={rotulo}
+      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${online ? 'bg-[#3fd36b] shadow-[0_0_6px_rgba(63,211,107,0.9)]' : 'border border-[#8f7a58]'}`}
+      data-online={online ? 'sim' : 'nao'}
+    />
+  )
+}
 
 const botaoCor = 'rounded-lg border border-[#c9a24a]/40 px-3 py-2 text-sm font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614] disabled:opacity-50'
 const botaoPequeno = 'rounded-lg border border-[#c9a24a]/40 px-2 py-1 text-xs font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614] disabled:opacity-50'
@@ -179,6 +199,7 @@ function PerfilDoAmigo({
   const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [falhou, setFalhou] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
+  const [aba, setAba] = useState<'perfil' | 'conquistas'>('perfil')
 
   useEffect(() => {
     let cancelado = false
@@ -202,7 +223,10 @@ function PerfilDoAmigo({
       <div className="flex items-center gap-4 pt-1">
         <Avatar jogador={amigo} tamanho={72} />
         <div className="min-w-0">
-          <p className="truncate font-display text-lg font-semibold">{amigo.nome}</p>
+          <p className="flex items-center gap-2 font-display text-lg font-semibold">
+            <span className="min-w-0 truncate">{amigo.nome}</span>
+            <BolinhaOnline t={t} online={perfil?.online ?? amigo.online} />
+          </p>
           <p className="font-mono text-xs text-[#c9b48a]">{t('amigos.perfilId', { id: amigo.idJogador })}</p>
           {perfil && <p className="text-xs text-[#c9b48a]">{t('amigos.perfilDesde', { data: new Date(perfil.desde).toLocaleDateString(idioma) })}</p>}
         </div>
@@ -210,13 +234,39 @@ function PerfilDoAmigo({
       {falhou && <p className="text-xs font-medium text-[#ffb4a8]">{t('conta.erroConexao')}</p>}
       {perfil && (
         <>
-          <div>
-            <p className="mb-1 text-sm font-medium">{t('amigos.perfilAmistosas')}</p>
-            <Placar t={t} retrospecto={perfil.geral} />
+          <div role="tablist" aria-label={amigo.nome} className="grid grid-cols-2 gap-1">
+            {(
+              [
+                ['perfil', t('menu.perfil')],
+                ['conquistas', t('perfil.abaConquistas', { feitas: conquistasFeitas(perfil), total: CONQUISTAS.length })],
+              ] as const
+            ).map(([id, nome]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={aba === id}
+                onClick={() => setAba(id)}
+                className={`truncate rounded-lg border px-1 py-1.5 text-xs font-semibold transition ${aba === id ? 'border-[#e6c675] bg-[#c9a24a] text-[#1c120a]' : 'border-[#c9a24a]/40 text-[#f5e6c8] hover:bg-[#3a2614]'}`}
+              >
+                {nome}
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-[#c9b48a]">
-            {t('amigos.perfilEntreVoces', { minhas: perfil.entreVoces.derrotas, nome: amigo.nome, deles: perfil.entreVoces.vitorias, empates: perfil.entreVoces.empates })}
-          </p>
+          {aba === 'perfil' ? (
+            <>
+              <div>
+                <p className="mb-1 text-sm font-medium">{t('amigos.perfilAmistosas')}</p>
+                <Placar t={t} retrospecto={perfil.geral} />
+              </div>
+              <p className="text-xs text-[#c9b48a]">
+                {t('amigos.perfilEntreVoces', { minhas: perfil.entreVoces.derrotas, nome: amigo.nome, deles: perfil.entreVoces.vitorias, empates: perfil.entreVoces.empates })}
+              </p>
+            </>
+          ) : (
+            // o progresso que o aparelho do amigo contou nas partidas dele contra a máquina
+            <PainelConquistas t={t} doAmigo situacao={{ contagem: perfil.conquistas.contagem as Contagem, oticoins: null, recebidas: perfil.conquistas.recebidas }} />
+          )}
         </>
       )}
       <button type="button" className={`${botaoCor} w-full`} disabled={enviando} onClick={onPartida}>
@@ -388,6 +438,7 @@ export function PainelAmigos({
             <p className="flex items-center gap-2 text-sm font-semibold">
               <Avatar jogador={amigo} tamanho={32} />
               <span className="min-w-0 truncate">{amigo.nome}</span>
+              <BolinhaOnline t={t} online={amigo.online} />
             </p>
             {escolhendoCorPara === amigo.idJogador ? (
               <>

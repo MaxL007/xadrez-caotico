@@ -42,7 +42,7 @@ try {
   page.setDefaultTimeout(150000)
   page.on('pageerror', (e) => console.log('erro na página:', e.message.slice(0, 200)))
   await page.addInitScript((sessao) => {
-    localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+    localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
     localStorage.setItem('xadrezCaotico:sessao', JSON.stringify(sessao))
   }, { token: conta.token, usuario: conta.usuario })
   await page.goto(SITE, { waitUntil: 'load', timeout: 120000 })

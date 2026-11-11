@@ -17,7 +17,7 @@ const TAMANHO_MAXIMO_MENSAGEM = 512
 type Cor = 'w' | 'b'
 type Status = 'aguardando' | 'andamento' | 'fim' | 'expirada' | 'recusada'
 type Resultado = 'brancas' | 'pretas' | 'empate'
-type Motivo = 'xeque-mate' | 'afogamento' | 'repeticao' | 'material' | 'cinquenta-lances' | 'desistencia' | 'tempo'
+type Motivo = 'xeque-mate' | 'afogamento' | 'repeticao' | 'material' | 'cinquenta-lances' | 'desistencia' | 'tempo' | 'acordo'
 
 interface EstadoDaSala {
   codigo: string
@@ -31,6 +31,10 @@ interface EstadoDaSala {
   status: Status
   resultado?: Resultado
   motivo?: Motivo
+  /** Pedido de empate esperando resposta: de quem é. Cai no próximo lance. */
+  empate?: Cor
+  /** Em que lance cada um pediu empate pela última vez: um pedido por lance, pra ninguém insistir sem parar. */
+  empatesPedidos?: Partial<Record<Cor, number>>
 }
 
 function chaveDaPosicao(fen: string): string {
@@ -119,7 +123,7 @@ export class Sala extends DurableObject<Ambiente> {
 
   async webSocketMessage(conexao: WebSocket, mensagem: string | ArrayBuffer) {
     if (typeof mensagem !== 'string' || mensagem.length > TAMANHO_MAXIMO_MENSAGEM) return
-    let pedido: { t?: string; n?: number; de?: string; para?: string; promocao?: string }
+    let pedido: { t?: string; n?: number; de?: string; para?: string; promocao?: string; aceito?: unknown }
     try {
       pedido = JSON.parse(mensagem)
     } catch {
@@ -133,6 +137,27 @@ export class Sala extends DurableObject<Ambiente> {
 
     if (pedido.t === 'lance') await this.receberLance(estado, cor, conexao, usuarioId, pedido)
     else if (pedido.t === 'desistir' && estado.status === 'andamento') await this.encerrar(estado, cor === 'w' ? 'pretas' : 'brancas', 'desistencia')
+    else if (pedido.t === 'empate') await this.pedirEmpate(estado, cor)
+    else if (pedido.t === 'responderEmpate') await this.responderEmpate(estado, cor, pedido.aceito === true)
+  }
+
+  /** Pede empate ao outro. Um pedido de cada vez, e no máximo um por lance de cada jogador. */
+  private async pedirEmpate(estado: EstadoDaSala, cor: Cor) {
+    if (estado.status !== 'andamento' || estado.empate || estado.empatesPedidos?.[cor] === estado.lances.length) return
+    estado.empate = cor
+    estado.empatesPedidos = { ...estado.empatesPedidos, [cor]: estado.lances.length }
+    await this.gravar(estado)
+    this.enviar({ t: 'empate', de: cor })
+  }
+
+  /** Só quem recebeu o pedido responde. Aceito, a partida acaba empatada por acordo. */
+  private async responderEmpate(estado: EstadoDaSala, cor: Cor, aceito: boolean) {
+    if (estado.status !== 'andamento' || !estado.empate || estado.empate === cor) return
+    const de = estado.empate
+    estado.empate = undefined
+    if (aceito) return this.encerrar(estado, 'empate', 'acordo')
+    await this.gravar(estado)
+    this.enviar({ t: 'empateRecusado', de })
   }
 
   private async receberLance(estado: EstadoDaSala, cor: Cor, conexao: WebSocket, usuarioId: string, pedido: { n?: number; de?: string; para?: string; promocao?: string }) {
@@ -150,6 +175,8 @@ export class Sala extends DurableObject<Ambiente> {
 
     estado.fen = chess.fen()
     estado.lances.push(lance.san)
+    // jogar em vez de responder recusa o empate pedido
+    estado.empate = undefined
     const posicao = chaveDaPosicao(estado.fen)
     estado.posicoes[posicao] = (estado.posicoes[posicao] ?? 0) + 1
 
@@ -232,6 +259,7 @@ export class Sala extends DurableObject<Ambiente> {
       lances: estado.lances,
       resultado: estado.resultado,
       motivo: estado.motivo,
+      empate: estado.status === 'andamento' ? (estado.empate ?? null) : null,
       adversarioConectado: !!adversario && this.conectados(saindo).has(adversario.id),
     }
   }

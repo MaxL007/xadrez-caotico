@@ -62,7 +62,7 @@ async function novaPagina(contexto, sessao = null) {
   page.on('pageerror', (e) => erros.push(e.message.slice(0, 300)))
   await page.addInitScript((sessao) => {
     window.__semDesenho = true
-    localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+    localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
     if (sessao && !localStorage.getItem('xadrezCaotico:sessao')) localStorage.setItem('xadrezCaotico:sessao', JSON.stringify(sessao))
   }, sessao)
   return page

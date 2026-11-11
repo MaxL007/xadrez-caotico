@@ -35,6 +35,9 @@ node testes/testar-online.mjs      # dois navegadores virando amigos, jogando e 
 node testes/testar-promocao.mjs    # promoção, marreta e tabuleiro virando
 node testes/testar-volta-da-aba.mjs  # a tela volta inteira depois de perder o contexto gráfico
 node testes/testar-convites.mjs    # convite por link e QR Code, com a câmera falsa do Chrome
+node testes/testar-dificuldade.mjs # fácil, intermediário e difícil, e a força da máquina em cada um
+node testes/testar-empate.mjs      # empate com a máquina, taça no centro, aba de lances e peça que volta ao centro
+node testes/testar-qualidade.mjs   # média como padrão e a resolução de cada qualidade no computador e no celular
 node testes/fotos-online.mjs       # fotos das telas, com o 3D ligado
 node testes/fotos-personalizacao.mjs  # fotos de cada peça vestida, na vitrine da Personalização
 ```

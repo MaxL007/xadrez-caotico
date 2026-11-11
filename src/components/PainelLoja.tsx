@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { ChaveTexto, Traduzir } from '../chess/idiomas'
+import { desenhoDosPaineis } from '../chess/configXadrez'
 import { comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Peca } from '../conta/personalizacao'
 import { ErroDoServidor } from '../db/servidor'
 import { Oticoin } from './ElementosDoJogador'
@@ -21,8 +22,8 @@ function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor:
   useEffect(() => {
     const caixa = raiz.current
     if (!caixa) return
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    const renderer = new THREE.WebGLRenderer({ antialias: desenhoDosPaineis().antialias, alpha: true })
+    renderer.setPixelRatio(desenhoDosPaineis().resolucao)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.setClearColor(0x000000, 0)

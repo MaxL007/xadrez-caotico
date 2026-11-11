@@ -1,5 +1,6 @@
 import { dbGetAll, dbPut, dbPutVarios } from './db'
 import { makeId } from '../utils'
+import type { Dificuldade } from '../chess/engine'
 
 const STORE_PARTIDAS = 'xadrezPartidas'
 const STORE_APRENDIZADO = 'xadrezAprendizado'
@@ -20,11 +21,13 @@ export interface PartidaXadrez {
   atualizadaEm: number
   /** Partida do antigo modo demonstração: fica de fora de tudo. */
   demonstracao?: boolean
+  /** Como a máquina joga nessa partida. As de antes da escolha de dificuldade jogavam como o difícil. */
+  dificuldade?: Dificuldade
 }
 
-export function novaPartida(jogador: string, corJogador: 'w' | 'b'): PartidaXadrez {
+export function novaPartida(jogador: string, corJogador: 'w' | 'b', dificuldade: Dificuldade): PartidaXadrez {
   const agora = Date.now()
-  return { id: makeId(), jogador, corJogador, pgn: '', status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora }
+  return { id: makeId(), jogador, corJogador, pgn: '', status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora, dificuldade }
 }
 
 export function resultadoDaPartida(partida: PartidaXadrez): 'venceu' | 'perdeu' | 'empate' {

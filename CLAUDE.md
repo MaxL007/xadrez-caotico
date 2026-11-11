@@ -45,6 +45,13 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   conexão da partida aberta; se os dois pedem, o segundo entra na partida do primeiro.
 - O menu confere `/amigos` a cada 15 s (`useAmigos`), só com a aba à vista: conta nos 100 mil pedidos por dia. Durante
   uma partida não confere; a novidade aparece ao voltar ao menu.
+- A bolinha verde (`src/conta/presenca.ts`): com a conta aberta e o jogo à vista, o aparelho manda `POST /presenca` a
+  cada minuto, em qualquer tela; ao esconder a aba ou fechar, manda `/presenca/sair` pelo `sendBeacon` (o token vai no
+  corpo, porque o beacon não manda cabeçalho). Online é `usuarios.visto_em` de menos de 2,5 min, e o servidor grava no
+  máximo a cada 45 s. Só amigo aceito vê.
+- O perfil do amigo tem a aba Conquistas: as recebidas e o progresso que o aparelho dele contou
+  (`POST /conquistas/progresso`, só quando muda). O servidor guarda o maior de cada medida, pra um aparelho novo que
+  ainda não baixou as partidas não apagar o que já foi contado.
 
 ## Perfil
 
@@ -148,6 +155,41 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
   quadro, então salve e restaure a pose a cada quadro (`salvarOssosDoGolpe`).
 - Regras do usuário: cada tipo de peça tem golpes próprios; golpe só na captura, sorteado; peão contra peão tem
   50% de chance de rendição com honra; mortais precisam parecer mortais de verdade.
+- A recusa (clique na própria peça fora da vez) e o gesto amigável mexem na peça inteira e devolvem ela ao descanso
+  no fim. O descanso fica guardado na peça enquanto uma delas roda (`comecarAnimacaoDoCorpo`): a que começa no meio de
+  outra parte dele, e um lance, golpe, queda ou comemoração devolve a peça antes (`voltarAoDescanso`). Antes, cliques
+  seguidos deixavam a peça fora do centro da casa.
+
+## A máquina
+
+- Três dificuldades, escolhidas no "Novo jogo" e gravadas na partida (`dificuldade`; as antigas valem como difícil). O
+  difícil é a máquina de sempre: livro, o que aprendeu e busca de até 6 lances em 0,9 s. O intermediário usa o livro,
+  pensa 3 lances e em 20% das vezes sorteia entre os 3 melhores. O fácil pensa 1 lance, não usa o livro e em 40% das
+  vezes joga qualquer lance. Só o difícil alimenta o aprendizado: os descuidos dos outros a ensinariam a jogar mal.
+- Na busca, o melhor lance da profundidade anterior vai primeiro, senão o tempo acabando no meio de uma profundidade
+  descartava o que já tinha sido achado (perdia mate em um). E o mate vale -100000 pra quem tem a vez, sem o sinal da
+  cor: com ele, a máquina de brancas fugia de dar mate.
+- Empate: contra a máquina, ela aceita se não estiver na frente além de uma folga por dificuldade, olhando dois lances
+  (`maquinaAceitaEmpate`); fica gravado como "Empate por acordo". Entre amigos, a sala é o árbitro: um pedido por vez e
+  um por lance de cada um, jogar recusa o pedido, e aceito termina com `motivo: 'acordo'`.
+
+## Tela de partida
+
+- A situação da partida fica embaixo do tabuleiro na tela cheia, com o pedido de empate e a revanche; o menu fica no
+  canto de cima. Não há botão de som na partida (fica nas Configurações).
+- O fim da partida aparece no centro (`ResultadoDaPartida.tsx`): na vitória, uma taça 3D com renderizador próprio, na
+  resolução da tela e transparente, pra não depender da qualidade do tabuleiro.
+- A aba de lances (`PainelDeLances.tsx`) é uma lingueta na borda direita, com uma coluna pra cada lado.
+
+## Qualidade
+
+- A média é o padrão. A configuração inteira é gravada na primeira vez, então a alta de antes estava gravada até em
+  quem nunca escolheu: a qualidade gravada só vale com `qualidadeEscolhida`, marcado quando a pessoa escolhe.
+- Baixa: abaixo da resolução da tela (0,8 × até 1,25), sem sombras, sem antisserrilhado e no máximo 30 quadros por
+  segundo, pra celular e computador fracos. Média: até 1,6 vez a tela, nunca abaixo dela, sombras de 1024. Alta: como
+  sempre, no mínimo Full HD e sombras de 2048. O antisserrilhado só muda ao abrir o jogo de novo.
+- A Loja, a vitrine e a taça seguem a qualidade gravada (`desenhoDosPaineis`). Os testes forçam a baixa, e por isso
+  gravam `qualidadeEscolhida: true` junto.
 
 ## Livro de aberturas
 

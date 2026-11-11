@@ -255,6 +255,46 @@ try {
   await api('POST', `/amigos/${idCaio}/remover`, { token: ana.token })
   conferir('recusar o pedido do link apaga ele', (await abrirConvite(tokenCaio, conviteAna)).status === 201 && (await api('POST', `/amigos/${idAna}/remover`, { token: tokenCaio })).status === 200 && (await meusAmigos(ana.token)).convitesEnviados.every((j) => j.idJogador !== idCaio))
 
+  // =================== bolinha verde e progresso das conquistas ===================
+  const presenca = (token) => api('POST', '/presenca', { token })
+  const sairDaPresenca = (token) => api('POST', '/presenca/sair', { corpo: { token } })
+  const anaNaListaDaBia = async () => (await meusAmigos(bia.token)).amigos.find((a) => a.idJogador === idAna)
+  conferir('sem sessão não marca presença', (await api('POST', '/presenca')).status === 401)
+  conferir('quem não abriu o jogo aparece fora', (await anaNaListaDaBia())?.online === false)
+  conferir('com o jogo aberto, a amiga aparece online', (await presenca(ana.token)).status === 200 && (await anaNaListaDaBia())?.online === true)
+  conferir('no perfil também', (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json?.online === true)
+  conferir('token errado não tira ninguém do jogo', (await sairDaPresenca('token-falso')).status === 401 && (await anaNaListaDaBia())?.online === true)
+  conferir('ao sair do jogo, apaga na hora', (await sairDaPresenca(ana.token)).status === 200 && (await anaNaListaDaBia())?.online === false)
+  await presenca(ana.token)
+  conferir('voltar ao jogo acende de novo', (await anaNaListaDaBia())?.online === true)
+  const pedidoDoCaio = await convidar(tokenCaio, idAna)
+  conferir('quem ainda não é amigo não vê se a pessoa está online', !('online' in (pedidoDoCaio.json ?? {})) && (await meusAmigos(ana.token)).convitesRecebidos.every((j) => !('online' in j)))
+  await api('POST', `/amigos/${idAna}/remover`, { token: tokenCaio })
+
+  const progresso = (token, contagem) => api('POST', '/conquistas/progresso', { token, corpo: { contagem } })
+  const contada = { peoes: 37, torres: 12, cavalos: 3, bispos: 0, rainhas: 1, roques: 2, xeques: 9, vitorias: 1 }
+  const antesDoProgresso = (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json?.conquistas
+  conferir('o perfil da amiga traz as conquistas, mesmo antes de o aparelho mandar o progresso', Array.isArray(antesDoProgresso?.recebidas) && antesDoProgresso?.contagem?.peoes === 0, JSON.stringify(antesDoProgresso))
+  conferir('guarda o progresso contado no aparelho', (await progresso(ana.token, contada)).status === 200)
+  const comProgresso = (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json?.conquistas
+  conferir('a amiga vê o progresso no perfil', comProgresso?.contagem?.peoes === 37 && comProgresso?.contagem?.xeques === 9 && Number.isInteger(comProgresso?.contagem?.convites), JSON.stringify(comProgresso))
+  const menor = (await progresso(ana.token, { ...contada, peoes: 5, torres: 20 })).json?.contagem
+  conferir('um aparelho com menos partidas não apaga o que já foi contado', menor?.peoes === 37 && menor?.torres === 20, JSON.stringify(menor))
+  for (const [nome, contagem] of [
+    ['medida inventada', { ...contada, dragoes: 1 }],
+    ['faltando medida', { peoes: 1 }],
+    ['negativo', { ...contada, peoes: -1 }],
+    ['quebrado', { ...contada, peoes: 1.5 }],
+    ['gigante', { ...contada, peoes: 1e9 }],
+    ['convites, que o servidor conta', { ...contada, convites: 3 }],
+    ['texto', 'muito'],
+    ['lista', [1, 2]],
+  ]) {
+    conferir(`progresso recusado: ${nome}`, (await progresso(ana.token, contagem)).status === 422)
+  }
+  conferir('sem sessão não guarda progresso', (await progresso(undefined, contada)).status === 401)
+  conferir('quem não é amigo não vê as conquistas', (await api('GET', `/amigos/${idAna}`, { token: tokenCaio })).status === 403)
+
   // =================== salas ===================
   conferir('sem sessão não cria sala', (await api('POST', '/salas', { corpo: { cor: 'w', amigo: idBia } })).status === 401)
   conferir('cor inválida recusada', (await api('POST', '/salas', { token: ana.token, corpo: { cor: 'x', amigo: idBia } })).status === 422)
@@ -392,6 +432,45 @@ try {
   a.fechar()
   b.fechar()
 
+  // pedido de empate
+  const salaEmpate = (await api('POST', '/salas', { token: ana.token, corpo: { cor: 'w', amigo: idBia } })).json
+  await api('POST', `/salas/${salaEmpate.codigo}/entrar`, { token: bia.token })
+  const deBrancas = await conectar(salaEmpate.codigo, ana.token)
+  const dePretas = await conectar(salaEmpate.codigo, bia.token)
+  await deBrancas.esperar((m) => m.t === 'estado')
+  await dePretas.esperar((m) => m.t === 'estado')
+  const nada = (conexao, tipo) => new Promise((ok) => setTimeout(() => ok(!conexao.mensagens.some((m) => m.t === tipo)), 800))
+  deBrancas.enviar({ t: 'empate' })
+  conferir('o pedido de empate chega ao outro', (await dePretas.esperar((m) => m.t === 'empate')).de === 'w')
+  await deBrancas.esperar((m) => m.t === 'empate')
+  deBrancas.enviar({ t: 'responderEmpate', aceito: true })
+  conferir('quem pediu não aceita o próprio pedido', await nada(deBrancas, 'fim'))
+  dePretas.enviar({ t: 'responderEmpate', aceito: false })
+  conferir('o outro pode recusar', (await deBrancas.esperar((m) => m.t === 'empateRecusado')).de === 'w')
+  await dePretas.esperar((m) => m.t === 'empateRecusado')
+  deBrancas.enviar({ t: 'empate' })
+  conferir('no mesmo lance, não dá pra pedir de novo', await nada(dePretas, 'empate'))
+  deBrancas.enviar(lance('e2', 'e4', 0))
+  await dePretas.esperar((m) => m.t === 'lance')
+  dePretas.enviar({ t: 'empate' })
+  await deBrancas.esperar((m) => m.t === 'empate' && m.de === 'b')
+  dePretas.enviar(lance('e7', 'e5', 1))
+  await deBrancas.esperar((m) => m.t === 'lance' && m.n === 1)
+  deBrancas.enviar({ t: 'responderEmpate', aceito: true })
+  conferir('jogar em vez de responder recusa o pedido', await nada(deBrancas, 'fim'))
+  deBrancas.enviar({ t: 'empate' })
+  await dePretas.esperar((m) => m.t === 'empate' && m.de === 'w')
+  const dePretasDeNovo = await conectar(salaEmpate.codigo, bia.token)
+  conferir('quem volta à partida vê o pedido esperando', (await dePretasDeNovo.esperar((m) => m.t === 'estado')).empate === 'w')
+  dePretasDeNovo.fechar()
+  dePretas.enviar({ t: 'responderEmpate', aceito: true })
+  const fimPorAcordo = await deBrancas.esperar((m) => m.t === 'fim')
+  conferir('aceito, a partida acaba empatada por acordo', fimPorAcordo.resultado === 'empate' && fimPorAcordo.motivo === 'acordo', JSON.stringify(fimPorAcordo))
+  const empateNaLista = (await api('GET', '/salas', { token: ana.token })).json.salas.find((s) => s.codigo === salaEmpate.codigo)
+  conferir('e fica gravada assim', empateNaLista?.status === 'fim' && empateNaLista?.resultado === 'empate' && empateNaLista?.motivo === 'acordo', JSON.stringify(empateNaLista))
+  deBrancas.fechar()
+  dePretas.fechar()
+
   // repetição: cavalos indo e voltando empatam na terceira vez
   const sala3 = (await api('POST', '/salas', { token: ana.token, corpo: { cor: 'w', amigo: idBia } })).json
   await api('POST', `/salas/${sala3.codigo}/entrar`, { token: bia.token })
@@ -454,9 +533,9 @@ try {
   e.fechar()
   f.fechar()
 
-  // a Ana levou mate, desistiu três vezes e empatou uma
+  // a Ana levou mate, desistiu três vezes e empatou duas (uma por repetição, outra por acordo)
   const perfilAna = (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json
-  const esperadoAna = { partidas: 5, vitorias: 0, derrotas: 4, empates: 1 }
+  const esperadoAna = { partidas: 6, vitorias: 0, derrotas: 4, empates: 2 }
   conferir('o perfil mostra o retrospecto do amigo', JSON.stringify(perfilAna.geral) === JSON.stringify(esperadoAna), JSON.stringify(perfilAna.geral))
   conferir('e o placar entre vocês', JSON.stringify(perfilAna.entreVoces) === JSON.stringify(esperadoAna), JSON.stringify(perfilAna.entreVoces))
   conferir('o perfil mostra nome, ID e data da conta', perfilAna.nome === nomeAna && perfilAna.idJogador === idAna && perfilAna.desde > 0)
@@ -467,7 +546,7 @@ try {
   // =================== perfil próprio ===================
   conferir('sem sessão não vê o perfil', (await api('GET', '/perfil')).status === 401)
   const meuPerfil = (await api('GET', '/perfil', { token: ana.token })).json
-  conferir('o perfil traz nome, ID, data e o retrospecto', meuPerfil.nome === nomeAna && meuPerfil.idJogador === idAna && meuPerfil.desde > 0 && meuPerfil.geral.partidas === 5, JSON.stringify(meuPerfil.geral))
+  conferir('o perfil traz nome, ID, data e o retrospecto', meuPerfil.nome === nomeAna && meuPerfil.idJogador === idAna && meuPerfil.desde > 0 && meuPerfil.geral.partidas === 6, JSON.stringify(meuPerfil.geral))
   conferir('conta nova não tem foto nem moldura', meuPerfil.avatar === null && meuPerfil.moldura === null)
   conferir('o perfil não entrega dados internos', !JSON.stringify(meuPerfil).includes(ana.usuario.id) && !JSON.stringify(meuPerfil).includes('hash'))
 

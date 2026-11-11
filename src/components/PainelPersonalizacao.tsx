@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { ChaveTexto, Traduzir } from '../chess/idiomas'
+import { desenhoDosPaineis } from '../chess/configXadrez'
 import type { VitrineDaPeca } from '../chess/equipamentos'
 import { CONQUISTAS } from '../chess/conquistas'
 import { acessoDaOpcao, escolhaDaParte, escolherOpcao, opcaoLiberada, partesDaPeca, PECAS, usePersonalizacao, type ParteDaPeca, type Peca } from '../conta/personalizacao'
@@ -75,8 +76,8 @@ function Vitrine({ t, peca, escolhas, selecionada, onSelecionar, montarVitrine, 
   useEffect(() => {
     const caixa = caixaRef.current
     if (!caixa) return
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    const renderer = new THREE.WebGLRenderer({ antialias: desenhoDosPaineis().antialias, alpha: true })
+    renderer.setPixelRatio(desenhoDosPaineis().resolucao)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     Object.assign(renderer.domElement.style, { position: 'absolute', inset: '0', touchAction: 'none' })

@@ -122,7 +122,7 @@ function Configuracoes({ t, config, onConfig, onImportou }: { t: Traduzir; confi
   ]
   return (
     <>
-      <Linha titulo={t('config.qualidade')}>
+      <Linha titulo={t('config.qualidade')} dica={t(`config.qualidadeDica.${config.qualidade}`)}>
         <Opcoes rotulo={t('config.qualidade')} valor={config.qualidade} opcoes={qualidades} onMudar={(qualidade) => onConfig({ qualidade })} />
       </Linha>
       <Linha titulo={t('config.som')}>

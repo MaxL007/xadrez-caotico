@@ -56,6 +56,11 @@ const TAMANHO_CODIGO = 8
 /** O código do convite por link: secreto, então mais longo que o ID (31^12, uns 59 bits). */
 const TAMANHO_CONVITE = 12
 const CONSULTAS_DE_CONVITE_POR_HORA = 60
+/** O aparelho avisa a cada minuto; sem aviso há dois minutos e meio, o amigo está fora. */
+const ONLINE_MS = 150 * 1000
+/** Grava a presença no máximo a cada 45 s, pra cada aviso custar no máximo uma escrita. */
+const PRESENCA_GRAVA_MS = 45 * 1000
+const MAXIMO_NA_CONTAGEM = 10_000_000
 
 const QUINZE_MINUTOS = 15 * 60 * 1000
 const UMA_HORA = 60 * 60 * 1000
@@ -257,18 +262,19 @@ interface LinhaDeJogador {
 }
 
 const jogadorPublico = (linha: LinhaDeJogador) => ({ idJogador: linha.id_jogador, nome: linha.nome, avatar: linha.avatar, moldura: linha.moldura })
+const estaOnline = (vistoEm: number | null) => (vistoEm ?? 0) > Date.now() - ONLINE_MS
 
 async function listarAmigos(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
   const [eu, ligacoes, chamadas] = await Promise.all([
     env.DB.prepare('SELECT id_jogador, codigo_convite FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ id_jogador: string; codigo_convite: string | null }>(),
     env.DB.prepare(
-      `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, a.solicitante_id, a.status FROM amizades a
+      `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, u.visto_em, a.solicitante_id, a.status FROM amizades a
        JOIN usuarios u ON u.id = CASE a.solicitante_id WHEN ?1 THEN a.destinatario_id ELSE a.solicitante_id END
        WHERE a.solicitante_id = ?1 OR a.destinatario_id = ?1 ORDER BY a.status = 'aceita' DESC, u.nome_busca LIMIT ?2`,
     )
       .bind(usuario.id, LIGACOES_NA_LISTA)
-      .all<LinhaDeJogador & { id: string; solicitante_id: string; status: string }>(),
+      .all<LinhaDeJogador & { id: string; visto_em: number | null; solicitante_id: string; status: string }>(),
     env.DB.prepare(
       `SELECT codigo, criador_id, brancas_id FROM salas
        WHERE (brancas_id = ?1 OR pretas_id = ?1) AND status = 'aguardando' AND criador_id <> ?1 ORDER BY criada_em DESC LIMIT ?2`,
@@ -281,7 +287,8 @@ async function listarAmigos(pedido: Request, env: Ambiente) {
   return responder({
     meuId: eu?.id_jogador,
     meuConvite: eu?.codigo_convite ?? (await sortearConvite(env, usuario.id)),
-    amigos: amigos.map(jogadorPublico),
+    // só amigo aceito vê se a pessoa está com o jogo aberto
+    amigos: amigos.map((amigo) => ({ ...jogadorPublico(amigo), online: estaOnline(amigo.visto_em) })),
     convitesRecebidos: pendentes.filter((l) => l.solicitante_id !== usuario.id).map(jogadorPublico),
     convitesEnviados: pendentes.filter((l) => l.solicitante_id === usuario.id).map(jogadorPublico),
     // quem deixou de ser amigo não chama mais: a sala fica lá até expirar
@@ -393,12 +400,12 @@ async function removerAmigo(pedido: Request, env: Ambiente, idJogador: string) {
 /** Só amizade aceita chega aqui: é o que protege o perfil e as partidas amistosas. */
 function amigoPeloId(env: Ambiente, usuarioId: string, idJogador: string) {
   return env.DB.prepare(
-    `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, u.criado_em FROM usuarios u
+    `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, u.criado_em, u.visto_em, u.progresso FROM usuarios u
      JOIN amizades a ON a.status = 'aceita' AND ((a.solicitante_id = ?1 AND a.destinatario_id = u.id) OR (a.destinatario_id = ?1 AND a.solicitante_id = u.id))
      WHERE u.id_jogador = ?2`,
   )
     .bind(usuarioId, idJogador)
-    .first<LinhaDeJogador & { id: string; criado_em: number }>()
+    .first<LinhaDeJogador & { id: string; criado_em: number; visto_em: number | null; progresso: string | null }>()
 }
 
 const RETROSPECTO = `SELECT COUNT(*) AS partidas, COALESCE(SUM(resultado = 'empate'), 0) AS empates,
@@ -415,11 +422,38 @@ async function verPerfil(pedido: Request, env: Ambiente, idJogador: string) {
   const usuario = await exigirUsuario(pedido, env)
   const amigo = await amigoPeloId(env, usuario.id, idJogador)
   if (!amigo) throw new Falha(403, 'nao-e-amigo')
-  const [geral, entreVoces] = await Promise.all([
+  const [geral, entreVoces, recebidas, convites] = await Promise.all([
     env.DB.prepare(RETROSPECTO).bind(amigo.id).first<Retrospecto>(),
     env.DB.prepare(`${RETROSPECTO} AND (brancas_id = ?2 OR pretas_id = ?2)`).bind(amigo.id, usuario.id).first<Retrospecto>(),
+    env.DB.prepare('SELECT conquista FROM conquistas WHERE usuario_id = ?1').bind(amigo.id).all<{ conquista: string }>(),
+    convitesAceitos(env, amigo.id),
   ])
-  return responder({ ...jogadorPublico(amigo), desde: amigo.criado_em, geral: comDerrotas(geral), entreVoces: comDerrotas(entreVoces) })
+  return responder({
+    ...jogadorPublico(amigo),
+    online: estaOnline(amigo.visto_em),
+    desde: amigo.criado_em,
+    geral: comDerrotas(geral),
+    entreVoces: comDerrotas(entreVoces),
+    conquistas: { recebidas: recebidas.results.map((r) => r.conquista), contagem: { ...lerProgresso(amigo.progresso), convites } },
+  })
+}
+
+// --- presença ----------------------------------------------------------------------------
+/** O jogo está aberto e à vista nesse aparelho. */
+async function marcarPresenca(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const agora = Date.now()
+  await env.DB.prepare('UPDATE usuarios SET visto_em = ?1 WHERE id = ?2 AND (visto_em IS NULL OR visto_em < ?3)').bind(agora, usuario.id, agora - PRESENCA_GRAVA_MS).run()
+  return responder({ ok: true })
+}
+
+/** O aparelho saiu do jogo. Vem pelo sendBeacon, que não manda cabeçalho: o token vem no corpo. */
+async function sairDaPresenca(pedido: Request, env: Ambiente) {
+  const { token } = await lerCorpo<{ token?: unknown }>(pedido)
+  const usuario = await usuarioDoToken(env, typeof token === 'string' ? token : null)
+  if (!usuario) throw new Falha(401, 'sessao')
+  await env.DB.prepare('UPDATE usuarios SET visto_em = 0 WHERE id = ?1').bind(usuario.id).run()
+  return responder({ ok: true })
 }
 
 // --- perfil ------------------------------------------------------------------------------
@@ -595,6 +629,39 @@ const CONQUISTAS_POR_ID = new Map(conquistas.conquistas.map((c) => [c.id, c]))
 /** Amigos que a pessoa convidou e que aceitaram: é o que vale nas conquistas de convite. */
 const convitesAceitos = async (env: Ambiente, usuarioId: string) =>
   (await env.DB.prepare("SELECT COUNT(*) AS n FROM amizades WHERE solicitante_id = ?1 AND status = 'aceita'").bind(usuarioId).first<{ n: number }>())?.n ?? 0
+
+/** O que o aparelho conta nas partidas; os convites aceitos, o servidor conta. */
+const MEDIDAS_DO_APARELHO = [...new Set(conquistas.conquistas.map((c) => c.medida))].filter((medida) => medida !== 'convites')
+
+function lerProgresso(texto: string | null): Record<string, number> {
+  let lido: Record<string, unknown> = {}
+  try {
+    lido = JSON.parse(texto ?? '{}') as Record<string, unknown>
+  } catch {
+    // progresso estragado vale zero
+  }
+  return Object.fromEntries(MEDIDAS_DO_APARELHO.map((medida) => [medida, Number.isInteger(lido[medida]) ? (lido[medida] as number) : 0]))
+}
+
+/**
+ * O progresso contado no aparelho, pros amigos verem no perfil. Fica sempre o maior de cada medida: um aparelho novo
+ * que ainda não baixou todas as partidas não apaga o que já foi contado. Só grava quando muda.
+ */
+async function guardarProgresso(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { contagem } = await lerCorpo<{ contagem?: unknown }>(pedido)
+  if (!contagem || typeof contagem !== 'object' || Array.isArray(contagem)) throw new Falha(422, 'progresso-invalido')
+  const enviada = contagem as Record<string, unknown>
+  const valida = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= MAXIMO_NA_CONTAGEM
+  if (Object.keys(enviada).length !== MEDIDAS_DO_APARELHO.length || !MEDIDAS_DO_APARELHO.every((medida) => valida(enviada[medida]))) throw new Falha(422, 'progresso-invalido')
+
+  const conta = await env.DB.prepare('SELECT progresso FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ progresso: string | null }>()
+  const antes = lerProgresso(conta?.progresso ?? null)
+  const depois = Object.fromEntries(MEDIDAS_DO_APARELHO.map((medida) => [medida, Math.max(antes[medida], enviada[medida] as number)]))
+  const texto = JSON.stringify(depois)
+  if (texto !== conta?.progresso) await env.DB.prepare('UPDATE usuarios SET progresso = ?1 WHERE id = ?2').bind(texto, usuario.id).run()
+  return responder({ contagem: depois })
+}
 
 async function lerConquistas(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
@@ -794,6 +861,9 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'POST' && caminho === '/loja/comprar') return comprarItem(pedido, env)
   if (metodo === 'GET' && caminho === '/conquistas') return lerConquistas(pedido, env)
   if (metodo === 'POST' && caminho === '/conquistas/receber') return receberConquistas(pedido, env)
+  if (metodo === 'POST' && caminho === '/conquistas/progresso') return guardarProgresso(pedido, env)
+  if (metodo === 'POST' && caminho === '/presenca') return marcarPresenca(pedido, env)
+  if (metodo === 'POST' && caminho === '/presenca/sair') return sairDaPresenca(pedido, env)
   if (metodo === 'GET' && caminho === '/amigos') return listarAmigos(pedido, env)
   if (metodo === 'POST' && caminho === '/amigos') return convidarAmigo(pedido, env)
   if (metodo === 'POST' && caminho === '/amigos/convite') return receberConvite(pedido, env)

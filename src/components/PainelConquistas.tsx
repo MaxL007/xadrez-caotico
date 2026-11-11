@@ -9,21 +9,25 @@ export function nomeDaConquista(t: Traduzir, conquista: Conquista): string {
   return t(chave as ChaveTexto, { n: conquista.meta })
 }
 
-export function PainelConquistas({ t, situacao }: { t: Traduzir; situacao: SituacaoDasConquistas | null }) {
-  const feitas = CONQUISTAS.filter((c) => situacao && situacao.contagem[c.medida] >= c.meta).length
+/** O que o painel mostra: as conquistas de quem joga ou, no perfil de um amigo, as dele. */
+type Situacao = Pick<SituacaoDasConquistas, 'contagem' | 'oticoins' | 'recebidas'>
+
+export function PainelConquistas({ t, situacao, doAmigo = false }: { t: Traduzir; situacao: Situacao | null; doAmigo?: boolean }) {
+  const recebida = (c: Conquista) => situacao?.recebidas.includes(c.id) ?? false
+  const feitas = CONQUISTAS.filter((c) => situacao && (recebida(c) || situacao.contagem[c.medida] >= c.meta)).length
   return (
-    <div className="space-y-4" data-conquistas>
+    <div className="space-y-4" data-conquistas={doAmigo ? 'amigo' : ''}>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm">{t('conquistas.resumo', { feitas, total: CONQUISTAS.length })}</p>
-        {situacao?.oticoins != null && (
+        {!doAmigo && situacao?.oticoins != null && (
           <p className="flex items-center gap-1.5 text-sm font-semibold" data-saldo>
             <Oticoin tamanho={28} girando />
             {t('perfil.oticoins', { n: situacao.oticoins })}
           </p>
         )}
       </div>
-      <p className="text-xs text-[#c9b48a]">{t('conquistas.regra')}</p>
-      {situacao?.oticoins == null && <p className="text-xs text-[#c9b48a]">{t('conquistas.entrar')}</p>}
+      {!doAmigo && <p className="text-xs text-[#c9b48a]">{t('conquistas.regra')}</p>}
+      {!doAmigo && situacao?.oticoins == null && <p className="text-xs text-[#c9b48a]">{t('conquistas.entrar')}</p>}
 
       {NIVEIS.map((nivel) => (
         <div key={nivel} className="space-y-2 border-t border-[#c9a24a]/20 pt-3" data-nivel={nivel}>
@@ -32,13 +36,14 @@ export function PainelConquistas({ t, situacao }: { t: Traduzir; situacao: Situa
             {t(`conquistas.nivel.${nivel}` as ChaveTexto)}
           </p>
           {CONQUISTAS.filter((c) => c.nivel === nivel).map((conquista) => {
-            const atual = Math.min(situacao?.contagem[conquista.medida] ?? 0, conquista.meta)
-            const recebida = situacao?.recebidas.includes(conquista.id) ?? false
+            const jaRecebida = recebida(conquista)
+            // recebida é alcançada, mesmo que o aparelho que contou ainda não tenha mandado o progresso
+            const atual = jaRecebida ? conquista.meta : Math.min(situacao?.contagem[conquista.medida] ?? 0, conquista.meta)
             return (
               <div key={conquista.id} className="rounded-lg bg-[#2a1c10] px-3 py-2" data-conquista={conquista.id}>
                 <div className="flex items-center justify-between gap-3">
-                  <p className={`min-w-0 truncate text-xs font-medium ${recebida ? 'text-[#9fe0a8]' : ''}`}>
-                    {recebida ? '✓ ' : ''}
+                  <p className={`min-w-0 truncate text-xs font-medium ${jaRecebida ? 'text-[#9fe0a8]' : ''}`}>
+                    {jaRecebida ? '✓ ' : ''}
                     {nomeDaConquista(t, conquista)}
                   </p>
                   <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-[#e6c675]">
@@ -48,7 +53,7 @@ export function PainelConquistas({ t, situacao }: { t: Traduzir; situacao: Situa
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#1c120a]">
-                    <div className={`h-full rounded-full ${recebida ? 'bg-[#9fe0a8]' : 'bg-[#c9a24a]'}`} style={{ width: `${(atual / conquista.meta) * 100}%` }} />
+                    <div className={`h-full rounded-full ${jaRecebida ? 'bg-[#9fe0a8]' : 'bg-[#c9a24a]'}`} style={{ width: `${(atual / conquista.meta) * 100}%` }} />
                   </div>
                   <span className="shrink-0 text-[0.65rem] text-[#c9b48a]">
                     {atual}/{conquista.meta}

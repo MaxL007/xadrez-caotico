@@ -9,7 +9,9 @@ import { Chess, type Square } from 'chess.js'
 import { Button } from './ui/Basics'
 import { useFecharComEsc } from '../teclaEsc'
 import { buscarNoLivro, carregarLivroDeAberturas, type LivroDeAberturas } from '../chess/pgnBook'
-import { escolherJogadaDaMaquina } from '../chess/engine'
+import { DIFICULDADES, escolherJogadaDaMaquina, maquinaAceitaEmpate, usaLivro, type Dificuldade } from '../chess/engine'
+import { ResultadoDaPartida, type FimDaPartida } from './ResultadoDaPartida'
+import { PainelDeLances } from './PainelDeLances'
 import { ambienteDoTabuleiro, ambienteTocando, configurarSom, destravarSom, somDestravado, tocarPassos, tocarSom } from '../chess/sons'
 import { useConfigXadrez, type QualidadeXadrez } from '../chess/configXadrez'
 import { tradutor, type ChaveTexto, type Traduzir } from '../chess/idiomas'
@@ -951,11 +953,32 @@ const GIRO_CAMERA_MS = 1400
 const PAUSA_MAQUINA_MS = 700
 /** Com o lance no livro não há o que calcular: só o suficiente pra resposta não vir no mesmo instante. */
 const PAUSA_MAQUINA_LIVRO_MS = 200
-/** O que cada qualidade do jogo muda: a resolução do desenho e o tamanho do mapa de sombras (0 = sem sombras). */
-const QUALIDADES: Record<QualidadeXadrez, { resolucao: number; sombras: number }> = {
-  baixa: { resolucao: 0.6, sombras: 0 },
-  media: { resolucao: 0.8, sombras: 1024 },
-  alta: { resolucao: 1, sombras: 2048 },
+interface Qualidade {
+  /** Quantos pixels de desenho por pixel da tela, pro tamanho do tabuleiro na tela. */
+  resolucao: (largura: number, altura: number) => number
+  /** Tamanho do mapa de sombras; 0, sem sombras. */
+  sombras: number
+  /** Teto de quadros por segundo; 0, o que a tela der. */
+  quadrosPorSegundo: number
+  /** Antisserrilhado e o filtro que deixa a madeira nítida de longe. Valem ao abrir o jogo. */
+  acabamento: boolean
+}
+
+/** O que cada qualidade do jogo muda. */
+const QUALIDADES: Record<QualidadeXadrez, Qualidade> = {
+  // a leve, pra celular e computador fracos: abaixo da resolução da tela, sem sombras, sem antisserrilhado e a 30
+  // quadros por segundo. A imagem fica mais simples, mas o aparelho aguenta
+  baixa: { resolucao: () => Math.min(window.devicePixelRatio || 1, 1.25) * 0.8, sombras: 0, quadrosPorSegundo: 30, acabamento: false },
+  // o padrão: até 1,6 vez a tela (no celular, que tem tela densa, bem menos que Full HD), com sombras médias e nunca
+  // abaixo da resolução da tela no computador
+  media: {
+    resolucao: (largura, altura) => Math.max(Math.min(window.devicePixelRatio || 1, 1), Math.min(pixelRatioParaFullHD(largura, altura), 2) * 0.8),
+    sombras: 1024,
+    quadrosPorSegundo: 0,
+    acabamento: true,
+  },
+  // a mais bonita, como sempre foi: no mínimo Full HD, com as sombras grandes
+  alta: { resolucao: (largura, altura) => pixelRatioParaFullHD(largura, altura), sombras: 2048, quadrosPorSegundo: 0, acabamento: true },
 }
 /** Vista de lado do menu: mais baixa e mais perto que a do jogo, pra ver as peças de frente. */
 const RAIO_CAMERA_MENU = 11.5
@@ -1174,6 +1197,8 @@ function animarPosicao(
   aoTerminar: () => void,
   aoPousar?: () => void,
 ) {
+  // a peça estava no meio de uma recusa ou de um gesto: quem leva ela agora é o lance
+  voltarAoDescanso(mesh)
   if (mesh.userData.acoesRPG && mesh.userData.dadosRPG) {
     animarPosicaoRPG(mesh, de, para, aoTerminar, aoPousar)
     return
@@ -1227,6 +1252,7 @@ const DURACAO_COMEMORACAO_MS = 2400
  * captura de um companheiro de time.
  */
 function animarComemoracao(mesh: THREE.Object3D, atraso: number, duracaoMs: number = DURACAO_COMEMORACAO_MS) {
+  voltarAoDescanso(mesh)
   // peça RPG: o clipe "Comemorar" (pulos de verdade com os braços erguidos — no cavalo, ele empina
   // com o cavaleiro de punho erguido), em vez de quicar a peça inteira rígida
   if ((mesh.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined)?.Comemorar) {
@@ -1290,6 +1316,56 @@ const CHANCE_TOMBO_NO_MORTAL = 0.3
  * (do jogador ou da máquina) aconteça enquanto ela ainda está rolando. */
 const meshesEmGesto = new Set<THREE.Object3D>()
 
+/** Onde a peça descansa: o centro da casa e o giro de frente. */
+interface Descanso {
+  x: number
+  y: number
+  z: number
+  rotX: number
+  rotY: number
+}
+
+/**
+ * A recusa e o gesto amigável mexem na posição e no giro da peça e, no fim, devolvem a peça ao descanso. Antes, cada
+ * uma guardava a peça como estava no começo: um clique no meio da recusa guardava a peça já fora do lugar como se fosse
+ * o descanso, e ela terminava fora do centro da casa. Agora o descanso fica na peça enquanto alguma animação de corpo
+ * roda; a nova parte dele, e só a mais nova mexe na peça.
+ */
+function comecarAnimacaoDoCorpo(mesh: THREE.Object3D, ehGesto = false) {
+  const descanso: Descanso = (mesh.userData.descanso as Descanso | undefined) ?? {
+    x: mesh.position.x,
+    y: mesh.position.y,
+    z: mesh.position.z,
+    rotX: mesh.rotation.x,
+    rotY: mesh.rotation.y,
+  }
+  const minha = Symbol('corpo')
+  mesh.userData.descanso = descanso
+  mesh.userData.animacaoDoCorpo = minha
+  mesh.userData.corpoEmGesto = ehGesto
+  return {
+    descanso,
+    /** Outra animação de corpo (ou um lance) tomou a peça: esta para onde está. */
+    valendo: () => mesh.userData.animacaoDoCorpo === minha,
+    terminar: () => {
+      if (mesh.userData.animacaoDoCorpo === minha) voltarAoDescanso(mesh)
+    },
+  }
+}
+
+/** Devolve a peça ao descanso e encerra as animações de corpo: no fim delas e antes de um lance, golpe ou queda. */
+function voltarAoDescanso(mesh: THREE.Object3D) {
+  const descanso = mesh.userData.descanso as Descanso | undefined
+  if (descanso) {
+    mesh.position.set(descanso.x, descanso.y, descanso.z)
+    mesh.rotation.x = descanso.rotX
+    mesh.rotation.y = descanso.rotY
+  }
+  mesh.userData.descanso = undefined
+  mesh.userData.animacaoDoCorpo = undefined
+  mesh.userData.corpoEmGesto = false
+}
+
 /** Pool de gestos possíveis nas interações entre peças aliadas — sorteado a cada interação, pra
  * não ser sempre o mesmo movimento. Mesmo sendo peças de formas geométricas simples, os gestos
  * imitam movimentos humanos de verdade. */
@@ -1310,9 +1386,6 @@ function animarGestoAmigavel(
 ) {
   const membros = mesh.userData.membros as MembrosPersonagem | undefined
   const base = (mesh.userData.poseBase as PoseBaseMembros | undefined) ?? POSE_BASE_NEUTRA
-  const rotYOriginal = mesh.rotation.y
-  const rotXOriginal = mesh.rotation.x
-  const yOriginal = mesh.position.y
   const anguloAlvo = Math.atan2(direcao.x, direcao.z)
   const duracao = tipo === 'mortal' ? DURACAO_MORTAL_MS : DURACAO_GESTO_MS
   const inicio = performance.now() + atraso
@@ -1345,11 +1418,19 @@ function animarGestoAmigavel(
     }, atraso)
   }
 
+  let corpo: ReturnType<typeof comecarAnimacaoDoCorpo> | null = null
   function passo(agora: number) {
     if (agora < inicio) {
       requestAnimationFrame(passo)
       return
     }
+    corpo ??= comecarAnimacaoDoCorpo(mesh, true)
+    if (!corpo.valendo()) {
+      // quem tomou a peça foi outro gesto: ele tira a peça da lista quando acabar
+      if (!mesh.userData.corpoEmGesto) meshesEmGesto.delete(mesh)
+      return
+    }
+    const { rotY: rotYOriginal, rotX: rotXOriginal, y: yOriginal } = corpo.descanso
     const t = Math.min(1, (agora - inicio) / duracao)
     const giro = t < 0.25 ? t / 0.25 : t > 0.8 ? (1 - t) / 0.2 : 1
     if (tipo !== 'mortal') {
@@ -1396,9 +1477,7 @@ function animarGestoAmigavel(
     if (t < 1) {
       requestAnimationFrame(passo)
     } else {
-      mesh.rotation.y = rotYOriginal
-      mesh.rotation.x = rotXOriginal
-      mesh.position.y = yOriginal
+      corpo.terminar()
       if (membros) {
         membros.bracoEsq.rotation.z = 0
         membros.bracoEsq.rotation.x = base.bracoEsq
@@ -1428,12 +1507,14 @@ const DISTANCIA_RECUSA = 0.16
 function animarRecusa(mesh: THREE.Object3D, direcaoCamera: { x: number; z: number }) {
   const membros = mesh.userData.membros as MembrosPersonagem | undefined
   const base = (mesh.userData.poseBase as PoseBaseMembros | undefined) ?? POSE_BASE_NEUTRA
-  const rotYOriginal = mesh.rotation.y
-  const posOriginal = { x: mesh.position.x, z: mesh.position.z }
+  const corpo = comecarAnimacaoDoCorpo(mesh)
+  const rotYOriginal = corpo.descanso.rotY
+  const posOriginal = { x: corpo.descanso.x, z: corpo.descanso.z }
   const anguloAlvo = Math.atan2(direcaoCamera.x, direcaoCamera.z)
   const inicio = performance.now()
 
   function passo(agora: number) {
+    if (!corpo.valendo()) return
     const t = Math.min(1, (agora - inicio) / DURACAO_RECUSA_MS)
     const giro = t < 0.18 ? t / 0.18 : t > 0.85 ? (1 - t) / 0.15 : 1
     // janela do balanço "não" — só depois que já virou de frente, e some antes da recuperação
@@ -1454,9 +1535,7 @@ function animarRecusa(mesh: THREE.Object3D, direcaoCamera: { x: number; z: numbe
     if (t < 1) {
       requestAnimationFrame(passo)
     } else {
-      mesh.rotation.y = rotYOriginal
-      mesh.position.x = posOriginal.x
-      mesh.position.z = posOriginal.z
+      corpo.terminar()
       if (membros) {
         membros.bracoEsq.rotation.x = base.bracoEsq
         membros.bracoDir.rotation.x = base.bracoDir
@@ -1510,6 +1589,7 @@ function animarAtaqueEspada(
   aoImpacto: () => void,
   aoTerminar: () => void,
 ) {
+  voltarAoDescanso(mesh)
   const membros = mesh.userData.membros as MembrosPersonagem | undefined
   const base = (mesh.userData.poseBase as PoseBaseMembros | undefined) ?? POSE_BASE_NEUTRA
   const rotYOriginal = mesh.rotation.y
@@ -1594,6 +1674,8 @@ function animarQuedaEDesaparecimento(
   direcaoNocaute?: { x: number; z: number },
   direcaoGolpe?: { x: number; z: number },
 ) {
+  // a vítima podia estar no meio da recusa (quem joga clicou nela na vez da máquina)
+  voltarAoDescanso(mesh)
   const definirOpacidade = prepararParaSumir(mesh)
 
   const yInicial = mesh.position.y
@@ -2925,6 +3007,26 @@ function BotaoDesistir({
   )
 }
 
+/** Pedir empate: à máquina, que pensa um instante e responde, ou ao adversário, que aceita ou recusa. */
+function BotaoEmpate({ t, onPedir, sobreTabuleiro = false }: { t: Traduzir; onPedir: () => void; sobreTabuleiro?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onPedir}
+      className={sobreTabuleiro ? 'rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow' : 'rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50'}
+      data-pedir-empate
+    >
+      {t('empate.botao')}
+    </button>
+  )
+}
+
+/** Como fica gravada a partida contra a máquina que terminou em empate combinado. */
+const EMPATE_POR_ACORDO = 'Empate por acordo'
+
+/** O pedido de empate na tela: a máquina pensando, a recusa, o pedido enviado ao amigo ou o pedido dele. */
+type EstadoDoEmpate = { tipo: 'pensando' } | { tipo: 'recusado'; por: 'maquina' | 'adversario' } | { tipo: 'enviado' } | { tipo: 'recebido' } | null
+
 export function ChessBoard3D() {
   const containerRef = useRef<HTMLDivElement>(null)
   const chessRef = useRef(new Chess())
@@ -2935,6 +3037,7 @@ export function ChessBoard3D() {
     carregarPgn: (pgn: string, corHumano: 'w' | 'b') => void
     mostrarMenu: () => void
     desistir: () => void
+    pedirEmpate: () => void
     atualizarTextos: () => void
     aplicarQualidade: (qualidade: QualidadeXadrez) => void
     aplicarTelaMovel: () => void
@@ -2999,9 +3102,20 @@ export function ChessBoard3D() {
   const [promocaoPendente, setPromocaoPendente] = useState<'w' | 'b' | null>(null)
   const resolverPromocaoRef = useRef<((peca: PecaPromocao | null) => void) | null>(null)
   useFecharComEsc(() => resolverPromocaoRef.current?.(null), promocaoPendente !== null)
-  const [resultadoOverlay, setResultadoOverlay] = useState<'venceu' | 'perdeu' | 'desistiu' | null>(null)
+  const [resultadoOverlay, setResultadoOverlay] = useState<FimDaPartida | null>(null)
   // partida do jogador em andamento (dá pra desistir) — atualizado a cada lance
   const [podeDesistir, setPodeDesistir] = useState(false)
+  // dá pra pedir empate: partida em andamento, um pedido por lance, e contra a máquina só na sua vez
+  const [podeEmpatar, setPodeEmpatar] = useState(false)
+  const [empate, setEmpate] = useState<EstadoDoEmpate>(null)
+  // a recusa some sozinha depois de um tempo
+  useEffect(() => {
+    if (empate?.tipo !== 'recusado') return
+    const prazo = window.setTimeout(() => setEmpate(null), 6000)
+    return () => window.clearTimeout(prazo)
+  }, [empate])
+  // a cor de quem joga, pra aba de lances dizer quem fez cada lance
+  const [corDoJogador, setCorDoJogador] = useState<'w' | 'b'>('w')
   const [confirmandoDesistencia, setConfirmandoDesistencia] = useState(false)
   // tabuleiro ocupando a tela toda (e a tela cheia do navegador, se der)
   const [telaCheia, setTelaCheia] = useState(false)
@@ -3074,9 +3188,13 @@ export function ChessBoard3D() {
       lancesEmAndamento = 0
       filaDaSala = []
       animandoDaSala = false
+      ultimoPedidoDeEmpate = -1
+      setEmpate(null)
     }
     // pra não disparar a comemoração de novo enquanto o xeque-mate continuar sendo a posição atual
     let comemoracaoDisparada = false
+    // em que lance quem joga pediu empate pela última vez: um pedido por lance
+    let ultimoPedidoDeEmpate = -1
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xf5f0e6)
@@ -3092,13 +3210,15 @@ export function ChessBoard3D() {
     camera.position.set(0, 9.5, 10)
     camera.lookAt(0, 0, 0)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
+    // o antisserrilhado só se escolhe ao criar o desenho: quem troca de ou pra baixa vê a diferença ao abrir o jogo de novo
+    const qualidadeDeInicio = QUALIDADES[configRef.current.qualidade]
+    const renderer = new THREE.WebGLRenderer({ antialias: qualidadeDeInicio.acabamento, powerPreference: 'high-performance' })
     renderer.setSize(container.clientWidth, container.clientHeight, false)
     // o desenho sempre preenche o espaço dele (CSS): com largura fixa em pixels ele impedia o espaço de
     // encolher (abrir o menu, sair da tela cheia) e o tabuleiro ficava descentralizado/cortado — só a
     // resolução interna acompanha o tamanho (onResize)
     Object.assign(renderer.domElement.style, { display: 'block', width: '100%', height: '100%' })
-    renderer.setPixelRatio(pixelRatioParaFullHD(container.clientWidth, container.clientHeight) * QUALIDADES[configRef.current.qualidade].resolucao)
+    renderer.setPixelRatio(qualidadeDeInicio.resolucao(container.clientWidth, container.clientHeight))
     renderer.shadowMap.enabled = true
     // sombras suaves de verdade (borda esfumada, como a de uma luz real), em alta resolução
     renderer.shadowMap.type = THREE.VSMShadowMap
@@ -3108,7 +3228,7 @@ export function ChessBoard3D() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.05
     container.appendChild(renderer.domElement)
-    const anisotropia = renderer.capabilities.getMaxAnisotropy()
+    const anisotropia = qualidadeDeInicio.acabamento ? renderer.capabilities.getMaxAnisotropy() : 1
 
     // reflexo de ambiente (um "estúdio" gerado na hora, sem imagem externa): é o que faz o metal das
     // armaduras, o ouro das coroas e o verniz do tabuleiro brilharem de verdade
@@ -3145,8 +3265,8 @@ export function ChessBoard3D() {
     scene.add(new THREE.HemisphereLight(0xfff6e6, 0x3a2a1a, 0.3))
     const dirLight = new THREE.DirectionalLight(0xfff1dc, 2.4)
     dirLight.position.set(4, 10, 6)
-    dirLight.castShadow = QUALIDADES[configRef.current.qualidade].sombras > 0
-    dirLight.shadow.mapSize.setScalar(QUALIDADES[configRef.current.qualidade].sombras || 1024)
+    dirLight.castShadow = qualidadeDeInicio.sombras > 0
+    dirLight.shadow.mapSize.setScalar(qualidadeDeInicio.sombras || 1024)
     dirLight.shadow.camera.left = -6.5
     dirLight.shadow.camera.right = 6.5
     dirLight.shadow.camera.top = 6.5
@@ -3463,7 +3583,8 @@ export function ChessBoard3D() {
         .catch(() => {
           // sem servidor no momento — a partida segue salva só localmente até o próximo lance
         })
-      if (finalizouAgora) {
+      // só o difícil ensina a máquina: os descuidos de propósito dos outros níveis a ensinariam a jogar mal
+      if (finalizouAgora && (partida.dificuldade ?? 'dificil') === 'dificil') {
         const corMaquina: 'w' | 'b' = corHumanoRef.current === 'w' ? 'b' : 'w'
         registrarAprendizadoDaPartida(chess.history({ verbose: true }), resultadoAtual(chess), [corMaquina])
       }
@@ -3514,6 +3635,7 @@ export function ChessBoard3D() {
       if (comemoracaoDisparada) return
       comemoracaoDisparada = true
       tocarSom('empate')
+      setResultadoOverlay('empate')
     }
 
     function atualizarStatusTexto() {
@@ -3523,8 +3645,12 @@ export function ChessBoard3D() {
       const partidaDoJogador = partidaAtualRef.current
       const salaAtual = salaRef.current?.estado ?? null
       const adversario = (salaAtual?.minhaCor === 'w' ? salaAtual.pretas : salaAtual?.brancas) ?? ''
-      setPodeDesistir(!!partidaDoJogador && partidaDoJogador.status !== 'FINALIZADA' && !chess.isGameOver() && (!salaAtual || salaAtual.status === 'andamento'))
+      const jogando = !!partidaDoJogador && partidaDoJogador.status !== 'FINALIZADA' && !chess.isGameOver() && (!salaAtual || salaAtual.status === 'andamento')
       const corHumano = corHumanoRef.current
+      setPodeDesistir(jogando)
+      setPodeEmpatar(
+        jogando && ultimoPedidoDeEmpate !== chess.history().length && (salaAtual ? !salaAtual.empate : chess.turn() === corHumano && !vezDaMaquinaRef.current),
+      )
       const t = tRef.current
       const nomeCor = (c: 'w' | 'b') => t(c === 'w' ? 'status.brancas' : 'status.pretas')
       const venciASala = !!salaAtual?.resultado && (salaAtual.resultado === 'brancas') === (salaAtual.minhaCor === 'w')
@@ -3538,8 +3664,14 @@ export function ChessBoard3D() {
         setStatusTexto(t(venciASala ? 'online.adversarioDesistiu' : 'online.voceDesistiu', { nome: adversario }))
       } else if (salaAtual?.motivo === 'tempo') {
         setStatusTexto(t(venciASala ? 'online.venceuTempo' : 'online.perdeuTempo', { nome: adversario }))
+      } else if (salaAtual?.motivo === 'acordo') {
+        setStatusTexto(t('online.empateAcordo', { nome: adversario }))
+        tocarEmpateUmaVez()
       } else if (partidaDoJogador?.status === 'FINALIZADA' && partidaDoJogador.resultado?.includes('desistiu')) {
         setStatusTexto(t('status.desistiu'))
+      } else if (partidaDoJogador?.status === 'FINALIZADA' && partidaDoJogador.resultado === EMPATE_POR_ACORDO) {
+        setStatusTexto(t('status.empateAcordo'))
+        tocarEmpateUmaVez()
       } else if (!partidaAtualRef.current) {
         setStatusTexto('')
       } else if (chess.isCheckmate()) {
@@ -3957,9 +4089,11 @@ export function ChessBoard3D() {
       vezDaMaquinaRef.current = true
       atualizarStatusTexto()
       const minhaGeracao = geracao
+      // as partidas de antes da escolha de dificuldade jogavam como o difícil
+      const dificuldade = partidaAtualRef.current?.dificuldade ?? 'dificil'
       window.setTimeout(async () => {
         if (minhaGeracao !== geracao) return
-        const lance = await escolherJogadaDaMaquina(chess, livroRef.current)
+        const lance = await escolherJogadaDaMaquina(chess, livroRef.current, dificuldade)
         // outra partida (ou novo jogo) entrou enquanto a máquina pensava: esse lance era da anterior
         if (minhaGeracao !== geracao) return
         // o jogador desistiu enquanto a máquina pensava — o lance não entra mais
@@ -3972,7 +4106,7 @@ export function ChessBoard3D() {
           vezDaMaquinaRef.current = false
           atualizarStatusTexto()
         })
-      }, buscarNoLivro(chess, livroRef.current) ? PAUSA_MAQUINA_LIVRO_MS : PAUSA_MAQUINA_MS)
+      }, usaLivro(dificuldade) && buscarNoLivro(chess, livroRef.current) ? PAUSA_MAQUINA_LIVRO_MS : PAUSA_MAQUINA_MS)
     }
 
     /** Anda com os lances do adversário, um de cada vez e nunca por cima de outra animação. */
@@ -4107,6 +4241,7 @@ export function ChessBoard3D() {
         setResultadoOverlay(null)
         const chess = chessRef.current
         corHumanoRef.current = corHumano
+        setCorDoJogador(corHumano)
         virarCameraPara(corHumano === 'w' ? 1 : -1)
         if (pgn) {
           try {
@@ -4136,6 +4271,7 @@ export function ChessBoard3D() {
         setResultadoOverlay(null)
         const chess = chessRef.current
         corHumanoRef.current = estado.minhaCor
+        setCorDoJogador(estado.minhaCor)
         virarCameraPara(estado.minhaCor === 'w' ? 1 : -1)
         chess.reset()
         for (const san of estado.lances) chess.move(san)
@@ -4166,7 +4302,7 @@ export function ChessBoard3D() {
       receberLanceDaSala(lance) {
         const atual = salaRef.current
         if (!atual?.estado) return
-        atual.estado = { ...atual.estado, lances: [...atual.estado.lances.slice(0, lance.n), lance.san] }
+        atual.estado = { ...atual.estado, empate: null, lances: [...atual.estado.lances.slice(0, lance.n), lance.san] }
         // o nosso próprio lance voltando: já está no tabuleiro desde o clique
         if (lance.n < chessRef.current.history().length + filaDaSala.length) return
         filaDaSala.push(lance.san)
@@ -4228,7 +4364,7 @@ export function ChessBoard3D() {
             // sem servidor no momento — fica marcada aqui e vai no próximo salvamento
           })
         const corMaquina: 'w' | 'b' = corHumanoRef.current === 'w' ? 'b' : 'w'
-        registrarAprendizadoDaPartida(chess.history({ verbose: true }), corMaquina === 'w' ? 'BRANCAS' : 'PRETAS', [corMaquina])
+        if ((partida.dificuldade ?? 'dificil') === 'dificil') registrarAprendizadoDaPartida(chess.history({ verbose: true }), corMaquina === 'w' ? 'BRANCAS' : 'PRETAS', [corMaquina])
         if (!comemoracaoDisparada) {
           comemoracaoDisparada = true
           let atraso = 0
@@ -4244,6 +4380,56 @@ export function ChessBoard3D() {
         tocarSom('derrota')
         setResultadoOverlay('desistiu')
         atualizarStatusTexto()
+      },
+      // pedido de empate: contra a máquina, ela pensa um instante e aceita se não estiver bem na frente; contra outra
+      // pessoa, o pedido vai pela partida ao vivo e quem decide é ela
+      pedirEmpate() {
+        const chess = chessRef.current
+        const partida = partidaAtualRef.current
+        const noLance = chess.history().length
+        if (!partida || partida.status === 'FINALIZADA' || chess.isGameOver() || ultimoPedidoDeEmpate === noLance) return
+        if (salaRef.current) {
+          ultimoPedidoDeEmpate = noLance
+          salaRef.current.conexao.pedirEmpate()
+          atualizarStatusTexto()
+          return
+        }
+        if (chess.turn() !== corHumanoRef.current || vezDaMaquinaRef.current) return
+        ultimoPedidoDeEmpate = noLance
+        setEmpate({ tipo: 'pensando' })
+        atualizarStatusTexto()
+        const minhaGeracao = geracao
+        window.setTimeout(() => {
+          // outra partida entrou, ou a pessoa jogou enquanto a máquina pensava: o pedido era de outra posição
+          if (minhaGeracao !== geracao || partida.status === 'FINALIZADA' || chess.history().length !== noLance) {
+            if (minhaGeracao === geracao) setEmpate(null)
+            return
+          }
+          const corMaquina: 'w' | 'b' = corHumanoRef.current === 'w' ? 'b' : 'w'
+          if (!maquinaAceitaEmpate(chess, corMaquina, partida.dificuldade ?? 'dificil')) {
+            setEmpate({ tipo: 'recusado', por: 'maquina' })
+            atualizarStatusTexto()
+            return
+          }
+          setEmpate(null)
+          partida.status = 'FINALIZADA'
+          partida.resultado = EMPATE_POR_ACORDO
+          partida.pgn = chess.pgn()
+          partida.atualizadaEm = Date.now()
+          selecionadaRef.current = null
+          destinosRef.current = []
+          limparDestaques()
+          salvarPartida(partida)
+            .then(() => {
+              setPartidasEmAndamento((prev) => prev.filter((p) => p.id !== partida.id))
+              setPartidasFinalizadas((prev) => [partida, ...prev.filter((p) => p.id !== partida.id)])
+            })
+            .catch(() => {
+              // sem servidor no momento — fica marcada aqui e vai no próximo salvamento
+            })
+          if ((partida.dificuldade ?? 'dificil') === 'dificil') registrarAprendizadoDaPartida(chess.history({ verbose: true }), 'EMPATE', [corMaquina])
+          atualizarStatusTexto()
+        }, PAUSA_MAQUINA_MS)
       },
       atualizarTextos: atualizarStatusTexto,
       aplicarQualidade,
@@ -4367,9 +4553,9 @@ export function ChessBoard3D() {
       )
     }
 
-    /** Resolução que vale agora: a de Full HD, reduzida pela qualidade escolhida. */
+    /** Resolução que vale agora, pela qualidade escolhida. */
     function resolucaoDoJogo(largura: number, altura: number): number {
-      return pixelRatioParaFullHD(largura, altura) * QUALIDADES[configRef.current.qualidade].resolucao
+      return QUALIDADES[configRef.current.qualidade].resolucao(largura, altura)
     }
 
     function aplicarQualidade(qualidade: QualidadeXadrez) {
@@ -4385,8 +4571,15 @@ export function ChessBoard3D() {
 
     const relogio = new THREE.Clock()
     let frameId = 0
+    let ultimoQuadro = 0
     function animate() {
       frameId = requestAnimationFrame(animate)
+      // na qualidade leve, no máximo 30 quadros por segundo: metade do trabalho pro aparelho fraco. O tempo que passou
+      // entra todo no quadro seguinte, então as animações andam no mesmo ritmo
+      const teto = QUALIDADES[configRef.current.qualidade].quadrosPorSegundo
+      const agoraDoQuadro = performance.now()
+      if (teto && agoraDoQuadro - ultimoQuadro < 1000 / teto - 2) return
+      ultimoQuadro = agoraDoQuadro
       const delta = relogio.getDelta()
       const agora = performance.now()
       for (const peca of piecesGroup.children) {
@@ -4529,6 +4722,15 @@ export function ChessBoard3D() {
           if (piecesGroup.children.length !== casas.length) problemas.push(`cena com ${piecesGroup.children.length} peças, motor com ${casas.length}`)
           return problemas
         },
+        /** Clica numa casa como quem joga: seleciona a peça ou, fora da vez, faz ela recusar. */
+        clicarCasa: (casa: string) => tentarSelecionar(casa as Square),
+        /** Quanto a peça da casa está fora do centro dela e do giro de descanso. */
+        descansoDaPeca: (casa: string) => {
+          const mesh = pieceMeshBySquare.get(casa as Square)
+          if (!mesh) return null
+          const alvo = squareToPosPeca(casa as Square)
+          return { distancia: Math.hypot(mesh.position.x - alvo.x, mesh.position.z - alvo.z), giro: Math.abs(diferencaAngular(mesh.rotation.y, rumoDeDescanso(mesh))) }
+        },
         /** Joga como o jogador (clique na peça e na casa). */
         jogar: (de: string, para: string) => {
           tentarSelecionar(de as Square)
@@ -4536,6 +4738,9 @@ export function ChessBoard3D() {
         },
         lancesDoJogador: () => (chessRef.current.turn() === corHumanoRef.current ? chessRef.current.moves({ verbose: true }).map((m) => [m.from, m.to]) : []),
         fen: () => chessRef.current.fen(),
+        /** O lance que a máquina dessa dificuldade escolhe na posição, sem mexer no tabuleiro. */
+        lanceDaMaquina: (fen: string, dificuldade: Dificuldade) => escolherJogadaDaMaquina(new Chess(fen), livroRef.current, dificuldade),
+        dificuldadeDaPartida: () => partidaAtualRef.current?.dificuldade ?? null,
         /** Começa uma partida de teste a partir de um PGN (não aparece nas partidas do jogador). */
         carregarTeste: (pgn: string, cor: 'w' | 'b') => {
           const agora = Date.now()
@@ -4624,6 +4829,7 @@ export function ChessBoard3D() {
       estado(estado) {
         const atual = salaRef.current
         if (atual?.conexao !== conexao) return
+        setEmpate(estado.empate ? { tipo: estado.empate === estado.minhaCor ? 'enviado' : 'recebido' } : null)
         if (atual.estado) {
           acoesRef.current?.receberEstadoDaSala(estado)
         } else {
@@ -4636,10 +4842,14 @@ export function ChessBoard3D() {
         setSala(estado)
       },
       lance(lance) {
-        if (salaRef.current?.conexao === conexao) acoesRef.current?.receberLanceDaSala(lance)
+        if (salaRef.current?.conexao !== conexao) return
+        // jogar em vez de responder recusa o empate pedido
+        setEmpate((agora) => (agora?.tipo === 'recusado' ? agora : null))
+        acoesRef.current?.receberLanceDaSala(lance)
       },
       fim(resultado, motivo) {
         if (salaRef.current?.conexao !== conexao) return
+        setEmpate(null)
         acoesRef.current?.receberFimDaSala(resultado, motivo)
         setSala((atual) => atual && { ...atual, status: 'fim', resultado, motivo })
       },
@@ -4658,6 +4868,20 @@ export function ChessBoard3D() {
       revanche(codigo) {
         if (salaRef.current?.conexao === conexao) setRevanche({ codigo, vencida: false })
       },
+      empate(de) {
+        const atual = salaRef.current
+        if (atual?.conexao !== conexao || !atual.estado) return
+        atual.estado = { ...atual.estado, empate: de }
+        setEmpate({ tipo: de === atual.estado.minhaCor ? 'enviado' : 'recebido' })
+        acoesRef.current?.atualizarTextos()
+      },
+      empateRecusado(de) {
+        const atual = salaRef.current
+        if (atual?.conexao !== conexao || !atual.estado) return
+        atual.estado = { ...atual.estado, empate: null }
+        setEmpate(de === atual.estado.minhaCor ? { tipo: 'recusado', por: 'adversario' } : null)
+        acoesRef.current?.atualizarTextos()
+      },
     })
     salaRef.current = { conexao, estado: null }
   }
@@ -4670,6 +4894,8 @@ export function ChessBoard3D() {
 
   function handleNovoJogo() {
     setRevancheFalhou(false)
+    // o resultado da partida (a taça) fica por cima da escolha de cor: sai antes
+    setResultadoOverlay(null)
     setEscolhendoCor(true)
   }
 
@@ -4753,7 +4979,7 @@ export function ChessBoard3D() {
     fecharSala()
     setEscolhendoCor(false)
     if (ehCelular()) entrarEmTelaCheia()
-    const nova = novaPartida(jogador, cor)
+    const nova = novaPartida(jogador, cor, config.dificuldade)
     try {
       await salvarPartida(nova)
     } catch {
@@ -4773,6 +4999,27 @@ export function ChessBoard3D() {
   }
 
   const adversarioDaSala = sala && (sala.minhaCor === 'w' ? sala.pretas : sala.brancas)
+  /** Quem joga de cada cor, pra aba de lances: você, a máquina ou o amigo. */
+  const nomeDoLado = (cor: 'w' | 'b') => (cor === corDoJogador ? t('lances.voce') : sala ? ((cor === 'w' ? sala.brancas : sala.pretas) ?? '…') : t('lances.maquina'))
+  const avisoDoEmpate =
+    empate?.tipo === 'pensando'
+      ? t('empate.pensando')
+      : empate?.tipo === 'recusado'
+        ? empate.por === 'maquina'
+          ? t('empate.maquinaRecusou')
+          : t('empate.adversarioRecusou', { nome: adversarioDaSala ?? '' })
+        : empate?.tipo === 'enviado'
+          ? t('empate.enviado', { nome: adversarioDaSala ?? '' })
+          : null
+
+  function handlePedirEmpate() {
+    acoesRef.current?.pedirEmpate()
+  }
+
+  function handleResponderEmpate(aceito: boolean) {
+    salaRef.current?.conexao.responderEmpate(aceito)
+    setEmpate(null)
+  }
 
   return (
     <div className="space-y-3">
@@ -4784,6 +5031,11 @@ export function ChessBoard3D() {
               {t('jogandoComo', { nome: jogador })}
               {adversarioDaSala ? ` · ${t('online.contra', { nome: adversarioDaSala })}` : ''}
             </p>
+            {avisoDoEmpate && (
+              <p className="text-xs font-medium text-ink-600" data-aviso-empate>
+                {avisoDoEmpate}
+              </p>
+            )}
             {sala && !conectadoNaSala && <p className="text-xs font-medium text-rose-700">{t('online.reconectando')}</p>}
             {sala?.status === 'andamento' && conectadoNaSala && !sala.adversarioConectado && adversarioDaSala && (
               <p className="text-xs font-medium text-ink-600">{t('online.adversarioAusente', { nome: adversarioDaSala })}</p>
@@ -4793,18 +5045,11 @@ export function ChessBoard3D() {
             <Button variant="ghost" onClick={handleMenu}>
               {t('menu.menu')}
             </Button>
-            <Button
-              variant="ghost"
-              aria-pressed={config.som}
-              aria-label={t(config.som ? 'som.desligar' : 'som.ligar')}
-              onClick={() => mudarConfig({ som: !config.som })}
-            >
-              {config.som ? '🔊' : '🔇'}
-            </Button>
             <Button variant="ghost" onClick={entrarEmTelaCheia}>
               ⛶ {t('menu.expandir')}
             </Button>
             {podeDesistir && <BotaoDesistir t={t} confirmando={confirmandoDesistencia} onPedir={setConfirmandoDesistencia} onConfirmar={handleDesistir} />}
+            {podeEmpatar && <BotaoEmpate t={t} onPedir={handlePedirEmpate} />}
             <Button variant="secondary" onClick={handleNovoJogo} disabled={escolhendoCor}>
               {t('menu.novoJogo')}
             </Button>
@@ -4818,42 +5063,6 @@ export function ChessBoard3D() {
           <Button variant="secondary" onClick={handleCancelarConvite}>
             {t('online.cancelarConvite')}
           </Button>
-        </div>
-      )}
-
-      {resultadoOverlay && (
-        // banner fora do tabuleiro (não é um overlay por cima dele) — assim a comemoração das
-        // peças no tabuleiro continua totalmente visível, em vez de escondida atrás de um fundo
-        // escurecido/borrado
-        <div
-          className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 ${
-            resultadoOverlay === 'venceu' ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'
-          }`}
-          role="status"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-3xl" aria-hidden>
-              {resultadoOverlay === 'venceu' ? '🏆' : '💀'}
-            </span>
-            <div>
-              <p
-                className={`font-display text-lg font-bold ${
-                  resultadoOverlay === 'venceu' ? 'text-emerald-700' : 'text-rose-700'
-                }`}
-              >
-                {t(resultadoOverlay === 'venceu' ? 'resultado.venceu' : resultadoOverlay === 'desistiu' ? 'resultado.desistiu' : 'resultado.perdeu')}
-              </p>
-              <p className="text-xs text-ink-400">{sala ? statusTexto : t(resultadoOverlay === 'desistiu' ? 'resultado.detalheDesistiu' : 'resultado.detalheMate')}</p>
-            </div>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <Button variant="ghost" onClick={() => setResultadoOverlay(null)}>
-              {t('resultado.fechar')}
-            </Button>
-            <Button variant="primary" onClick={handleNovoJogo}>
-              {t('menu.novoJogo')}
-            </Button>
-          </div>
         </div>
       )}
 
@@ -4888,52 +5097,84 @@ export function ChessBoard3D() {
           />
         )}
 
+        {tela === 'jogo' && <PainelDeLances t={t} lances={historico} brancas={nomeDoLado('w')} pretas={nomeDoLado('b')} />}
+
         {telaCheia && tela === 'jogo' && (
-          // por cima do tabuleiro: a situação da partida, desistir e voltar pra tela normal
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-2 p-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+          // por cima do tabuleiro, no alto: o menu no canto e a tela normal do outro lado, com as ações da partida
+          // logo abaixo. A situação da partida fica embaixo, longe das peças
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <div className="pointer-events-auto flex items-start justify-between gap-2">
-              <p className="min-w-0 rounded-lg bg-white/85 px-3 py-1.5 text-sm font-medium text-[#3a2a1a] shadow backdrop-blur">{statusTexto}</p>
-              <span className="flex shrink-0 gap-2">
-                <button
-                  type="button"
-                  onClick={handleMenu}
-                  className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur"
-                >
-                  {t('menu.menu')}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={config.som}
-                  aria-label={t(config.som ? 'som.desligar' : 'som.ligar')}
-                  onClick={() => mudarConfig({ som: !config.som })}
-                  className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur"
-                >
-                  {config.som ? '🔊' : '🔇'}
-                </button>
-                <button
-                  type="button"
-                  onClick={sairDaTelaCheia}
-                  className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur"
-                >
-                  ✕ {t('menu.telaNormal')}
-                </button>
-              </span>
+              <button type="button" onClick={handleMenu} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
+                {t('menu.menu')}
+              </button>
+              <button type="button" onClick={sairDaTelaCheia} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
+                ✕ {t('menu.telaNormal')}
+              </button>
             </div>
             <div className="pointer-events-auto flex flex-wrap items-center gap-2">
               {podeDesistir && <BotaoDesistir t={t} confirmando={confirmandoDesistencia} onPedir={setConfirmandoDesistencia} onConfirmar={handleDesistir} sobreTabuleiro />}
-              {resultadoOverlay && (
-                <span className={`rounded-lg px-3 py-1.5 text-sm font-bold shadow ${resultadoOverlay === 'venceu' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
-                  {resultadoOverlay === 'venceu' ? '🏆 ' : ''}
-                  {t(resultadoOverlay === 'venceu' ? 'resultado.venceu' : resultadoOverlay === 'desistiu' ? 'resultado.desistiu' : 'resultado.perdeu')}
-                </span>
-              )}
-              {resultadoOverlay && (
+              {podeEmpatar && <BotaoEmpate t={t} onPedir={handlePedirEmpate} sobreTabuleiro />}
+              {!podeDesistir && !resultadoOverlay && sala?.status !== 'aguardando' && (
                 <button type="button" onClick={handleNovoJogo} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow">
                   {t('menu.novoJogo')}
                 </button>
               )}
             </div>
           </div>
+        )}
+
+        {tela === 'jogo' && (revanche || empate?.tipo === 'recebido' || telaCheia) && (
+          // embaixo: o pedido de empate e a revanche do amigo e, na tela cheia, a situação da partida
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 p-3" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+            {empate?.tipo === 'recebido' && (
+              <div className="pointer-events-auto flex w-full max-w-md flex-wrap items-center justify-between gap-2 rounded-xl bg-white/95 p-3 shadow-lg" role="alertdialog" data-pedido-empate>
+                <p className="text-sm font-medium text-[#3a2a1a]">{t('empate.recebido', { nome: adversarioDaSala ?? '' })}</p>
+                <span className="flex gap-2">
+                  <Button variant="primary" onClick={() => handleResponderEmpate(true)}>
+                    {t('empate.aceitar')}
+                  </Button>
+                  <Button variant="secondary" onClick={() => handleResponderEmpate(false)}>
+                    {t('empate.recusar')}
+                  </Button>
+                </span>
+              </div>
+            )}
+            {revanche && (
+              <div className="pointer-events-auto flex w-full max-w-md flex-wrap items-center justify-between gap-2 rounded-xl bg-white/95 p-3 shadow-lg" role="status" data-revanche>
+                <p className="text-sm font-medium text-[#3a2a1a]">{t(revanche.vencida ? 'amigos.erroPartidaVencida' : 'online.revancheRecebida', { nome: adversarioDaSala ?? '' })}</p>
+                <span className="flex gap-2">
+                  {!revanche.vencida && (
+                    <Button variant="primary" onClick={() => void handleAceitarRevanche()}>
+                      {t('amigos.jogar')}
+                    </Button>
+                  )}
+                  <Button variant="secondary" onClick={handleRecusarRevanche}>
+                    {t(revanche.vencida ? 'resultado.fechar' : 'amigos.recusar')}
+                  </Button>
+                </span>
+              </div>
+            )}
+            {telaCheia && !resultadoOverlay && (statusTexto || avisoDoEmpate) && (
+              <div className="pointer-events-auto flex max-w-full flex-col items-center gap-1" data-status-partida>
+                {statusTexto && <p className="rounded-lg bg-white/85 px-3 py-1.5 text-center text-sm font-medium text-[#3a2a1a] shadow backdrop-blur">{statusTexto}</p>}
+                {avisoDoEmpate && (
+                  <p className="rounded-lg bg-[#1c120a]/85 px-3 py-1 text-center text-xs font-medium text-[#f5e6c8] shadow" data-aviso-empate>
+                    {avisoDoEmpate}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {resultadoOverlay && tela === 'jogo' && (
+          <ResultadoDaPartida
+            t={t}
+            fim={resultadoOverlay}
+            detalhe={statusTexto}
+            onNovoJogo={handleNovoJogo}
+            onFechar={() => setResultadoOverlay(null)}
+          />
         )}
 
         {promocaoPendente && (
@@ -4972,22 +5213,6 @@ export function ChessBoard3D() {
           </div>
         )}
 
-        {revanche && (
-          <div className="absolute inset-x-3 bottom-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/95 p-3 shadow-lg" role="status" data-revanche>
-            <p className="text-sm font-medium text-[#3a2a1a]">{t(revanche.vencida ? 'amigos.erroPartidaVencida' : 'online.revancheRecebida', { nome: adversarioDaSala ?? '' })}</p>
-            <span className="flex gap-2">
-              {!revanche.vencida && (
-                <Button variant="primary" onClick={() => void handleAceitarRevanche()}>
-                  {t('amigos.jogar')}
-                </Button>
-              )}
-              <Button variant="secondary" onClick={handleRecusarRevanche}>
-                {t(revanche.vencida ? 'resultado.fechar' : 'amigos.recusar')}
-              </Button>
-            </span>
-          </div>
-        )}
-
         {escolhendoCor && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-xl p-4">
             <div className="w-full max-w-xs rounded-xl bg-surface p-4 shadow-xl text-center">
@@ -4997,6 +5222,26 @@ export function ChessBoard3D() {
                 <p role="alert" className="mb-3 text-xs font-medium text-rose-700">
                   {t('online.revancheErro', { nome: adversarioDaSala ?? '' })}
                 </p>
+              )}
+              {!sala && (
+                <div className="mb-4" data-dificuldade>
+                  <p className="mb-1.5 text-xs font-semibold text-ink-700">{t('dificuldade.titulo')}</p>
+                  <div role="radiogroup" aria-label={t('dificuldade.titulo')} className="grid grid-cols-3 gap-1.5">
+                    {DIFICULDADES.map((nivel) => (
+                      <button
+                        key={nivel}
+                        type="button"
+                        role="radio"
+                        aria-checked={config.dificuldade === nivel}
+                        onClick={() => mudarConfig({ dificuldade: nivel })}
+                        className={`rounded-lg border px-1 py-1.5 text-xs font-semibold transition ${config.dificuldade === nivel ? 'border-ink-800 bg-ink-800 text-white' : 'border-ink-200 text-ink-700 hover:border-ink-400 hover:bg-ink-50'}`}
+                      >
+                        {t(`dificuldade.${nivel}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[0.7rem] leading-snug text-ink-400">{t(`dificuldade.${config.dificuldade}Dica`)}</p>
+                </div>
               )}
               <div className="flex gap-3 justify-center">
                 <button

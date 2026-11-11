@@ -33,7 +33,7 @@ async function sessao(viewport, nomeDaConta, passos) {
   const page = await contexto.newPage()
   page.setDefaultTimeout(150000)
   await page.addInitScript(() => {
-    if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+    if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
   })
   await page.goto(SITE, { waitUntil: 'load', timeout: 120000 })
   await page.waitForFunction(() => !!window.__xadrez?.carregarTeste, null, { timeout: 150000, polling: 500 })

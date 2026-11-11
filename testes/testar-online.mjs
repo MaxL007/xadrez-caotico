@@ -36,7 +36,7 @@ async function novoJogador(viewport = { width: 1100, height: 760 }) {
   // aparência é conferida à parte
   await page.addInitScript(() => {
     window.__semDesenho = true
-    if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+    if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
   })
   return page
 }
@@ -212,12 +212,22 @@ try {
   await bia.locator(`[data-amigo="${idAna}"]`).waitFor()
   await ana.locator(`[data-amigo="${idBia}"]`).waitFor({ timeout: 30000 })
   conferir('aceitou: os dois se veem na lista de amigos', true)
+  await ana.locator(`[data-amigo="${idBia}"] [data-online="sim"]`).waitFor({ timeout: 30000 })
+  conferir('a bolinha verde mostra que a amiga está com o jogo aberto', true)
   conferir('cada amigo tem partida amistosa e ver perfil', (await botao(ana, 'Partida amistosa').count()) === 1 && (await botao(ana, 'Ver perfil').count()) === 1)
 
   await botao(ana, 'Ver perfil').click()
   await ana.locator('[data-perfil]').getByText(`ID: ${idBia}`).waitFor()
   await ana.locator('[data-perfil]').getByText('Joga desde').waitFor()
   conferir('o perfil mostra o ID e desde quando joga', true)
+  conferir('o perfil do amigo também tem a bolinha verde', (await ana.locator('[data-perfil] [data-online="sim"]').count()) === 1)
+  await ana.locator('[data-perfil]').getByRole('tab', { name: /^Conquistas \(\d+\/22\)$/ }).click()
+  await ana.locator('[data-conquistas="amigo"]').waitFor()
+  conferir(
+    'o perfil do amigo mostra as conquistas dele, com o progresso e sem o saldo',
+    (await ana.locator('[data-conquistas="amigo"] [data-conquista]').count()) === 22 && (await ana.locator('[data-conquistas="amigo"] [data-saldo]').count()) === 0,
+  )
+  await ana.locator('[data-perfil]').getByRole('tab', { name: 'Perfil', exact: true }).click()
   await foto(ana, 'amigos-perfil.png')
   await botao(ana, 'Voltar para os amigos').click()
   await foto(ana, 'amigos-lista.png')
@@ -280,9 +290,9 @@ try {
   await esperarVez(ana, 4)
   await ana.waitForFunction(() => window.__xadrez.sala()?.status === 'fim', null, { timeout: 120000, polling: 300 })
   await ana.waitForFunction(() => !window.__xadrez.ocupado(), null, { polling: 300 })
-  await ana.getByText('Você perdeu').first().waitFor({ timeout: 60000 })
-  await bia.getByText('Você venceu!').first().waitFor({ timeout: 60000 })
-  conferir('xeque-mate: um vê que venceu e o outro que perdeu', true)
+  await ana.locator('[data-resultado="perdeu"]').getByText('Derrota').waitFor({ timeout: 60000 })
+  await bia.locator('[data-resultado="venceu"]').getByText('Vitória').waitFor({ timeout: 60000 })
+  conferir('xeque-mate: no centro da tela, um vê a taça da vitória e o outro a derrota', (await bia.locator('[data-resultado="venceu"] [data-taca]').count()) === 1)
   const pecasAna = await h(ana, 'problemasDoTabuleiro')
   const pecasBia = await h(bia, 'problemasDoTabuleiro')
   conferir('depois das animações, cada peça está na casa certa nos dois lados', pecasAna.length === 0 && pecasBia.length === 0, [...pecasAna, ...pecasBia].join('; '))
@@ -400,7 +410,13 @@ try {
   conferir('desistir: os dois veem o fim', true)
 
   // "Novo jogo" numa partida amistosa chama o mesmo amigo, não a máquina
-  await bia.locator('main').getByRole('button', { name: 'Novo jogo', exact: true }).first().click()
+  const novoJogoDaBia = bia.locator('main').getByRole('button', { name: 'Novo jogo', exact: true }).first()
+  await novoJogoDaBia.click({ timeout: 30000 }).catch(async (erro) => {
+    await foto(bia, 'online-novo-jogo-erro.png')
+    const caixa = await novoJogoDaBia.boundingBox()
+    const porCima = caixa && (await bia.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.outerHTML.slice(0, 300), { x: caixa.x + caixa.width / 2, y: caixa.y + caixa.height / 2 }))
+    throw new Error(`Novo jogo não clicável: ${JSON.stringify(caixa)} | por cima: ${porCima} | ${erro.message.split('\n')[0]}`)
+  })
   await bia.getByText(`Nova partida contra ${nomeAna}`).waitFor()
   await botao(bia, 'Brancas').click()
   await bia.waitForFunction(() => window.__xadrez.sala()?.status === 'aguardando', null, { timeout: 30000, polling: 300 })
@@ -411,9 +427,29 @@ try {
   await ana.waitForFunction(() => window.__xadrez.sala()?.status === 'andamento', null, { timeout: 30000, polling: 300 })
   await bia.waitForFunction(() => window.__xadrez.sala()?.status === 'andamento', null, { timeout: 30000, polling: 300 })
   conferir('aceitou: os dois na partida nova, com as cores trocadas', (await h(ana, 'sala')).minhaCor === 'b')
-  await bia.locator('main').getByRole('button', { name: 'Desistir', exact: true }).first().click()
-  await bia.locator('main').getByRole('button', { name: 'Sim, desistir', exact: true }).first().click()
-  await ana.waitForFunction(() => window.__xadrez.sala()?.motivo === 'desistencia', null, { timeout: 60000, polling: 300 })
+
+  // empate combinado entre os dois
+  const pedirEmpate = (page) => page.locator('[data-pedir-empate]').first().click()
+  await pedirEmpate(bia)
+  const pedidoNaAna = ana.locator('[data-pedido-empate]')
+  await pedidoNaAna.waitFor({ timeout: 30000 })
+  conferir('o pedido de empate chega ao amigo na hora', (await pedidoNaAna.innerText()).includes(`${nomeBia} propõe empate.`))
+  conferir(
+    'quem pediu vê que foi enviado, e não pede de novo no mesmo lance',
+    (await bia.locator('[data-aviso-empate]').first().innerText()).includes(`Pedido de empate enviado para ${nomeAna}.`) && (await bia.locator('[data-pedir-empate]').count()) === 0,
+  )
+  await pedidoNaAna.getByRole('button', { name: 'Recusar', exact: true }).click()
+  await bia.locator('[data-aviso-empate]').getByText(`${nomeAna} recusou o empate.`).first().waitFor({ timeout: 30000 })
+  conferir('a recusa avisa quem pediu', (await pedidoNaAna.count()) === 0)
+  await h(bia, 'jogar', 'e2', 'e4')
+  await esperarVez(ana, 1)
+  await pedirEmpate(ana)
+  await bia.locator('[data-pedido-empate]').getByRole('button', { name: 'Aceitar empate', exact: true }).click({ timeout: 30000 })
+  await ana.waitForFunction(() => window.__xadrez.sala()?.motivo === 'acordo', null, { timeout: 60000, polling: 300 })
+  await bia.waitForFunction(() => window.__xadrez.sala()?.motivo === 'acordo', null, { timeout: 60000, polling: 300 })
+  await ana.locator('[data-resultado="empate"]').waitFor({ timeout: 30000 })
+  await bia.locator('[data-resultado="empate"]').waitFor({ timeout: 30000 })
+  conferir('aceito, os dois veem o empate por acordo no centro da tela', (await ana.getByText(`Empate por acordo com ${nomeBia}.`).count()) >= 1)
 
   // recusar e cancelar
   await ana.locator('main').getByRole('button', { name: 'Menu', exact: true }).first().click()

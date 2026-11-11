@@ -29,7 +29,7 @@ page.on('console', (m) => {
   if (m.text().includes('Context')) console.log('  navegador:', m.text().slice(0, 120))
 })
 await page.addInitScript(() => {
-  if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+  if (!localStorage.getItem('xadrez:config')) localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
 })
 
 /** Brilho médio da imagem na tela, de 0 a 255. O menu fica escondido pra só o tabuleiro contar. */

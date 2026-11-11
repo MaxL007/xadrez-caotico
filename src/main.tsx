@@ -3,10 +3,12 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { iniciarAplicativo } from './aplicativo'
 import { iniciarConvites } from './conta/conviteDeAmizade'
+import { iniciarPresenca } from './conta/presenca'
 import './index.css'
 
 iniciarAplicativo()
 iniciarConvites()
+iniciarPresenca()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

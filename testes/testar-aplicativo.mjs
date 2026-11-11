@@ -50,7 +50,7 @@ const INDEX = path.join(DIST, 'index.html')
 const indexDoBuild = fs.readFileSync(INDEX)
 let copiaDaEntrada = null
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
-const configBaixa = () => localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', som: false, ambiente: false }))
+const configBaixa = () => localStorage.setItem('xadrez:config', JSON.stringify({ qualidade: 'baixa', qualidadeEscolhida: true, som: false, ambiente: false }))
 try {
   const contexto = await browser.newContext({ viewport: { width: 1100, height: 760 } })
   const page = await contexto.newPage()
