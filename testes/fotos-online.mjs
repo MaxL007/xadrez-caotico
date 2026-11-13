@@ -123,7 +123,6 @@ try {
     await foto('tela-menu-tablet.png')
   })
   await sessao({ width: 844, height: 390 }, 'deitado', async (page, foto) => {
-    await page.locator('main').getByRole('button', { name: /Expandir/ }).click()
     await page.waitForTimeout(4000)
     await foto('tela-menu-deitado.png')
     const medida = await page.evaluate(() => {

@@ -196,6 +196,20 @@ const CAJADOS: Record<string, (s: 1 | -1, lado: Lado) => Parte[]> = {
   },
 }
 
+/** A lança do cavaleiro, na mão direita e ao longo do braço como os cajados: a haste passa pela mão, a guarda em cone
+ * logo à frente dela e a ponta de metal lá na frente. */
+function lanca(): Parte[] {
+  const osso = 'RightForeArm'
+  const pra = (x: number) => -x
+  return [
+    { geo: cilindro(0.012, 0.016, 0.68, 8), papel: 'detalhe', osso, pos: [pra(0.58), Y_MAO, Z_CAJADO], rot: [0, 0, Math.PI / 2] },
+    { geo: cone(0.05, 0.11, 14), papel: 'armadura', osso, pos: [pra(0.46), Y_MAO, Z_CAJADO], rot: [0, 0, Math.PI / 2] },
+    { geo: cilindro(0.02, 0.02, 0.02, 10), papel: 'coroa', osso, pos: [pra(0.4), Y_MAO, Z_CAJADO], rot: [0, 0, Math.PI / 2] },
+    { geo: cilindro(0.018, 0.018, 0.016, 10), papel: 'coroa', osso, pos: [pra(0.88), Y_MAO, Z_CAJADO], rot: [0, 0, Math.PI / 2] },
+    { geo: cone(0.022, 0.14, 8), papel: 'coroa', osso, pos: [pra(0.98), Y_MAO, Z_CAJADO], rot: [0, 0, Math.PI / 2] },
+  ]
+}
+
 /** Mão que segura o cajado em cada peça. */
 const MAO_DO_CAJADO: Record<string, [1 | -1, Lado]> = { b: [1, 'Left'], q: [-1, 'Right'], k: [-1, 'Right'] }
 
@@ -445,7 +459,9 @@ export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record
     regras.push(ESCONDER.cajado)
     if (CAJADOS[arma]) partes.push(...CAJADOS[arma](...maoDoCajado))
   }
-  if (tipo === 'r') grupo.userData.arma = arma
+  // a arma escolhida fica na peça: o golpe da captura depende dela
+  grupo.userData.arma = arma
+  if (tipo === 'n' && arma === 'lanca') partes.push(...lanca())
 
   const semKatana = tipo === 'p' && arma !== 'katana'
   if (tipo === 'p' && arma === 'espada') {
@@ -523,6 +539,7 @@ export function equipamentoSozinho(tipo: string, parte: string, opcao: string, m
   let partes: Parte[] = []
   if (parte === 'arma') {
     if (tipo === 'p' && opcao === 'espada') partes = espadaNaMao()
+    else if (tipo === 'n' && opcao === 'lanca') partes = lanca()
     else if (MAO_DO_CAJADO[tipo] && CAJADOS[opcao]) partes = CAJADOS[opcao](1, 'Left')
   } else if (tipo === 'n' && MONTARIA[parte]) {
     partes = MONTARIA[parte][opcao]?.() ?? []

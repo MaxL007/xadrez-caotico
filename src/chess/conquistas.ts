@@ -1,5 +1,6 @@
 import { Chess } from 'chess.js'
-import { guardarProgresso, lerConquistas, receberConquistas, sessaoAtual } from '../db/servidor'
+import { guardarProgresso, lerConquistas, receberConquistas, receberVitorias, sessaoAtual } from '../db/servidor'
+import type { Dificuldade } from './engine'
 import { resultadoDaPartida, type PartidaXadrez } from '../db/xadrezRepo'
 import catalogo from './conquistas.json'
 
@@ -63,6 +64,40 @@ export async function contarPartidas(partidas: PartidaXadrez[]): Promise<Contage
   return total
 }
 
+/** Óticoins por vitória contra a máquina, pela dificuldade (o servidor paga o mesmo). */
+export const PREMIO_DA_VITORIA: Record<Dificuldade, number> = { facil: 1, intermediario: 2, dificil: 3 }
+
+const chaveDasVitoriasPagas = (usuario: string) => `xadrezCaotico:vitoriasPagas:${usuario}`
+
+function vitoriasPagasNoAparelho(usuario: string): string[] {
+  try {
+    const lidas = JSON.parse(localStorage.getItem(chaveDasVitoriasPagas(usuario)) ?? '[]') as unknown
+    return Array.isArray(lidas) ? lidas.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Manda as vitórias contra a máquina que ainda não foram pagas (só as jogadas com dificuldade escolhida). A que ainda
+ * não subiu pra nuvem fica pra próxima vez. Devolve quanto entrou agora e o saldo, se o servidor respondeu.
+ */
+async function receberAsVitorias(partidas: PartidaXadrez[]): Promise<{ premio: number; oticoins: number } | null> {
+  const usuario = sessaoAtual()?.usuario.id
+  if (!usuario) return null
+  const pagas = new Set(vitoriasPagasNoAparelho(usuario))
+  const aPagar = partidas.filter((p) => p.dificuldade && !p.demonstracao && p.status === 'FINALIZADA' && resultadoDaPartida(p) === 'venceu' && !pagas.has(p.id)).slice(0, 20)
+  if (aPagar.length === 0) return null
+  const resposta = await receberVitorias(aPagar.map((p) => p.id))
+  for (const id of resposta.jaPagas) pagas.add(id)
+  try {
+    localStorage.setItem(chaveDasVitoriasPagas(usuario), JSON.stringify([...pagas]))
+  } catch {
+    // sem localStorage: manda de novo da próxima vez, e o servidor não paga duas vezes
+  }
+  return { premio: resposta.pagas.reduce((soma, p) => soma + p.oticoins, 0), oticoins: resposta.oticoins }
+}
+
 export interface SituacaoDasConquistas {
   contagem: Contagem
   /** null pra quem não entrou numa conta: as conquistas aparecem, mas não pagam. */
@@ -70,6 +105,8 @@ export interface SituacaoDasConquistas {
   recebidas: string[]
   /** Pagas agora, pra avisar na tela. */
   novas: Conquista[]
+  /** Óticoins das vitórias contra a máquina pagas agora. */
+  premioDasVitorias: number
 }
 
 // o último progresso que o servidor guardou, por conta: só manda de novo quando muda
@@ -89,17 +126,21 @@ function enviarProgresso(contagem: Contagem) {
 /** Confere o que foi alcançado e recebe as óticoins do que ainda não foi pago. */
 export async function verificarConquistas(partidas: PartidaXadrez[]): Promise<SituacaoDasConquistas> {
   const contagem = await contarPartidas(partidas)
-  if (!sessaoAtual()) return { contagem, oticoins: null, recebidas: [], novas: [] }
+  if (!sessaoAtual()) return { contagem, oticoins: null, recebidas: [], novas: [], premioDasVitorias: 0 }
   enviarProgresso(contagem)
+  // as vitórias pagam antes: sem conexão, as conquistas seguem do mesmo jeito
+  const vitorias = await receberAsVitorias(partidas).catch(() => null)
+  const premioDasVitorias = vitorias?.premio ?? 0
   const conta = await lerConquistas()
   contagem.convites = conta.convites
   const alcancadas = CONQUISTAS.filter((c) => contagem[c.medida] >= c.meta && !conta.recebidas.includes(c.id))
-  if (alcancadas.length === 0) return { contagem, oticoins: conta.oticoins, recebidas: conta.recebidas, novas: [] }
+  if (alcancadas.length === 0) return { contagem, oticoins: conta.oticoins, recebidas: conta.recebidas, novas: [], premioDasVitorias }
   const pagas = await receberConquistas(alcancadas.map((c) => c.id))
   return {
     contagem,
     oticoins: pagas.oticoins,
     recebidas: pagas.recebidas,
     novas: CONQUISTAS.filter((c) => pagas.novas.includes(c.id)),
+    premioDasVitorias,
   }
 }

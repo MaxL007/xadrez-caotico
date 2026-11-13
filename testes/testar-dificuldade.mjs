@@ -77,7 +77,9 @@ try {
   await botao('Continuar partida').click()
   await page.waitForFunction(() => window.__xadrez.dificuldadeDaPartida() === 'facil', null, { timeout: 60000, polling: 300 })
   conferir('continuar a partida mantém a dificuldade', true)
-  await page.locator('main').getByRole('button', { name: 'Novo jogo', exact: true }).first().click()
+  // não existe mais tela normal: com a partida em andamento, o novo jogo sai do Menu
+  await botao('Menu').click()
+  await botao('Novo jogo').first().click()
   await page.getByRole('heading', { name: 'Com qual peça você quer jogar?' }).waitFor()
   conferir('o próximo novo jogo lembra a última dificuldade', (await page.getByRole('radio', { name: 'Fácil' }).getAttribute('aria-checked')) === 'true')
   conferir('sem erros de JavaScript', erros.length === 0, erros.join(' | '))

@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { Traduzir } from '../chess/idiomas'
 import { desenhoDosPaineis } from '../chess/configXadrez'
+import { Oticoin } from './ElementosDoJogador'
 
 // O fim da partida no centro da tela. Na vitória, uma taça 3D com "Vitória" embaixo; na derrota e no empate, só a
 // palavra. A taça tem renderizador próprio, na resolução da tela e com fundo transparente: não mexe na qualidade do
@@ -144,12 +145,15 @@ export function ResultadoDaPartida({
   t,
   fim,
   detalhe,
+  premio = 0,
   onNovoJogo,
   onFechar,
 }: {
   t: Traduzir
   fim: FimDaPartida
   detalhe: string
+  /** Óticoins da vitória contra a máquina (pela dificuldade); 0 nas outras. */
+  premio?: number
   onNovoJogo: () => void
   onFechar: () => void
 }) {
@@ -185,6 +189,12 @@ export function ResultadoDaPartida({
         >
           {titulo}
         </p>
+        {premio > 0 && (
+          <p className="mt-1 flex items-center gap-1.5 rounded-full bg-[#1c120a]/80 px-3 py-1 text-sm font-bold text-[#f2c94c] shadow" data-premio>
+            <Oticoin tamanho={22} girando />
+            {t('resultado.premio', { n: premio })}
+          </p>
+        )}
         <p className="mt-1 max-w-[18rem] text-center text-xs font-medium text-[#f5e6c8] [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]">{detalhe}</p>
         <button
           type="button"

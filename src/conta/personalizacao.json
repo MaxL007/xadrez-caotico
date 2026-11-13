@@ -47,26 +47,26 @@
       "machado",
       "maca"
     ],
+    "n": [
+      "nenhuma",
+      "lanca"
+    ],
     "b": [
       "nenhuma",
       "cajado",
-      "cristal",
-      "cetro",
-      "lua"
+      "cristal"
     ],
     "q": [
       "nenhuma",
       "cajado",
       "cristal",
-      "cetro",
       "lua"
     ],
     "k": [
       "nenhuma",
       "cajado",
       "cristal",
-      "cetro",
-      "lua"
+      "cetro"
     ]
   },
   "montaria": {
@@ -110,6 +110,9 @@
     },
     "arma:lua": {
       "conquista": "rainhas-150"
+    },
+    "arma:lanca": {
+      "conquista": "cavalos-50"
     }
   },
   "loja": {
@@ -121,7 +124,10 @@
       "maos:garras": 25,
       "peito:brasao": 40,
       "calca:grevas": 30,
-      "botas:ferro": 25
+      "botas:ferro": 25,
+      "arma:katana": 35,
+      "arma:espada": 30,
+      "golpe:retalhamento": 80
     },
     "r": {
       "cabeca:elmo": 30,
@@ -131,7 +137,10 @@
       "maos:garras": 30,
       "peito:brasao": 50,
       "calca:grevas": 35,
-      "botas:ferro": 30
+      "botas:ferro": 30,
+      "arma:marreta": 35,
+      "arma:machado": 35,
+      "arma:maca": 40
     },
     "n": {
       "cabeca:elmo": 40,
@@ -144,7 +153,8 @@
       "botas:ferro": 40,
       "cavalo:armadura": 40,
       "sela:guerra": 40,
-      "cabresto:guerra": 15
+      "cabresto:guerra": 15,
+      "arma:lanca": 20
     },
     "b": {
       "cabeca:elmo": 30,
@@ -154,7 +164,9 @@
       "maos:garras": 30,
       "peito:brasao": 55,
       "calca:grevas": 40,
-      "botas:ferro": 30
+      "botas:ferro": 30,
+      "arma:cajado": 35,
+      "arma:cristal": 35
     },
     "q": {
       "cabeca:elmo": 50,
@@ -164,7 +176,10 @@
       "maos:garras": 40,
       "peito:brasao": 70,
       "calca:grevas": 60,
-      "botas:ferro": 50
+      "botas:ferro": 50,
+      "arma:cajado": 35,
+      "arma:cristal": 35,
+      "arma:lua": 35
     },
     "k": {
       "cabeca:elmo": 50,
@@ -174,7 +189,10 @@
       "maos:garras": 40,
       "peito:brasao": 70,
       "calca:grevas": 60,
-      "botas:ferro": 50
+      "botas:ferro": 50,
+      "arma:cajado": 35,
+      "arma:cristal": 35,
+      "arma:cetro": 50
     }
   }
 }

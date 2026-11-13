@@ -88,11 +88,20 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 
 - Aberta a toda conta, mas só o padrão de cada parte é livre. Catálogo em `src/conta/personalizacao.json`, o mesmo que o
   Worker confere: `loja` traz, por peça, o que se compra e o preço (tabela do usuário; a compra vale só pra aquela peça,
-  item `peça:parte:opção` na tabela `itens`); `itens` traz as armas, que saem só por conquista. A conta com
+  item `peça:parte:opção` na tabela `itens`), inclusive as armas e o retalhamento da katana (`p:golpe:retalhamento`);
+  `itens` traz a conquista que também libera cada arma: vale a compra ou a conquista. A conta com
   `tudo_liberado` usa tudo. A escolha fica em `usuarios.personalizacao`, só o que foge do padrão; opção que saiu do
   catálogo é ignorada.
-- Toda peça começa sem arma, inclusive as da máquina e as do adversário: a katana, a espada, as armas da torre e os
-  cajados aparecem só em quem liberou e vestiu. Torre sem arma bate com o golpe comum (`ARMAS_DA_TORRE`).
+- Toda peça começa sem arma, inclusive as da máquina e as do adversário: as armas aparecem só em quem liberou e vestiu.
+  Peão: katana ou espada. Torre: marreta, machado (lâmina em meia-lua) ou maça. Cavalo: lança. Bispo: cajado ou cristal.
+  Rainha: cajado, cristal ou lua. Rei: cajado, cristal ou cetro. Torre sem arma bate com o golpe comum (`ARMAS_DA_TORRE`).
+- O ataque da captura segue a arma (`src/components/efeitosDasArmas.ts`, cada um com som próprio em `sons.ts`):
+  retalhamento da katana (vários cortes e a peça em pedaços, só pra quem comprou), marreta (rachaduras desenhadas a cada
+  pancada e o tabuleiro tremendo), machado (a peça cortada ao meio por plano de recorte; a metade de cima é cópia pelo
+  `SkeletonUtils`, sem o userData, que tem o mixer), maça (a peça presa nos espinhos vai junto com a maça, `poseDaMaca`, e
+  cai ao sacudir), cajado (o raio), cristal (convocado a 75° do tabuleiro, dentro da casa), cetro (a peça afunda no
+  tabuleiro, recortada no tampo) e lua (tornado que a arremessa pra fora do tabuleiro). Sem arma, cada peça ataca como
+  antes. O recorte pede `renderer.localClippingEnabled`.
 - A compra na Loja grava o item e tira as óticoins no mesmo lote: o item só entra se havia saldo (`INSERT ... SELECT ...
   WHERE oticoins >= preço`), e a moeda só sai se o item entrou (`changes()`).
 - Na aba, cada quadrado é um expositor: o equipamento sozinho, girando num pedestal (`src/components/expositor.ts`),
@@ -113,6 +122,9 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 - Catálogo em `src/chess/conquistas.json`, também lido pelo Worker. Só contam partidas contra a máquina; as com amigos
   ficam de fora. Capturas, xeques, roques e vitórias saem das partidas salvas (`contarPartidas`); convites aceitos, o
   servidor conta.
+- Vitória contra a máquina paga pela dificuldade: 1 no fácil, 2 no intermediário, 3 no difícil (`POST /vitorias/receber`,
+  tabela `vitorias_pagas`). O servidor confere a partida salva na conta (terminada, vencida, com dificuldade), paga cada
+  uma uma vez só e no máximo 20 por hora. O aparelho manda ao abrir o menu; a taça já mostra quanto vai entrar.
 - O servidor não refaz as partidas (não cabe nos 10 ms): confia na contagem do aparelho, mas cada conquista paga uma vez
   só (tabela `conquistas`), então o máximo de uma conta é a soma do catálogo. O recibo e a moeda entram juntos no mesmo
   lote, com `changes()`.
@@ -129,8 +141,16 @@ Ver README. Armadilhas:
 
 - Sem placa de vídeo, o 3D trava a página. Os testes definem `window.__semDesenho` e usam `polling` em
   `waitForFunction`, porque a espera padrão depende dos quadros. Fotos só com um navegador por vez.
+- Foto de efeito (ataque, animação curta) com o relógio de verdade sai atrasada: cada quadro sem GPU leva mais de um
+  segundo e o efeito já acabou. `testes/fotos-armas.mjs` para o relógio da página (`clock` do Playwright), anda com
+  `runFor` sem desenhar e desenha só o quadro da foto; `pauseAt` precisa de folga, porque o relógio falso se adianta
+  ao carregar. Com o relógio parado a máquina tem de ser a fácil (`carregarTeste(pgn, cor, 'facil')`): a difícil mede
+  o tempo de pensar por esse relógio. `__sonsTocados` registra o som quando ele é pedido, mesmo o agendado pra depois.
 - Encerrar o `wrangler dev` pelo TaskStop deixa `workerd` vivo no Windows, servindo a versão velha. Conferir
   com `Get-NetTCPConnection -LocalPort 8787`.
+- Depois de horas no ar, o `wrangler dev` fica lento (pedidos de 5 a 12 s) e os testes com conta falham por tempo
+  (convite, sincronização). Antes de investigar uma falha dessas, conferir os tempos no log dele e reiniciar
+  (parar também o `workerd`).
 - O limite de 5 contas por hora vale no simulador também: `LIMITE_CONTAS` em `worker/.dev.vars` afrouxa.
 - Entrar em tela cheia leva segundos sem GPU e o canvas fica 12 px menor nesse meio-tempo: medir em laço.
 - O build de produção não tem `__semDesenho`: no teste do aplicativo, uma tela 3D por vez e o iPhone simulado em 1x,
@@ -154,7 +174,11 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
 - O AnimationMixer só reescreve um osso quando o valor do clipe muda: rotações somadas acumulam de quadro em
   quadro, então salve e restaure a pose a cada quadro (`salvarOssosDoGolpe`).
 - Regras do usuário: cada tipo de peça tem golpes próprios; golpe só na captura, sorteado; peão contra peão tem
-  50% de chance de rendição com honra; mortais precisam parecer mortais de verdade.
+  15% de chance de rendição com honra (com sino de capela e trompas quando quem captura é de espada); mortais precisam
+  parecer mortais de verdade.
+- Os passos soam quando o pé encosta no chão (`ouvidoDosPes`: o pé tem de subir de verdade antes de pisar de novo); o
+  cavalo, sem esses ossos, galopa pela distância. O saque da katana e o da espada têm sons diferentes, no instante em
+  que a lâmina sai da bainha.
 - A recusa (clique na própria peça fora da vez) e o gesto amigável mexem na peça inteira e devolvem ela ao descanso
   no fim. O descanso fica guardado na peça enquanto uma delas roda (`comecarAnimacaoDoCorpo`): a que começa no meio de
   outra parte dele, e um lance, golpe, queda ou comemoração devolve a peça antes (`voltarAoDescanso`). Antes, cliques
@@ -175,8 +199,9 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
 
 ## Tela de partida
 
-- A situação da partida fica embaixo do tabuleiro na tela cheia, com o pedido de empate e a revanche; o menu fica no
-  canto de cima. Não há botão de som na partida (fica nas Configurações).
+- Não há tela normal: o jogo ocupa sempre a página inteira, e no celular cada toque pede de novo a tela cheia do
+  navegador, se ela tiver saído. A situação da partida, o convite esperando o amigo, o pedido de empate e a revanche
+  ficam embaixo; o menu no canto de cima. Não há botão de som na partida (fica nas Configurações).
 - O fim da partida aparece no centro (`ResultadoDaPartida.tsx`): na vitória, uma taça 3D com renderizador próprio, na
   resolução da tela e transparente, pra não depender da qualidade do tabuleiro.
 - A aba de lances (`PainelDeLances.tsx`) é uma lingueta na borda direita, com uma coluna pra cada lado.

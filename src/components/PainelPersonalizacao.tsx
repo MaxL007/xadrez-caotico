@@ -346,7 +346,7 @@ export function PainelPersonalizacao({
           {parte.opcoes.map((opcao) => {
             const liberada = opcaoLiberada(personalizacao, peca, parte.parte, opcao)
             const acesso = acessoDaOpcao(peca, parte.parte, opcao)
-            const conquista = acesso.tipo === 'conquista' ? CONQUISTAS.find((c) => c.id === acesso.conquista) : undefined
+            const conquista = acesso.tipo !== 'livre' && acesso.conquista ? CONQUISTAS.find((c) => c.id === acesso.conquista) : undefined
             return (
               <button
                 key={opcao}
@@ -369,7 +369,9 @@ export function PainelPersonalizacao({
                 {!liberada && personalizacao.conta && acesso.tipo !== 'livre' && (
                   <span className="mt-0.5 block text-[0.6rem] leading-snug text-[#c9b48a]">
                     {acesso.tipo === 'loja'
-                      ? t('personalizacao.naLoja', { preco: acesso.preco })
+                      ? conquista
+                        ? t('personalizacao.naLojaOuConquista', { preco: acesso.preco, conquista: nomeDaConquista(t, conquista) })
+                        : t('personalizacao.naLoja', { preco: acesso.preco })
                       : conquista && t('personalizacao.pelaConquista', { conquista: nomeDaConquista(t, conquista) })}
                   </span>
                 )}

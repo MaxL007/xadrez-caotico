@@ -203,6 +203,7 @@ async function excluirConta(pedido: Request, env: Ambiente) {
     env.DB.prepare('DELETE FROM fotos WHERE usuario_id = ?1').bind(usuario.id),
     env.DB.prepare('DELETE FROM conquistas WHERE usuario_id = ?1').bind(usuario.id),
     env.DB.prepare('DELETE FROM itens WHERE usuario_id = ?1').bind(usuario.id),
+    env.DB.prepare('DELETE FROM vitorias_pagas WHERE usuario_id = ?1').bind(usuario.id),
     // na lista do adversário a partida continua, sem o nome de quem saiu
     env.DB.prepare("UPDATE salas SET brancas_nome = '—', brancas_id = NULL WHERE brancas_id = ?1").bind(usuario.id),
     env.DB.prepare("UPDATE salas SET pretas_nome = '—', pretas_id = NULL WHERE pretas_id = ?1").bind(usuario.id),
@@ -490,7 +491,7 @@ const lerPersonalizacao = (texto: string | null): Personalizacao => {
   }
 }
 
-/** O que a parte aceita naquela peça; a primeira opção é a de sempre. Só o cavalo tem montaria, e ele não tem arma. */
+/** O que a parte aceita naquela peça; a primeira opção é a de sempre. Só o cavalo tem montaria. */
 function opcoesDaParte(peca: string, parte: string): string[] | undefined {
   if (!personalizacao.pecas.includes(peca)) return undefined
   if (Object.hasOwn(personalizacao.corpo, parte)) return personalizacao.corpo[parte as keyof typeof personalizacao.corpo]
@@ -522,14 +523,15 @@ async function mudarPersonalizacao(pedido: Request, env: Ambiente) {
   if (!conta) throw new Falha(401, 'sessao')
   if (conta.tudo_liberado !== 1) {
     const doCatalogo = `${parte}:${opcao}`
-    if (precoNaLoja(peca as string, parte as string, opcao) !== undefined) {
-      const comprado = await env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${peca}:${doCatalogo}`).first()
-      if (!comprado) throw new Falha(403, 'item-bloqueado')
-    } else if (Object.hasOwn(POR_CONQUISTA, doCatalogo)) {
-      const pelaConquista = await env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2')
-        .bind(usuario.id, POR_CONQUISTA[doCatalogo].conquista)
-        .first()
-      if (!pelaConquista) throw new Falha(403, 'item-bloqueado')
+    const vendida = precoNaLoja(peca as string, parte as string, opcao) !== undefined
+    const conquista = Object.hasOwn(POR_CONQUISTA, doCatalogo) ? POR_CONQUISTA[doCatalogo].conquista : null
+    // a arma vendida na Loja também sai pela conquista dela: vale qualquer um dos dois
+    if (vendida || conquista) {
+      const [comprada, pelaConquista] = await Promise.all([
+        vendida ? env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${peca}:${doCatalogo}`).first() : null,
+        conquista ? env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, conquista).first() : null,
+      ])
+      if (!comprada && !pelaConquista) throw new Falha(403, 'item-bloqueado')
     }
   }
 
@@ -600,6 +602,11 @@ async function comprarItem(pedido: Request, env: Ambiente) {
   if (preco === undefined) throw new Falha(422, 'item-invalido')
   const jaTem = async () => Boolean(await env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, item).first())
   if (await jaTem()) throw new Falha(409, 'ja-tem')
+  // a arma que já saiu pela conquista não precisa ser comprada
+  const conquista = Object.hasOwn(POR_CONQUISTA, `${parte}:${opcao}`) ? POR_CONQUISTA[`${parte}:${opcao}`].conquista : null
+  if (conquista && (await env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, conquista).first())) {
+    throw new Falha(409, 'ja-tem')
+  }
 
   // o item só entra se havia saldo, e a moeda só sai se o item entrou: as duas coisas na mesma transação
   const [entrada] = await env.DB.batch([
@@ -661,6 +668,73 @@ async function guardarProgresso(pedido: Request, env: Ambiente) {
   const texto = JSON.stringify(depois)
   if (texto !== conta?.progresso) await env.DB.prepare('UPDATE usuarios SET progresso = ?1 WHERE id = ?2').bind(texto, usuario.id).run()
   return responder({ contagem: depois })
+}
+
+/** Vitória contra a máquina paga pela dificuldade em que foi jogada. */
+const PREMIO_DA_VITORIA: Record<string, number> = { facil: 1, intermediario: 2, dificil: 3 }
+const VITORIAS_PAGAS_POR_HORA = 20
+const VITORIAS_POR_PEDIDO = 20
+
+/**
+ * Paga as vitórias contra a máquina que o aparelho manda, cada partida uma vez só. O servidor confere a partida salva
+ * na conta: terminada, vencida por quem joga e com a dificuldade dela. Como nas conquistas, confia no que o aparelho
+ * salvou (refazer a partida não cabe nos 10 ms); o teto de vitórias pagas por hora segura quem tentar inventar.
+ */
+async function receberVitorias(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { partidas } = await lerCorpo<{ partidas?: unknown }>(pedido)
+  if (!Array.isArray(partidas) || partidas.length === 0 || partidas.length > VITORIAS_POR_PEDIDO || !partidas.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 64)) {
+    throw new Falha(422, 'partidas-invalidas')
+  }
+  const ids = [...new Set(partidas as string[])]
+  const lista = ids.map((_, i) => `?${i + 2}`).join(', ')
+  const [salvas, recentes] = await Promise.all([
+    env.DB.prepare(`SELECT id, dados FROM registros WHERE usuario_id = ?1 AND store = 'xadrezPartidas' AND id IN (${lista})`)
+      .bind(usuario.id, ...ids)
+      .all<{ id: string; dados: string }>(),
+    env.DB.prepare('SELECT COUNT(*) AS n FROM vitorias_pagas WHERE usuario_id = ?1 AND paga_em > ?2').bind(usuario.id, Date.now() - UMA_HORA).first<{ n: number }>(),
+  ])
+  let vagas = VITORIAS_PAGAS_POR_HORA - (recentes?.n ?? 0)
+  const agora = Date.now()
+  const candidatas: { id: string; valor: number }[] = []
+  for (const salva of salvas.results) {
+    let partida: { status?: unknown; resultado?: unknown; dificuldade?: unknown; demonstracao?: unknown }
+    try {
+      partida = JSON.parse(salva.dados)
+    } catch {
+      continue
+    }
+    const venceu = partida.status === 'FINALIZADA' && typeof partida.resultado === 'string' && partida.resultado.startsWith('Você venceu') && !partida.demonstracao
+    const valor = typeof partida.dificuldade === 'string' && Object.hasOwn(PREMIO_DA_VITORIA, partida.dificuldade) ? PREMIO_DA_VITORIA[partida.dificuldade] : 0
+    if (venceu && valor && vagas > 0) {
+      candidatas.push({ id: salva.id, valor })
+      vagas--
+    }
+  }
+  const pagas: { id: string; oticoins: number }[] = []
+  if (candidatas.length) {
+    const resultados = await env.DB.batch(
+      candidatas.flatMap(({ id, valor }) => [
+        env.DB.prepare('INSERT INTO vitorias_pagas (usuario_id, partida_id, dificuldade, oticoins, paga_em) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT DO NOTHING').bind(
+          usuario.id,
+          id,
+          Object.keys(PREMIO_DA_VITORIA).find((d) => PREMIO_DA_VITORIA[d] === valor),
+          valor,
+          agora,
+        ),
+        // a moeda só entra se o recibo entrou
+        env.DB.prepare('UPDATE usuarios SET oticoins = oticoins + ?1 * changes() WHERE id = ?2').bind(valor, usuario.id),
+      ]),
+    )
+    candidatas.forEach(({ id, valor }, i) => {
+      if (resultados[i * 2].meta.changes) pagas.push({ id, oticoins: valor })
+    })
+  }
+  const [conta, jaPagas] = await Promise.all([
+    env.DB.prepare('SELECT oticoins FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ oticoins: number }>(),
+    env.DB.prepare(`SELECT partida_id FROM vitorias_pagas WHERE usuario_id = ?1 AND partida_id IN (${lista})`).bind(usuario.id, ...ids).all<{ partida_id: string }>(),
+  ])
+  return responder({ oticoins: conta?.oticoins ?? 0, pagas, jaPagas: jaPagas.results.map((p) => p.partida_id) })
 }
 
 async function lerConquistas(pedido: Request, env: Ambiente) {
@@ -862,6 +936,7 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'GET' && caminho === '/conquistas') return lerConquistas(pedido, env)
   if (metodo === 'POST' && caminho === '/conquistas/receber') return receberConquistas(pedido, env)
   if (metodo === 'POST' && caminho === '/conquistas/progresso') return guardarProgresso(pedido, env)
+  if (metodo === 'POST' && caminho === '/vitorias/receber') return receberVitorias(pedido, env)
   if (metodo === 'POST' && caminho === '/presenca') return marcarPresenca(pedido, env)
   if (metodo === 'POST' && caminho === '/presenca/sair') return sairDaPresenca(pedido, env)
   if (metodo === 'GET' && caminho === '/amigos') return listarAmigos(pedido, env)

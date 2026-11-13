@@ -201,6 +201,9 @@ export const salvarEscolhaDaPeca = (peca: string, parte: string, opcao: string) 
 export const mudarAparencia = (aparencia: { avatar?: string; moldura?: string }) => pedir('POST', '/perfil/aparencia', aparencia)
 export const enviarFoto = (foto: string) => pedir<{ avatar: string }>('POST', '/perfil/foto', { foto })
 export const lerConquistas = () => pedir<{ oticoins: number; recebidas: string[]; convites: number }>('GET', '/conquistas')
+/** Paga as vitórias contra a máquina; `jaPagas` são as que o servidor já pagou, agora ou antes. */
+export const receberVitorias = (partidas: string[]) =>
+  pedir<{ oticoins: number; pagas: { id: string; oticoins: number }[]; jaPagas: string[] }>('POST', '/vitorias/receber', { partidas })
 /** O progresso contado neste aparelho, pros amigos verem no perfil. */
 export const guardarProgresso = (contagem: Record<string, number>) => pedir('POST', '/conquistas/progresso', { contagem })
 /** O jogo está aberto e à vista: os amigos veem a bolinha verde. */

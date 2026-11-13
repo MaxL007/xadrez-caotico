@@ -15,11 +15,11 @@ export interface ParteDaPeca {
   opcoes: string[]
 }
 
-/** O corpo de cima a baixo, depois a arma ou, no cavalo, a montaria. */
+/** O corpo de cima a baixo, a montaria (só no cavalo) e a arma. */
 export function partesDaPeca(peca: Peca): ParteDaPeca[] {
   const corpo = Object.entries(catalogo.corpo).map(([parte, opcoes]) => ({ parte, opcoes }))
-  if (peca === 'n') return [...corpo, ...Object.entries(catalogo.montaria).map(([parte, opcoes]) => ({ parte, opcoes }))]
-  return [...corpo, { parte: 'arma', opcoes: catalogo.armas[peca] }]
+  const montaria = peca === 'n' ? Object.entries(catalogo.montaria).map(([parte, opcoes]) => ({ parte, opcoes })) : []
+  return [...corpo, ...montaria, { parte: 'arma', opcoes: catalogo.armas[peca] }]
 }
 
 /** Equipamentos que saem por conquista: valem pra toda peça que usa aquela parte. */
@@ -28,12 +28,13 @@ const POR_CONQUISTA = catalogo.itens as Record<string, { conquista: string }>
 export const NA_LOJA = catalogo.loja as Record<Peca, Record<string, number>>
 
 /** Como a opção se libera: é livre, sai por conquista ou se compra na Loja (o item é 'peça:parte:opção'). */
-export type Acesso = { tipo: 'livre' } | { tipo: 'conquista'; conquista: string } | { tipo: 'loja'; preco: number; item: string }
+export type Acesso = { tipo: 'livre' } | { tipo: 'conquista'; conquista: string } | { tipo: 'loja'; preco: number; item: string; conquista?: string }
 
 export function acessoDaOpcao(peca: Peca, parte: string, opcao: string): Acesso {
   const preco = NA_LOJA[peca]?.[`${parte}:${opcao}`]
-  if (preco !== undefined) return { tipo: 'loja', preco, item: `${peca}:${parte}:${opcao}` }
   const porConquista = POR_CONQUISTA[`${parte}:${opcao}`]
+  // a arma vendida na Loja também sai pela conquista dela
+  if (preco !== undefined) return { tipo: 'loja', preco, item: `${peca}:${parte}:${opcao}`, conquista: porConquista?.conquista }
   if (porConquista) return { tipo: 'conquista', conquista: porConquista.conquista }
   return { tipo: 'livre' }
 }
@@ -108,7 +109,7 @@ export function opcaoLiberada(atual: Estado, peca: Peca, parte: string, opcao: s
   if (!atual.conta) return false
   if (atual.tudoLiberado) return true
   const acesso = acessoDaOpcao(peca, parte, opcao)
-  if (acesso.tipo === 'loja') return atual.itens.includes(acesso.item)
+  if (acesso.tipo === 'loja') return atual.itens.includes(acesso.item) || (!!acesso.conquista && atual.conquistas.includes(acesso.conquista))
   if (acesso.tipo === 'conquista') return atual.conquistas.includes(acesso.conquista)
   return true
 }

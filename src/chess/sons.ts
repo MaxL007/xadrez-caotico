@@ -179,6 +179,9 @@ const PASSOS: Record<string, (s: Saida, indice: number) => void> = {
 /** Tempo entre um passo e outro, em segundos: quem pesa mais anda mais devagar. */
 const RITMO_PASSOS: Record<string, number> = { p: 0.27, r: 0.44, n: 0.24, b: 0.38, q: 0.33, k: 0.46 }
 
+/** Segundos entre um passo e outro da peça andando na velocidade normal; correndo, mais curto. */
+export const ritmoDosPassos = (tipo: string, correndo = false) => (RITMO_PASSOS[tipo] ?? 0.32) * (correndo ? 0.72 : 1)
+
 function relincho(s: Saida, inicio = 0, vol = 0.2) {
   const t = s.t + inicio
   const osc = s.ctx.createOscillator()
@@ -285,10 +288,22 @@ export const SONS: Record<string, (s: Saida) => number> = {
   },
 
   // --- golpes: o de cada peça
+  // a katana saindo da bainha de madeira: o estalo da guarda, a lâmina correndo fina e aguda e o anel do aço
+  'katana:saca': (s) => {
+    sopro(s, { dur: 0.012, vol: 0.2, freq: 4200, q: 3 })
+    sopro(s, { inicio: 0.015, ataque: 0.01, dur: 0.3, vol: 0.3, freq: 2600, ate: 9500, q: 7 })
+    tom(s, { inicio: 0.02, freq: 5200, ate: 7400, ataque: 0.01, dur: 0.28, vol: 0.02 })
+    sino(s, 3520, 1.5, 0.09, 0.3)
+    sino(s, 5280, 0.9, 0.035, 0.3)
+    return 1.8
+  },
+  // a espada larga saindo da bainha de couro: um arrasto mais grave e mais longo e um anel mais baixo
   'espada:saca': (s) => {
-    sopro(s, { ataque: 0.02, dur: 0.26, vol: 0.26, freq: 3800, ate: 7500, q: 3 })
-    sino(s, 3100, 0.5, 0.07, 0.22)
-    return 0.75
+    sopro(s, { ataque: 0.05, dur: 0.44, vol: 0.27, freq: 700, ate: 2900, q: 2.2 })
+    tom(s, { tipo: 'sawtooth', freq: 170, ate: 250, ataque: 0.06, dur: 0.38, vol: 0.035, corte: 1100 })
+    sopro(s, { inicio: 0.42, dur: 0.02, vol: 0.12, freq: 2400, q: 2 })
+    sino(s, 1480, 1, 0.08, 0.45)
+    return 1.5
   },
   'golpe:p': (s) => {
     sopro(s, { ataque: 0.05, dur: 0.1, vol: 0.2, freq: 900, ate: 3600, q: 1.2 })
@@ -350,6 +365,93 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { ataque: 0.04, dur: 0.75, vol: 0.14, freq: 700, ate: 200, q: 0.8 })
     return 2.3
   },
+  // --- os ataques de cada arma
+  // retalhamento: cada corte é um assobio do aço cortando o ar
+  'retalho:corte': (s) => {
+    sopro(s, { ataque: 0.01, dur: 0.11, vol: 0.24, freq: 1400, ate: 7000, q: 4 })
+    tom(s, { inicio: 0.06, freq: 4300, ate: 2600, dur: 0.12, vol: 0.03 })
+    sopro(s, { inicio: 0.07, dur: 0.02, vol: 0.1, freq: 3000, q: 2 })
+    return 0.25
+  },
+  // e a peça se desfazendo: um baque seco e os pedacinhos batendo e rolando no tabuleiro
+  'retalho:pedacos': (s) => {
+    pancada(s, 160, 70, 0.14, 0.32)
+    for (let i = 0; i < 16; i++) {
+      const quando = 0.08 + i * 0.045 + Math.random() * 0.05
+      sopro(s, { inicio: quando, dur: 0.012, vol: 0.09 * (1 - i / 18), freq: 1800 + Math.random() * 3500, q: 6 })
+      if (i % 3 === 0) tom(s, { inicio: quando, freq: 900 + Math.random() * 700, dur: 0.05, vol: 0.02 })
+    }
+    return 1
+  },
+  // machado: o golpe pesado que racha a peça no meio, com a lâmina rasgando
+  'machado:corte': (s) => {
+    sopro(s, { ataque: 0.04, dur: 0.12, vol: 0.22, freq: 500, ate: 2400, q: 1.2 })
+    pancada(s, 150, 55, 0.3, 0.6, 0.1)
+    sopro(s, { inicio: 0.1, ataque: 0.005, dur: 0.32, vol: 0.2, freq: 3200, ate: 420, q: 4 })
+    sino(s, 820, 0.5, 0.04, 0.1)
+    return 0.7
+  },
+  // maça: os espinhos entrando, o tranco da peça presa e o chacoalhar até ela soltar
+  'maca:espinhos': (s) => {
+    pancada(s, 120, 50, 0.35, 0.62)
+    sino(s, 1100, 0.35, 0.05)
+    sopro(s, { dur: 0.08, vol: 0.18, freq: 1800, q: 3 })
+    return 0.6
+  },
+  'maca:sacode': (s) => {
+    for (let i = 0; i < 4; i++) {
+      sopro(s, { inicio: i * 0.16, ataque: 0.03, dur: 0.1, vol: 0.14, freq: 400, ate: 1300, q: 1 })
+      sopro(s, { inicio: i * 0.16 + 0.07, dur: 0.02, vol: 0.06, freq: 2400, q: 4 })
+    }
+    return 0.75
+  },
+  'maca:solta': (s) => {
+    sopro(s, { ataque: 0.1, dur: 0.3, vol: 0.12, freq: 1200, ate: 300, q: 1 })
+    pancada(s, 140, 60, 0.22, 0.38, 0.32)
+    return 0.6
+  },
+  // cristal: notas de vidro subindo enquanto ele se forma
+  'cristal:convoca': (s) => {
+    const notas = [1760, 2093, 2637, 3136, 3520]
+    notas.forEach((nota, i) => tom(s, { freq: nota, inicio: i * 0.08, ataque: 0.01, dur: 0.5, vol: 0.03 }))
+    sopro(s, { ataque: 0.2, dur: 0.5, vol: 0.05, freq: 5000, ate: 9000, q: 2 })
+    sino(s, 2637, 0.9, 0.04, 0.4)
+    return 1.3
+  },
+  // e se partindo na peça: o vidro estourando em estilhaços
+  'cristal:quebra': (s) => {
+    pancada(s, 210, 90, 0.12, 0.3)
+    for (let i = 0; i < 14; i++) {
+      sopro(s, { inicio: Math.random() * 0.22, dur: 0.01 + Math.random() * 0.02, vol: 0.12 * (1 - i / 16), freq: 4000 + Math.random() * 5000, q: 8 })
+    }
+    sino(s, 3136, 0.7, 0.05)
+    sino(s, 4699, 0.5, 0.03)
+    return 0.9
+  },
+  // cetro: a pressão crescendo num grave fundo, a madeira estalando e a peça sumindo no chão
+  gravidade: (s) => {
+    tom(s, { freq: 70, ate: 32, ataque: 0.3, dur: 1.6, vol: 0.32 })
+    tom(s, { tipo: 'sawtooth', freq: 48, ate: 30, ataque: 0.4, dur: 1.5, vol: 0.05, corte: 200 })
+    sopro(s, { ataque: 0.4, dur: 1.3, vol: 0.14, filtro: 'lowpass', freq: 380, ate: 90, q: 0.8 })
+    for (let i = 0; i < 6; i++) sopro(s, { inicio: 0.55 + i * 0.12 + Math.random() * 0.06, dur: 0.02, vol: 0.08, freq: 1300 + Math.random() * 1500, q: 5 })
+    pancada(s, 80, 30, 0.5, 0.4, 1.45)
+    return 2.1
+  },
+  // lua: o vento do tornado subindo, uivando, e o assobio da peça arremessada
+  tornado: (s) => {
+    sopro(s, { ataque: 0.35, dur: 1.4, vol: 0.26, freq: 280, ate: 900, q: 2.5 })
+    sopro(s, { inicio: 0.4, ataque: 0.3, dur: 1.2, vol: 0.12, freq: 1300, ate: 650, q: 4 })
+    tom(s, { tipo: 'triangle', freq: 520, ate: 760, inicio: 0.3, ataque: 0.4, dur: 1.1, vol: 0.025 })
+    sopro(s, { inicio: 1.3, ataque: 0.05, dur: 0.6, vol: 0.2, freq: 2200, ate: 380, q: 1.5 })
+    return 2.2
+  },
+  // lança: o tranco do cavaleiro e o estalo da madeira da lança
+  'golpe:lanca': (s) => {
+    sopro(s, { ataque: 0.04, dur: 0.18, vol: 0.18, freq: 700, ate: 2600, q: 1.4 })
+    pancada(s, 130, 50, 0.25, 0.5, 0.12)
+    sopro(s, { inicio: 0.12, dur: 0.03, vol: 0.12, freq: 1600, q: 3 })
+    return 0.5
+  },
   // a queda da vítima: quanto maior a peça, mais grave
   'queda:p': quedaDe(150, 0.25),
   'queda:n': quedaDe(120, 0.3),
@@ -362,6 +464,15 @@ export const SONS: Record<string, (s: Saida) => number> = {
   },
 
   // --- efeitos especiais
+  // a rendição de quem luta de espada: o sino grave de uma capela e um acorde de trompas, em vez da flauta de bambu
+  'honra:espada': (s) => {
+    sino(s, 196, 3.4, 0.14)
+    trompa(s, 262, 1.7, 0.05, 0.6)
+    trompa(s, 330, 1.7, 0.035, 0.62)
+    trompa(s, 392, 1.7, 0.03, 0.64)
+    sino(s, 392, 2.2, 0.05, 1.4)
+    return 3.6
+  },
   honra: (s) => {
     sino(s, 294, 3.2, 0.14)
     // flauta de bambu: sopro de ar com a nota tremendo de leve
@@ -503,6 +614,16 @@ export function tocarPassos(tipo: string, duracao: number, correndo = false) {
   const ritmo = (RITMO_PASSOS[tipo] ?? 0.32) * (correndo ? 0.72 : 1)
   const quantos = Math.max(1, Math.round(duracao / ritmo))
   for (let i = 0; i < quantos; i++) passo({ ...s, t: s.t + i * ritmo + (Math.random() - 0.5) * 0.012, v: 1 + (Math.random() - 0.5) * 0.09 }, i)
+}
+
+/** Um passo só, agora: a peça avisa quando o pé encosta no chão, então o som cai junto do passo que se vê. */
+export function tocarUmPasso(tipo: string, correndo = false) {
+  const passo = PASSOS[tipo]
+  const s = saidaAoVivo()
+  if (!passo || !s) return
+  if (import.meta.env.DEV) tocados.push(`passo:${tipo}`)
+  // correndo, a pisada é mais forte e mais curta
+  passo({ ...s, t: s.t + (Math.random() - 0.5) * 0.006, v: (correndo ? 1.08 : 1) + (Math.random() - 0.5) * 0.09 }, 0)
 }
 
 /** Um passo solto, só pra medir nos testes. */

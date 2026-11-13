@@ -66,8 +66,8 @@ try {
   await page.locator('[data-aba-lances]').click()
   conferir('e a aba fecha de novo', (await lista.count()) === 0)
 
-  // a tela cheia: o menu no alto à esquerda, a situação da partida embaixo
-  await page.locator('main').getByRole('button', { name: '⛶ Expandir', exact: true }).first().click()
+  // a tela é sempre a cheia: sem botão de tela normal, o menu no alto à esquerda e a situação da partida embaixo
+  conferir('não existe mais tela normal', (await page.getByRole('button', { name: /Expandir|Tela normal/ }).count()) === 0)
   await page.locator('[data-status-partida]').waitFor()
   const menu = await page.locator('main').getByRole('button', { name: 'Menu', exact: true }).last().boundingBox()
   const situacao = await page.locator('[data-status-partida]').boundingBox()

@@ -10,9 +10,11 @@ import { Button } from './ui/Basics'
 import { useFecharComEsc } from '../teclaEsc'
 import { buscarNoLivro, carregarLivroDeAberturas, type LivroDeAberturas } from '../chess/pgnBook'
 import { DIFICULDADES, escolherJogadaDaMaquina, maquinaAceitaEmpate, usaLivro, type Dificuldade } from '../chess/engine'
+import { PREMIO_DA_VITORIA } from '../chess/conquistas'
 import { ResultadoDaPartida, type FimDaPartida } from './ResultadoDaPartida'
 import { PainelDeLances } from './PainelDeLances'
-import { ambienteDoTabuleiro, ambienteTocando, configurarSom, destravarSom, somDestravado, tocarPassos, tocarSom } from '../chess/sons'
+import { afundarPelaGravidade, convocarCristal, cortarAoMeio, despedacar, rachadurasNoTabuleiro, rastroDeCorte, tornadoDaLua, tremerTabuleiro } from './efeitosDasArmas'
+import { ambienteDoTabuleiro, ambienteTocando, configurarSom, destravarSom, ritmoDosPassos, somDestravado, tocarSom, tocarUmPasso } from '../chess/sons'
 import { useConfigXadrez, type QualidadeXadrez } from '../chess/configXadrez'
 import { tradutor, type ChaveTexto, type Traduzir } from '../chess/idiomas'
 import { MenuXadrez } from './MenuXadrez'
@@ -22,7 +24,7 @@ import { entrarEmSala, pedirRevanche, recusarSala, sessaoAtual, useSessao } from
 import { abrirConexaoDaSala, type ConexaoDaSala, type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../online/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../db/xadrezAprendizadoRepo'
 import { cajadoDoModelo, equipamentoSozinho, katanaDoModelo, vestirPeca, type MateriaisDaPeca, type VitrineDaPeca } from '../chess/equipamentos'
-import { carregarPersonalizacao, ouvirPersonalizacao, personalizacaoAtual } from '../conta/personalizacao'
+import { carregarPersonalizacao, opcaoLiberada, ouvirPersonalizacao, personalizacaoAtual } from '../conta/personalizacao'
 import { contarPartidas } from '../chess/conquistas'
 
 const COR_SELECIONADA = 0x2a9d5f
@@ -558,13 +560,16 @@ function tocarClipeRPGUmaVez(
     saida = 0.2,
     voltarAoParado = true,
     aoTerminar,
-  }: { entrada?: number; saida?: number; voltarAoParado?: boolean; aoTerminar?: () => void } = {},
+    velocidade = 1,
+  }: { entrada?: number; saida?: number; voltarAoParado?: boolean; aoTerminar?: () => void; velocidade?: number } = {},
 ): boolean {
   const acoes = mesh.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
   const acao = acoes?.[nomeClipe]
   if (!acoes || !acao) return false
   desligarClipesRPG(acoes, acao, entrada)
   acao.reset()
+  // o mesmo clipe serve a golpes de ritmos diferentes (o retalhamento é mais rápido): a velocidade vale a cada vez
+  acao.timeScale = velocidade
   acao.setLoop(THREE.LoopOnce, 1)
   acao.clampWhenFinished = true
   acao.fadeIn(entrada).play()
@@ -797,6 +802,11 @@ function materiaisDaPeca(cor: 'w' | 'b'): MateriaisDaPeca {
 let vestimenta: { cor: 'w' | 'b'; escolhas: Record<string, Record<string, string>> } = { cor: 'w', escolhas: {} }
 /** Só nos testes: veste as peças de quem joga sem passar pela conta. */
 let vestimentaDeTeste: Record<string, Record<string, string>> | null = null
+/** Só nos testes: o retalhamento sem ter comprado. */
+let retalhamentoDeTeste = false
+
+/** A arma do peão no tabuleiro: a escolhida, ou nenhuma. */
+const armaDoPeaoNoTabuleiro = (peao: THREE.Object3D) => peao.userData.arma as string | undefined
 const assinaturaDaVestimenta = (tipo: string, cor: 'w' | 'b') => (cor === vestimenta.cor ? JSON.stringify(vestimenta.escolhas[tipo] ?? {}) : '{}')
 
 function criarEspadaDoPeao(): THREE.Group {
@@ -1007,7 +1017,7 @@ function rumoEntre(de: { x: number; z: number }, para: { x: number; z: number })
 }
 
 /** Chance de o peão capturado por outro peão se render com a honra de um samurai (em vez de lutar). */
-const CHANCE_HONRA_SAMURAI = 0.5
+const CHANCE_HONRA_SAMURAI = 0.15
 /** A que distância do derrotado o vencedor para pra se curvar (em casas, no tamanho do modelo). */
 const DISTANCIA_REVERENCIA = 0.75
 
@@ -1084,7 +1094,10 @@ function deslocarRPG(mesh: THREE.Object3D, de: { x: number; z: number }, para: {
   if (!clipe.isRunning()) clipe.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.2).play()
   const aceleracao = Math.min(TEMPO_ACELERACAO_S, (0.5 * distancia) / velocidade)
   const total = distancia / velocidade + aceleracao
-  tocarPassos(mesh.userData.tipo as string, total, corre)
+  // o som de cada passo cai quando o pé encosta no chão; o cavalo (patas sem esses ossos) galopa pela distância
+  const pisar = ouvidoDosPes(mesh, corre)
+  const passada = velocidade * ritmoDosPassos(mesh.userData.tipo as string, corre)
+  let proximaPisada = passada * 0.3
   const inicio = performance.now()
   function passo(agora: number) {
     const t = Math.min(total, (agora - inicio) / 1000)
@@ -1104,6 +1117,14 @@ function deslocarRPG(mesh: THREE.Object3D, de: { x: number; z: number }, para: {
     const fracao = Math.min(1, percorrido / distancia)
     mesh.position.x = de.x + dx * fracao
     mesh.position.z = de.z + dz * fracao
+    if (pisar) pisar()
+    else {
+      // acelerando e freando, os passos ficam mais espaçados no tempo: cada um a uma passada de distância
+      while (percorrido >= proximaPisada) {
+        tocarUmPasso(mesh.userData.tipo as string, corre)
+        proximaPisada += passada
+      }
+    }
     // o ritmo dos passos acompanha a velocidade (nunca parado de todo, pra não "congelar" no
     // meio de um passo enquanto ainda arranca/freia)
     clipe!.setEffectiveTimeScale(Math.max(0.35, v / velocidade))
@@ -1111,6 +1132,38 @@ function deslocarRPG(mesh: THREE.Object3D, de: { x: number; z: number }, para: {
     else depois()
   }
   requestAnimationFrame(passo)
+}
+
+/**
+ * Escuta os pés da peça andando: a cada quadro, o pé que vinha descendo e para de descer perto do ponto mais baixo
+ * dele é o pé que pisou, e o passo soa ali. Null pra peça sem os ossos dos pés (o cavalo).
+ */
+function ouvidoDosPes(mesh: THREE.Object3D, correndo: boolean): (() => void) | null {
+  const tipo = mesh.userData.tipo as string
+  const pes = ['LeftFoot', 'RightFoot'].map((nome) => ossoRPG(mesh, nome)).filter((osso): osso is THREE.Object3D => Boolean(osso))
+  if (tipo === 'n' || pes.length < 2) return null
+  const ponto = new THREE.Vector3()
+  // cada pé só pisa de novo depois de ter subido de verdade: o calcanhar e a ponta encostam em dois tempos, e sem isso
+  // o mesmo passo soava duas vezes
+  const estados = pes.map(() => ({ anterior: Infinity, menor: Infinity, maior: -Infinity, levantado: false, ultimo: 0 }))
+  return () => {
+    const agora = performance.now()
+    pes.forEach((osso, i) => {
+      const e = estados[i]
+      const y = osso.getWorldPosition(ponto).y
+      e.menor = Math.min(e.menor, y)
+      e.maior = Math.max(e.maior, y)
+      const altura = e.maior - e.menor
+      if (altura < 0.008 * mesh.scale.y) return
+      if (y > e.menor + altura * 0.6) e.levantado = true
+      else if (e.levantado && y <= e.menor + altura * 0.25 && agora - e.ultimo > 160) {
+        e.levantado = false
+        e.ultimo = agora
+        tocarUmPasso(tipo, correndo)
+      }
+      e.anterior = y
+    })
+  }
 }
 
 /** Cavalo: salto de `de` até `para` (o salto do clipe "Mortal") — só se desloca entre a decolagem e
@@ -2039,6 +2092,33 @@ const geoGemaMarreta = new THREE.SphereGeometry(0.036, 16, 12)
  * cima (+Y) e as faces da cabeça em Z: girando em X, ela desce batendo com a face. */
 const ARMAS_DA_TORRE = ['marreta', 'machado', 'maca']
 
+/** A lâmina do machado em meia-lua, no plano do golpe (Y pra cima, Z pra frente): a curva de fora é o fio, a de
+ * dentro abraça o cabo. `espessura` em X. */
+function laminaMeiaLua(espessura: number, raioFora: number, raioDentro: number): THREE.BufferGeometry {
+  const forma = new THREE.Shape()
+  const abertura = THREE.MathUtils.degToRad(68)
+  // a curva de fora, centrada um pouco atrás do cabo, e a de dentro voltando, mais perto
+  forma.absarc(0.04, 0, raioFora, -abertura, abertura, false)
+  forma.absarc(-0.02, 0, raioDentro, abertura * 0.95, -abertura * 0.95, true)
+  forma.closePath()
+  const geo = new THREE.ExtrudeGeometry(forma, { depth: espessura, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.004, bevelSegments: 1, curveSegments: 24 })
+  // a forma foi desenhada com X pra frente: vira pra Z, e a espessura fica em X, centrada no cabo
+  geo.rotateY(-Math.PI / 2)
+  geo.translate(espessura / 2, 0, 0)
+  return geo
+}
+
+/** O fio dourado acompanhando a curva da lâmina. */
+function filoMeiaLua(): THREE.BufferGeometry {
+  const abertura = THREE.MathUtils.degToRad(68)
+  const geo = new THREE.TorusGeometry(0.2, 0.009, 6, 32, abertura * 2)
+  geo.rotateZ(-abertura)
+  geo.translate(0.04, 0, 0)
+  // no mesmo plano da lâmina: X da forma vira Z
+  geo.rotateY(-Math.PI / 2)
+  return geo
+}
+
 function criarMarreta(cor: 'w' | 'b', arma = 'marreta'): THREE.Group {
   const { armadura, detalhe, brilho } = materiaisPorFaccao[cor]
   const marreta = new THREE.Group()
@@ -2049,11 +2129,11 @@ function criarMarreta(cor: 'w' | 'b', arma = 'marreta'): THREE.Group {
     [geoPonteiraMarreta, materialCoroa, 0, -0.01, 0],
   ]
   if (arma === 'machado') {
-    // a lâmina bate pra frente, onde a marreta bate com a face; atrás, uma ponta
+    // a lâmina em meia-lua bate pra frente, onde a marreta bate com a face, com o fio dourado na curva; atrás, uma ponta
     pecas.push(
       [new RoundedBoxGeometry(0.12, 0.15, 0.13, 2, 0.02), armadura, 0, topo, 0],
-      [new RoundedBoxGeometry(0.032, 0.3, 0.2, 2, 0.012), materialLaminaEspada, 0, topo, 0.16],
-      [new RoundedBoxGeometry(0.036, 0.32, 0.022, 2, 0.008), materialCoroa, 0, topo, 0.265],
+      [laminaMeiaLua(0.03, 0.2, 0.15), materialLaminaEspada, 0, topo, 0],
+      [filoMeiaLua(), materialCoroa, 0, topo, 0],
       [geoGemaMarreta, brilho, 0.065, topo, 0],
       [geoGemaMarreta, brilho, -0.065, topo, 0],
     )
@@ -2127,6 +2207,13 @@ const MARRETA_PANCADA_MS = 920
 const MARRETA_CRAVADA_ATE_MS = 1350
 const MARRETA_FIM_MS = 1700
 
+/** A maça: depois da pancada, sobe com a peça presa nos espinhos, sacode e a peça cai. */
+const POSE_MACA_SACODE: PoseMarreta = { angulo: 0.95, y: 0.5, z: 0.2, tronco: 0.12 }
+const MACA_ERGUIDA_ATE_MS = 1900
+const MACA_SOLTA_MS = 2420
+const MACA_SACODE_ATE_MS = 2650
+const MACA_FIM_MS = 3050
+
 function misturarPoses(a: PoseMarreta, b: PoseMarreta, t: number): PoseMarreta {
   const m = (x: number, y: number) => x + (y - x) * t
   return { angulo: m(a.angulo, b.angulo), y: m(a.y, b.y), z: m(a.z, b.z), tronco: m(a.tronco, b.tronco) }
@@ -2161,6 +2248,22 @@ function poseDaMarreta(decorrido: number): { pose: PoseMarreta; peso: number; es
   }
   const t = suaveMarreta(Math.min(1, (decorrido - MARRETA_CRAVADA_ATE_MS) / (MARRETA_FIM_MS - MARRETA_CRAVADA_ATE_MS)))
   return { pose: misturarPoses(POSE_MARRETA_PANCADA, POSE_MARRETA_GUARDA, t), peso: 1 - t, escala: 1 - suaveMarreta(Math.max(0, t * 2 - 1)) }
+}
+
+function poseDaMaca(decorrido: number): { pose: PoseMarreta; peso: number; escala: number } {
+  if (decorrido < MARRETA_CRAVADA_ATE_MS) return poseDaMarreta(decorrido)
+  if (decorrido < MACA_ERGUIDA_ATE_MS) {
+    const t = suaveMarreta((decorrido - MARRETA_CRAVADA_ATE_MS) / (MACA_ERGUIDA_ATE_MS - MARRETA_CRAVADA_ATE_MS))
+    return { pose: misturarPoses(POSE_MARRETA_PANCADA, POSE_MACA_SACODE, t), peso: 1, escala: 1 }
+  }
+  if (decorrido < MACA_SACODE_ATE_MS) {
+    // chacoalha pra frente e pra trás, cada vez mais forte, até a peça soltar
+    const t = (decorrido - MACA_ERGUIDA_ATE_MS) / (MACA_SACODE_ATE_MS - MACA_ERGUIDA_ATE_MS)
+    const sacode = Math.sin(t * Math.PI * 2 * 4) * (0.22 + 0.2 * t)
+    return { pose: { ...POSE_MACA_SACODE, angulo: POSE_MACA_SACODE.angulo + sacode, tronco: POSE_MACA_SACODE.tronco + sacode * 0.2 }, peso: 1, escala: 1 }
+  }
+  const t = suaveMarreta(Math.min(1, (decorrido - MACA_SACODE_ATE_MS) / (MACA_FIM_MS - MACA_SACODE_ATE_MS)))
+  return { pose: misturarPoses(POSE_MACA_SACODE, POSE_MARRETA_GUARDA, t), peso: 1 - t, escala: 1 - suaveMarreta(Math.max(0, t * 2 - 1)) }
 }
 
 function ossoRPG(mesh: THREE.Object3D, nome: string): THREE.Object3D | undefined {
@@ -2244,6 +2347,9 @@ interface Marretada {
   acertou: boolean
   continua: () => boolean
   aoAcertar: () => void
+  /** Só a maça: quando a peça presa nos espinhos solta. */
+  aoSoltar?: () => void
+  soltou: boolean
 }
 const marretadas = new Set<Marretada>()
 
@@ -2261,7 +2367,8 @@ function atualizarMarretadas(agora: number) {
       continue
     }
     const decorrido = agora - m.inicio
-    const { pose, peso, escala } = poseDaMarreta(decorrido)
+    const ehMaca = m.torre.userData.arma === 'maca'
+    const { pose, peso, escala } = ehMaca ? poseDaMaca(decorrido) : poseDaMarreta(decorrido)
     m.marreta.position.set(0, pose.y, pose.z)
     m.marreta.rotation.x = pose.angulo
     m.marreta.scale.setScalar(Math.max(0.001, escala))
@@ -2271,17 +2378,57 @@ function atualizarMarretadas(agora: number) {
       m.acertou = true
       m.aoAcertar()
     }
-    if (decorrido >= MARRETA_FIM_MS) encerrarMarretada(m)
+    if (m.aoSoltar && !m.soltou && decorrido >= MACA_SOLTA_MS) {
+      m.soltou = true
+      m.aoSoltar()
+    }
+    if (decorrido >= (ehMaca ? MACA_FIM_MS : MARRETA_FIM_MS)) encerrarMarretada(m)
   }
 }
 
 /** Começa o golpe; `aoAcertar` roda no instante em que a marreta bate no chão. `continua` falso
  * (outro jogo entrou no meio) tira a marreta da mão sem acertar. */
-function baterComMarreta(torre: THREE.Object3D, cor: 'w' | 'b', continua: () => boolean, aoAcertar: () => void) {
+function baterComMarreta(torre: THREE.Object3D, cor: 'w' | 'b', continua: () => boolean, aoAcertar: () => void, aoSoltar?: () => void): THREE.Group {
   const marreta = criarMarreta(cor, torre.userData.arma as string | undefined)
   marreta.scale.setScalar(0.001)
   torre.add(marreta)
-  marretadas.add({ torre, marreta, ossos: salvarOssosDoGolpe(torre), inicio: performance.now(), acertou: false, continua, aoAcertar })
+  marretadas.add({ torre, marreta, ossos: salvarOssosDoGolpe(torre), inicio: performance.now(), acertou: false, continua, aoAcertar, aoSoltar, soltou: false })
+  return marreta
+}
+
+/** A peça que soltou dos espinhos cai no tabuleiro, rolando, e some. */
+function cairDaMaca(cena: THREE.Object3D, peca: THREE.Object3D, aoTerminar: () => void) {
+  cena.attach(peca)
+  const definirOpacidade = prepararParaSumir(peca)
+  const velocidade = new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4, (Math.random() - 0.5) * 0.6)
+  const giro = new THREE.Vector3(Math.random() * 4 - 2, 0, Math.random() * 4 - 2)
+  const chao = 0.05
+  let anterior = performance.now()
+  let noChaoDesde = 0
+  function passo(agora: number) {
+    const dt = Math.min(0.05, (agora - anterior) / 1000)
+    anterior = agora
+    if (!noChaoDesde) {
+      velocidade.y -= 6 * dt
+      peca.position.addScaledVector(velocidade, dt)
+      peca.rotation.x += giro.x * dt
+      peca.rotation.z += giro.z * dt
+      if (peca.position.y <= chao) {
+        peca.position.y = chao
+        noChaoDesde = agora
+        tocarSom(`queda:${peca.userData.tipo as string}`)
+      }
+    } else {
+      const t = (agora - noChaoDesde) / 600
+      definirOpacidade(Math.max(0, 1 - t))
+      if (t >= 1) {
+        aoTerminar()
+        return
+      }
+    }
+    requestAnimationFrame(passo)
+  }
+  requestAnimationFrame(passo)
 }
 
 /** A peça sozinha, vestida, pra vitrine da Personalização: o peão com a espada na mão, a torre com a arma na pose
@@ -2316,73 +2463,13 @@ function montarVitrine(tipo: string, escolhas: Record<string, string>): VitrineD
 function montarExpositor(tipo: string, parte: string, opcao: string): THREE.Object3D | null {
   if (parte === 'arma' && tipo === 'r') return ARMAS_DA_TORRE.includes(opcao) ? criarMarreta('w', opcao) : null
   const modelo = modelosRPG[tipo]
+  // o ataque especial da katana aparece como a própria katana
+  if (parte === 'golpe' && modelo) return katanaDoModelo(buildPecaRPG(modelo, 'w'))
   if (parte === 'arma' && modelo && (opcao === 'katana' || opcao === 'cajado')) {
     const peca = buildPecaRPG(modelo, 'w')
     return tipo === 'p' ? katanaDoModelo(peca) : cajadoDoModelo(peca, tipo)
   }
   return equipamentoSozinho(tipo, parte, opcao, materiaisDaPeca('w'))
-}
-
-/** Rachaduras saindo do centro, desenhadas uma vez só e reaproveitadas em todo golpe. */
-let texturaRachadura: THREE.CanvasTexture | null = null
-function obterTexturaRachadura(): THREE.CanvasTexture {
-  if (texturaRachadura) return texturaRachadura
-  const tamanho = 256
-  const canvas = document.createElement('canvas')
-  canvas.width = canvas.height = tamanho
-  const ctx = canvas.getContext('2d', DESENHO_NA_MEMORIA) as CanvasRenderingContext2D
-  const centro = tamanho / 2
-  const miolo = ctx.createRadialGradient(centro, centro, 2, centro, centro, 34)
-  miolo.addColorStop(0, 'rgba(15,9,4,0.95)')
-  miolo.addColorStop(1, 'rgba(15,9,4,0)')
-  ctx.fillStyle = miolo
-  ctx.fillRect(0, 0, tamanho, tamanho)
-  ctx.strokeStyle = 'rgba(18,10,5,0.92)'
-  ctx.lineCap = 'round'
-  for (let i = 0; i < 11; i++) {
-    let angulo = (i / 11) * Math.PI * 2 + Math.random() * 0.4
-    let x = centro
-    let y = centro
-    const comprimento = 70 + Math.random() * 45
-    ctx.lineWidth = 4
-    ctx.beginPath()
-    ctx.moveTo(x, y)
-    for (let passo = 0; passo < 6; passo++) {
-      angulo += (Math.random() - 0.5) * 0.7
-      x += (Math.cos(angulo) * comprimento) / 6
-      y += (Math.sin(angulo) * comprimento) / 6
-      ctx.lineTo(x, y)
-    }
-    ctx.stroke()
-  }
-  texturaRachadura = new THREE.CanvasTexture(canvas)
-  texturaRachadura.colorSpace = THREE.SRGBColorSpace
-  return texturaRachadura
-}
-
-const geoRachadura = new THREE.PlaneGeometry(1.5, 1.5)
-const RACHADURA_FICA_MS = 900
-const RACHADURA_SOME_MS = 900
-
-function rachaduraNoChao(cena: THREE.Object3D, x: number, z: number) {
-  const material = new THREE.MeshBasicMaterial({ map: obterTexturaRachadura(), transparent: true, depthWrite: false })
-  const rachadura = new THREE.Mesh(geoRachadura, material)
-  rachadura.rotation.x = -Math.PI / 2
-  rachadura.rotation.z = Math.random() * Math.PI * 2
-  rachadura.position.set(x, 0.022, z)
-  cena.add(rachadura)
-  const inicio = performance.now()
-  function passo(agora: number) {
-    const t = (agora - inicio - RACHADURA_FICA_MS) / RACHADURA_SOME_MS
-    material.opacity = 1 - Math.max(0, t)
-    if (t < 1) {
-      requestAnimationFrame(passo)
-      return
-    }
-    cena.remove(rachadura)
-    material.dispose()
-  }
-  requestAnimationFrame(passo)
 }
 
 function poeiraDaPancada(cena: THREE.Object3D, x: number, z: number) {
@@ -2428,26 +2515,6 @@ function ondaDaMarretada(cena: THREE.Object3D, x: number, z: number, cor: THREE.
   requestAnimationFrame(passo)
 }
 
-const TREMOR_MS = 340
-const FORCA_TREMOR = 0.07
-
-/** O tabuleiro treme com a pancada. Quem pediu menos movimento no sistema fica sem o tremor. */
-function tremerCena(cena: THREE.Object3D) {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-  const inicio = performance.now()
-  function passo(agora: number) {
-    const t = (agora - inicio) / TREMOR_MS
-    if (t >= 1) {
-      cena.position.set(0, 0, 0)
-      return
-    }
-    const forca = FORCA_TREMOR * (1 - t) * (1 - t)
-    cena.position.set((Math.random() - 0.5) * forca, (Math.random() - 0.5) * forca, (Math.random() - 0.5) * forca)
-    requestAnimationFrame(passo)
-  }
-  requestAnimationFrame(passo)
-}
-
 const ACHATAR_MS = 90
 const ACHATADA_MS = 380
 const ACHATADA_SOME_MS = 380
@@ -2481,8 +2548,8 @@ function esmagarPeca(mesh: THREE.Object3D, aoTerminar: () => void) {
 // ---------------------------------------------------------------------------
 const geoSegmentoRaio = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true)
 
-function lancarRaioDaDama(cena: THREE.Object3D, dama: THREE.Object3D, alvo: THREE.Vector3, cor: THREE.ColorRepresentation, aoAcertar: () => void) {
-  const origem = posicaoDoOsso(dama, 'RightHand')
+function lancarRaioDaDama(cena: THREE.Object3D, dama: THREE.Object3D, alvo: THREE.Vector3, cor: THREE.ColorRepresentation, aoAcertar: () => void, mao = 'RightHand') {
+  const origem = posicaoDoOsso(dama, mao)
   const grupo = new THREE.Group()
   cena.add(grupo)
   const materialNucleo = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
@@ -3069,13 +3136,8 @@ export function ChessBoard3D() {
   // a tela inicial por cima do tabuleiro, ou a partida
   const [tela, setTela] = useState<'menu' | 'jogo'>('menu')
   const [statusTexto, setStatusTexto] = useState('')
-  // posições do livro de partidas: null enquanto carrega
-  const [posicoesDoLivro, setPosicoesDoLivro] = useState<number | null>(null)
   const [historico, setHistorico] = useState<string[]>([])
-  const [historicoAberto, setHistoricoAberto] = useState(false)
-  const listaLancesRef = useRef<HTMLDivElement>(null)
   const [partidasEmAndamento, setPartidasEmAndamento] = useState<PartidaXadrez[]>([])
-  const [partidasAberto, setPartidasAberto] = useState(false)
   const [partidasFinalizadas, setPartidasFinalizadas] = useState<PartidaXadrez[]>([])
   // true quando ainda não há partida em andamento e o jogador precisa escolher a cor antes de
   // começar (tanto na primeira vez quanto em "Novo jogo")
@@ -3118,25 +3180,15 @@ export function ChessBoard3D() {
   const [corDoJogador, setCorDoJogador] = useState<'w' | 'b'>('w')
   const [confirmandoDesistencia, setConfirmandoDesistencia] = useState(false)
   // tabuleiro ocupando a tela toda (e a tela cheia do navegador, se der)
-  const [telaCheia, setTelaCheia] = useState(false)
   // a tela inicial sempre ocupa a página inteira
-  const ocupaATela = telaCheia || tela === 'menu'
+  const ocupaATela = true
   // as conquistas contam as partidas contra a máquina, terminadas ou não; as com amigos ficam de fora
   const partidasContraMaquina = useMemo(() => [...partidasEmAndamento, ...partidasFinalizadas], [partidasEmAndamento, partidasFinalizadas])
   const tabuleiroRef = useRef<HTMLDivElement>(null)
 
-  // acompanha os lances conforme são registrados — rola a lista pro fim assim que um novo lance
-  // entra, pra sempre mostrar o mais recente sem precisar rolar manualmente
-  useEffect(() => {
-    if (!historicoAberto) return
-    const el = listaLancesRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [historico, historicoAberto])
-
   useEffect(() => {
     carregarLivroDeAberturas().then((livro) => {
       livroRef.current = livro
-      setPosicoesDoLivro(livro.size)
     })
   }, [])
 
@@ -3220,6 +3272,8 @@ export function ChessBoard3D() {
     Object.assign(renderer.domElement.style, { display: 'block', width: '100%', height: '100%' })
     renderer.setPixelRatio(qualidadeDeInicio.resolucao(container.clientWidth, container.clientHeight))
     renderer.shadowMap.enabled = true
+    // o machado e a gravidade recortam a peça (metade de cima, o que já entrou no chão)
+    renderer.localClippingEnabled = true
     // sombras suaves de verdade (borda esfumada, como a de uma luz real), em alta resolução
     renderer.shadowMap.type = THREE.VSMShadowMap
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -3853,7 +3907,7 @@ export function ChessBoard3D() {
 
         const removerVitima = () => {
           if (!vigente()) return
-          piecesGroup.remove(vitima)
+          vitima.removeFromParent()
           if (casaDaVitima && pieceMeshBySquare.get(casaDaVitima) === vitima) pieceMeshBySquare.delete(casaDaVitima)
         }
         // peças aliadas da atacante que estejam por perto comemoram junto, numa versão curta da
@@ -3892,6 +3946,7 @@ export function ChessBoard3D() {
             },
             () => {
               tocarSom('golpe:n')
+              if (atacante.userData.arma === 'lanca') tocarSom('golpe:lanca')
               tocarSom('voo:vitima')
               animarImpacto(scene, posVitima.x, posVitima.z)
               arremessarPeca(vitima, { x: posVitima.x - de.x, z: posVitima.z - de.z }, () => {
@@ -3928,7 +3983,8 @@ export function ChessBoard3D() {
               tocarClipeRPGUmaVez(atacante, 'Reverencia', { entrada: 0.3, saida: 0.4 })
               novaSequenciaRPG(vitima)
               mostrarEspadaRPG(vitima, false)
-              tocarSom('honra')
+              // quem luta de espada se despede com outro som: sino de capela e trompas, no lugar da flauta de bambu
+              tocarSom(atacante.userData.arma === 'espada' ? 'honra:espada' : 'honra')
               animarPetalas(scene, vitima.position.clone(), 5200)
               virarRPG(vitima, rumoEntre(vitima.position, atacante.position), () =>
                 tocarClipeRPGUmaVez(vitima, 'Sacrificio', {
@@ -3981,30 +4037,109 @@ export function ChessBoard3D() {
           )
           comemorarAliadas()
         }
+        // o retalhamento: o peão de katana de quem comprou o ataque especial dá uma série de cortes rápidos e a peça
+        // se desfaz em pedaços
+        const retalha =
+          tipoAtacante === 'p' &&
+          ehRPG &&
+          armaDoPeaoNoTabuleiro(atacante) === 'katana' &&
+          corAtacante === vestimenta.cor &&
+          (retalhamentoDeTeste || opcaoLiberada(personalizacaoAtual(), 'p', 'golpe', 'retalhamento'))
+        const retalhar = () => {
+          const cortes = 4
+          let feitos = 0
+          const corDoCorte = materiaisPorFaccao[corAtacante].brilho.color
+          const proximo = () => {
+            if (!vigente() || !sequenciaRPGValida(atacante, senha)) return
+            if (feitos === cortes) {
+              tocarSom('retalho:pedacos')
+              despedacar(scene, vitima, () => {
+                removerVitima()
+                seguirParaDestino()
+              })
+              comemorarAliadas()
+              guardarEspadaRPG(atacante, senha)
+              return
+            }
+            feitos++
+            const golpes = clipesRPGComPrefixo(atacante, 'Attack')
+            const tocou = golpes.length > 0 && tocarClipeRPGUmaVez(atacante, golpes[(feitos - 1) % golpes.length], { entrada: 0.06, voltarAoParado: false, velocidade: 2.3, aoTerminar: proximo })
+            window.setTimeout(() => {
+              if (!vigente()) return
+              tocarSom('retalho:corte')
+              rastroDeCorte(scene, vitima, corDoCorte)
+            }, 170)
+            if (!tocou) window.setTimeout(proximo, 300)
+          }
+          proximo()
+        }
         const golpear = () => {
+          if (retalha) {
+            retalhar()
+            return
+          }
           // a torre só bate de marreta (ou machado, ou maça) se tiver uma na mão; sem arma, golpeia como as outras
           if (tipoAtacante === 'r' && ehRPG && ARMAS_DA_TORRE.includes(atacante.userData.arma as string)) {
             pararRPG(atacante)
             tocarSom('marreta:ergue')
-            baterComMarreta(
-              atacante,
-              corAtacante,
-              () => vigente() && sequenciaRPGValida(atacante, senha),
-              () => {
-                tocarSom('marreta:impacto')
-                tocarSom('esmagado', 0.05)
+            const armaDaTorre = atacante.userData.arma as string
+            const continua = () => vigente() && sequenciaRPGValida(atacante, senha)
+            const fim = () => {
+              removerVitima()
+              seguirParaDestino()
+            }
+            if (armaDaTorre === 'machado') {
+              // o machado corta a peça ao meio
+              baterComMarreta(atacante, corAtacante, continua, () => {
+                tocarSom('machado:corte')
                 animarImpacto(scene, posVitima.x, posVitima.z)
-                ondaDaMarretada(scene, posVitima.x, posVitima.z, materiaisPorFaccao[corAtacante].detalhe.color)
-                rachaduraNoChao(scene, posVitima.x, posVitima.z)
-                poeiraDaPancada(scene, posVitima.x, posVitima.z)
-                tremerCena(scene)
-                esmagarPeca(vitima, () => {
-                  removerVitima()
-                  seguirParaDestino()
-                })
+                rachadurasNoTabuleiro(scene, posVitima.x, posVitima.z, 0.9, 1300)
+                tremerTabuleiro(scene, 0.06, 300)
+                cortarAoMeio(scene, vitima, { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }, fim)
                 comemorarAliadas()
-              },
-            )
+              })
+              return
+            }
+            if (armaDaTorre === 'maca') {
+              // a maça: a peça fica presa nos espinhos, a torre sacode e ela cai no tabuleiro
+              const maca = baterComMarreta(
+                atacante,
+                corAtacante,
+                continua,
+                () => {
+                  tocarSom('maca:espinhos')
+                  tocarSom('maca:sacode', (MACA_ERGUIDA_ATE_MS - MARRETA_PANCADA_MS) / 1000)
+                  animarImpacto(scene, posVitima.x, posVitima.z)
+                  tremerTabuleiro(scene, 0.08, 360)
+                  const acoesDaVitima = vitima.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
+                  if (acoesDaVitima?.Morte) {
+                    novaSequenciaRPG(vitima)
+                    mostrarEspadaRPG(vitima, false)
+                    tocarClipeRPGUmaVez(vitima, 'Morte', { entrada: 0.1, voltarAoParado: false })
+                  }
+                  // presa nos espinhos: vai junto com a cabeça da maça
+                  maca.attach(vitima)
+                  comemorarAliadas()
+                },
+                () => {
+                  tocarSom('maca:solta')
+                  cairDaMaca(piecesGroup, vitima, fim)
+                },
+              )
+              return
+            }
+            baterComMarreta(atacante, corAtacante, continua, () => {
+              tocarSom('marreta:impacto')
+              tocarSom('esmagado', 0.05)
+              animarImpacto(scene, posVitima.x, posVitima.z)
+              ondaDaMarretada(scene, posVitima.x, posVitima.z, materiaisPorFaccao[corAtacante].detalhe.color)
+              // rachaduras de verdade na madeira e o tabuleiro inteiro tremendo
+              rachadurasNoTabuleiro(scene, posVitima.x, posVitima.z)
+              poeiraDaPancada(scene, posVitima.x, posVitima.z)
+              tremerTabuleiro(scene)
+              esmagarPeca(vitima, fim)
+              comemorarAliadas()
+            })
             return
           }
           const direcaoGolpe = { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }
@@ -4012,10 +4147,32 @@ export function ChessBoard3D() {
           const corPoder = materiaisPorFaccao[corAtacante].brilho.color
           const acerto = () => acertar(direcaoGolpe)
           // o poder sai no instante do golpe; o acerto (a queda da vítima) só quando ele chega nela
+          const armaAtacante = atacante.userData.arma as string | undefined
+          const fimDoPoder = () => {
+            removerVitima()
+            seguirParaDestino()
+          }
           const noGolpe = () => {
             if (!aDistancia) {
               tocarSom(`golpe:${tipoAtacante}`)
               acerto()
+            } else if (armaAtacante === 'cajado') {
+              // o raio, como era o da rainha, saindo da mão do cajado
+              tocarSom('raio:q')
+              lancarRaioDaDama(scene, atacante, alvo, corPoder, acerto, tipoAtacante === 'b' ? 'LeftHand' : 'RightHand')
+            } else if (armaAtacante === 'cristal') {
+              convocarCristal(scene, vitima, atacante.position.clone(), corPoder, () => tocarSom('cristal:convoca'), () => {
+                tocarSom('cristal:quebra')
+                acerto()
+              })
+            } else if (armaAtacante === 'cetro') {
+              tocarSom('gravidade')
+              afundarPelaGravidade(scene, vitima, corPoder, fimDoPoder)
+              comemorarAliadas()
+            } else if (armaAtacante === 'lua') {
+              tocarSom('tornado')
+              tornadoDaLua(scene, vitima, direcaoGolpe, corPoder, fimDoPoder)
+              comemorarAliadas()
             } else if (tipoAtacante === 'b') {
               tocarSom('magia:b')
               lancarPoderDoBispo(scene, atacante, alvo, corPoder, () => {
@@ -4037,7 +4194,12 @@ export function ChessBoard3D() {
         }
         // o peão RPG desembainha a espada primeiro (e vai até a vítima com ela na mão), golpeia e
         // guarda de volta — a espada entra na bainha antes de a vítima terminar de sumir
-        if (atacante.userData.espadaRPG) tocarSom('espada:saca')
+        // o som do saque cai no instante em que a lâmina deixa a bainha: o da katana, agudo; o da espada, mais grave
+        const espadaDoPeao = atacante.userData.espadaRPG as EspadaRPG | undefined
+        const armaDoPeao = atacante.userData.arma as string | undefined
+        if (espadaDoPeao && !espadaDoPeao.fora && (armaDoPeao === 'katana' || armaDoPeao === 'espada')) {
+          tocarSom(armaDoPeao === 'katana' ? 'katana:saca' : 'espada:saca', espadaDoPeao.segundoSaque)
+        }
         sacarEspadaRPG(atacante, senha, () => {
           if (!ehRPG) {
             golpear()
@@ -4658,8 +4820,9 @@ export function ChessBoard3D() {
       ;(window as unknown as { __xadrez?: object }).__xadrez = {
         casaEmXeque: () => (xequeMesh.visible ? (xequeMesh.userData.casa as string) : null),
         /** Veste as peças de quem joga como se fosse a escolha da conta. */
-        vestirParaTeste: (escolhas: Record<string, Record<string, string>> | null) => {
+        vestirParaTeste: (escolhas: Record<string, Record<string, string>> | null, retalhamento = false) => {
           vestimentaDeTeste = escolhas
+          retalhamentoDeTeste = retalhamento
           sincronizarPecas()
         },
         /** O que as conquistas contam nessas partidas. */
@@ -4682,6 +4845,14 @@ export function ChessBoard3D() {
           return partes
         },
         distanciaCamera: () => camera.position.distanceTo(controls.target),
+        /** Câmera perto de uma casa, pras fotos dos efeitos (theta em graus, 0 = do lado das brancas). */
+        aproximarDaCasa: (casa: string, raio = 4.5, theta = 0, inclinacao = 55) => {
+          const { x, z } = squareToPos(casa)
+          controls.target.set(x, 0.5, z)
+          colocarCamera({ raio, phi: THREE.MathUtils.degToRad(inclinacao), theta: THREE.MathUtils.degToRad(theta) })
+          camera.lookAt(controls.target)
+          controls.update()
+        },
         /** Lance ou máquina ainda em andamento. */
         ocupado: () => vezDaMaquinaRef.current || lancesEmAndamento > 0,
         /** Lado da câmera (z positivo = brancas perto da tela) e se ela ainda está girando. */
@@ -4742,9 +4913,9 @@ export function ChessBoard3D() {
         lanceDaMaquina: (fen: string, dificuldade: Dificuldade) => escolherJogadaDaMaquina(new Chess(fen), livroRef.current, dificuldade),
         dificuldadeDaPartida: () => partidaAtualRef.current?.dificuldade ?? null,
         /** Começa uma partida de teste a partir de um PGN (não aparece nas partidas do jogador). */
-        carregarTeste: (pgn: string, cor: 'w' | 'b') => {
+        carregarTeste: (pgn: string, cor: 'w' | 'b', dificuldade?: PartidaXadrez['dificuldade']) => {
           const agora = Date.now()
-          partidaAtualRef.current = { id: `teste-${agora}`, jogador: '__teste__', corJogador: cor, pgn, status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora }
+          partidaAtualRef.current = { id: `teste-${agora}`, jogador: '__teste__', corJogador: cor, pgn, status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora, ...(dificuldade ? { dificuldade } : {}) }
           acoesRef.current?.carregarPgn(pgn, cor)
         },
       }
@@ -4803,14 +4974,6 @@ export function ChessBoard3D() {
       container.removeChild(renderer.domElement)
     }
   }, [])
-
-  const paresLances = useMemo(() => {
-    const pares: { numero: number; branco: string; preto?: string }[] = []
-    for (let i = 0; i < historico.length; i += 2) {
-      pares.push({ numero: i / 2 + 1, branco: historico[i], preto: historico[i + 1] })
-    }
-    return pares
-  }, [historico])
 
   function fecharSala() {
     salaRef.current?.conexao.fechar()
@@ -4926,27 +5089,16 @@ export function ChessBoard3D() {
     if (partida) handleRetomarPartida(partida)
   }
 
-  function entrarEmTelaCheia() {
-    setTelaCheia(true)
-    // a tela cheia do navegador (some a barra de endereço) precisa ser pedida no próprio clique;
-    // no iPhone não existe pra esse tipo de elemento — aí fica só o tabuleiro ocupando a página
-    const el = tabuleiroRef.current
-    if (el?.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => {})
-  }
-
-  function sairDaTelaCheia() {
-    setTelaCheia(false)
-    setConfirmandoDesistencia(false)
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
-  }
-
-  // saiu da tela cheia do navegador pelo próprio celular (voltar, gesto): volta à tela normal também
+  // não existe mais tela normal: o jogo ocupa sempre a página inteira. No celular, a tela cheia do navegador (que
+  // esconde a barra de endereço) só pode ser pedida num toque: cada toque pede de novo, se ela tiver saído (o voltar do
+  // celular, um gesto). No iPhone não existe pra página, e lá fica só o jogo ocupando a tela
   useEffect(() => {
-    function aoMudar() {
-      if (!document.fullscreenElement) setTelaCheia(false)
+    if (!ehCelular()) return
+    const pedir = () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {})
     }
-    document.addEventListener('fullscreenchange', aoMudar)
-    return () => document.removeEventListener('fullscreenchange', aoMudar)
+    window.addEventListener('pointerup', pedir)
+    return () => window.removeEventListener('pointerup', pedir)
   }, [])
 
   // tabuleiro em tela cheia: a página de trás não rola junto
@@ -4978,7 +5130,6 @@ export function ChessBoard3D() {
     }
     fecharSala()
     setEscolhendoCor(false)
-    if (ehCelular()) entrarEmTelaCheia()
     const nova = novaPartida(jogador, cor, config.dificuldade)
     try {
       await salvarPartida(nova)
@@ -5023,53 +5174,10 @@ export function ChessBoard3D() {
 
   return (
     <div className="space-y-3">
-      {tela === 'jogo' && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-ink-700">{statusTexto}</p>
-            <p className="text-xs text-ink-400">
-              {t('jogandoComo', { nome: jogador })}
-              {adversarioDaSala ? ` · ${t('online.contra', { nome: adversarioDaSala })}` : ''}
-            </p>
-            {avisoDoEmpate && (
-              <p className="text-xs font-medium text-ink-600" data-aviso-empate>
-                {avisoDoEmpate}
-              </p>
-            )}
-            {sala && !conectadoNaSala && <p className="text-xs font-medium text-rose-700">{t('online.reconectando')}</p>}
-            {sala?.status === 'andamento' && conectadoNaSala && !sala.adversarioConectado && adversarioDaSala && (
-              <p className="text-xs font-medium text-ink-600">{t('online.adversarioAusente', { nome: adversarioDaSala })}</p>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" onClick={handleMenu}>
-              {t('menu.menu')}
-            </Button>
-            <Button variant="ghost" onClick={entrarEmTelaCheia}>
-              ⛶ {t('menu.expandir')}
-            </Button>
-            {podeDesistir && <BotaoDesistir t={t} confirmando={confirmandoDesistencia} onPedir={setConfirmandoDesistencia} onConfirmar={handleDesistir} />}
-            {podeEmpatar && <BotaoEmpate t={t} onPedir={handlePedirEmpate} />}
-            <Button variant="secondary" onClick={handleNovoJogo} disabled={escolhendoCor}>
-              {t('menu.novoJogo')}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {sala?.status === 'aguardando' && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-200 bg-ink-50 p-3" role="status" data-convite>
-          <p className="text-xs text-ink-600">{t('online.esperaDica')}</p>
-          <Button variant="secondary" onClick={handleCancelarConvite}>
-            {t('online.cancelarConvite')}
-          </Button>
-        </div>
-      )}
-
       <div
         ref={tabuleiroRef}
         className={ocupaATela ? `fixed inset-0 z-[65] ${tela === 'menu' ? 'bg-[#1c120a]' : 'bg-[#f5f0e6]'}` : 'relative'}
-        aria-label={telaCheia ? t('menu.tabuleiroCheio') : undefined}
+        aria-label={t('menu.tabuleiroCheio')}
       >
         <div
           ref={containerRef}
@@ -5087,9 +5195,6 @@ export function ChessBoard3D() {
             onVerPartida={handleRetomarPartida}
             onContinuar={handleContinuar}
             onNovoJogo={handleNovoJogo}
-            telaCheia={telaCheia}
-            onExpandir={entrarEmTelaCheia}
-            onTelaNormal={sairDaTelaCheia}
             onAbrirSala={abrirSala}
             montarVitrine={montarVitrine}
             montarExpositor={montarExpositor}
@@ -5097,18 +5202,15 @@ export function ChessBoard3D() {
           />
         )}
 
-        {tela === 'jogo' && <PainelDeLances t={t} lances={historico} brancas={nomeDoLado('w')} pretas={nomeDoLado('b')} />}
+        {tela === 'jogo' && config.registro && <PainelDeLances t={t} lances={historico} brancas={nomeDoLado('w')} pretas={nomeDoLado('b')} />}
 
-        {telaCheia && tela === 'jogo' && (
-          // por cima do tabuleiro, no alto: o menu no canto e a tela normal do outro lado, com as ações da partida
-          // logo abaixo. A situação da partida fica embaixo, longe das peças
+        {tela === 'jogo' && (
+          // por cima do tabuleiro, no alto: o menu no canto, com as ações da partida logo abaixo. A situação da partida
+          // fica embaixo, longe das peças
           <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <div className="pointer-events-auto flex items-start justify-between gap-2">
               <button type="button" onClick={handleMenu} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
                 {t('menu.menu')}
-              </button>
-              <button type="button" onClick={sairDaTelaCheia} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
-                ✕ {t('menu.telaNormal')}
               </button>
             </div>
             <div className="pointer-events-auto flex flex-wrap items-center gap-2">
@@ -5123,9 +5225,17 @@ export function ChessBoard3D() {
           </div>
         )}
 
-        {tela === 'jogo' && (revanche || empate?.tipo === 'recebido' || telaCheia) && (
-          // embaixo: o pedido de empate e a revanche do amigo e, na tela cheia, a situação da partida
+        {tela === 'jogo' && (
+          // embaixo: o convite esperando o amigo, o pedido de empate, a revanche e a situação da partida
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 p-3" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+            {sala?.status === 'aguardando' && (
+              <div className="pointer-events-auto flex w-full max-w-md flex-wrap items-center justify-between gap-2 rounded-xl bg-white/95 p-3 shadow-lg" role="status" data-convite>
+                <p className="text-xs text-[#5a4630]">{t('online.esperaDica')}</p>
+                <Button variant="secondary" onClick={handleCancelarConvite}>
+                  {t('online.cancelarConvite')}
+                </Button>
+              </div>
+            )}
             {empate?.tipo === 'recebido' && (
               <div className="pointer-events-auto flex w-full max-w-md flex-wrap items-center justify-between gap-2 rounded-xl bg-white/95 p-3 shadow-lg" role="alertdialog" data-pedido-empate>
                 <p className="text-sm font-medium text-[#3a2a1a]">{t('empate.recebido', { nome: adversarioDaSala ?? '' })}</p>
@@ -5154,13 +5264,17 @@ export function ChessBoard3D() {
                 </span>
               </div>
             )}
-            {telaCheia && !resultadoOverlay && (statusTexto || avisoDoEmpate) && (
+            {!resultadoOverlay && (statusTexto || avisoDoEmpate) && (
               <div className="pointer-events-auto flex max-w-full flex-col items-center gap-1" data-status-partida>
                 {statusTexto && <p className="rounded-lg bg-white/85 px-3 py-1.5 text-center text-sm font-medium text-[#3a2a1a] shadow backdrop-blur">{statusTexto}</p>}
                 {avisoDoEmpate && (
                   <p className="rounded-lg bg-[#1c120a]/85 px-3 py-1 text-center text-xs font-medium text-[#f5e6c8] shadow" data-aviso-empate>
                     {avisoDoEmpate}
                   </p>
+                )}
+                {sala && !conectadoNaSala && <p className="rounded-lg bg-rose-700/90 px-3 py-1 text-xs font-medium text-white shadow">{t('online.reconectando')}</p>}
+                {sala?.status === 'andamento' && conectadoNaSala && !sala.adversarioConectado && adversarioDaSala && (
+                  <p className="rounded-lg bg-[#1c120a]/85 px-3 py-1 text-xs font-medium text-[#f5e6c8] shadow">{t('online.adversarioAusente', { nome: adversarioDaSala })}</p>
                 )}
               </div>
             )}
@@ -5172,6 +5286,8 @@ export function ChessBoard3D() {
             t={t}
             fim={resultadoOverlay}
             detalhe={statusTexto}
+            // contra a máquina, com conta, a vitória paga óticoins pela dificuldade (o servidor paga ao voltar ao menu)
+            premio={resultadoOverlay === 'venceu' && !sala && sessao && partidaAtualRef.current?.dificuldade ? PREMIO_DA_VITORIA[partidaAtualRef.current.dificuldade] : 0}
             onNovoJogo={handleNovoJogo}
             onFechar={() => setResultadoOverlay(null)}
           />
@@ -5269,75 +5385,6 @@ export function ChessBoard3D() {
         )}
       </div>
 
-      {config.registro && tela === 'jogo' && <div className="rounded-xl border border-ink-200 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setHistoricoAberto((v) => !v)}
-          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-ink-50"
-        >
-          {t('registro.lances')}
-          <span aria-hidden className={`transition-transform ${historicoAberto ? 'rotate-180' : ''}`}>
-            ▾
-          </span>
-        </button>
-        {historicoAberto && (
-          <div
-            ref={listaLancesRef}
-            className="max-h-48 overflow-y-auto px-3 pb-2 text-xs text-ink-600 space-y-0.5 border-t border-ink-100 pt-2"
-          >
-            {paresLances.length === 0 ? (
-              <p className="text-ink-400">{t('registro.semLances')}</p>
-            ) : (
-              paresLances.map((p) => (
-                <div key={p.numero} className="flex gap-2 tabular-nums">
-                  <span className="w-4 text-ink-400">{p.numero}.</span>
-                  <span className="flex-1 font-mono">{p.branco.toUpperCase()}</span>
-                  <span className="flex-1 font-mono">{p.preto?.toUpperCase() ?? ''}</span>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>}
-
-      {config.registro && tela === 'jogo' && partidasEmAndamento.length > 1 && (
-        <div className="rounded-xl border border-ink-200 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setPartidasAberto((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-ink-50"
-          >
-            {t('registro.partidas')}
-            <span aria-hidden className={`transition-transform ${partidasAberto ? 'rotate-180' : ''}`}>
-              ▾
-            </span>
-          </button>
-          {partidasAberto && (
-            <div className="flex flex-wrap gap-2 px-3 pb-3 pt-1 border-t border-ink-100">
-              {partidasEmAndamento.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleRetomarPartida(p)}
-                  className={`pill-tab border ${
-                    partidaAtualRef.current?.id === p.id
-                      ? 'bg-ink-950 border-ink-950 text-white'
-                      : 'border-ink-200 text-ink-600 hover:bg-ink-50'
-                  }`}
-                >
-                  {t('registro.partidaDe', { data: new Date(p.criadaEm).toLocaleDateString(config.idioma) })}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {tela === 'jogo' && !sala && (
-        <p className="text-xs text-ink-400">
-          {posicoesDoLivro === null ? t('livro.carregando') : posicoesDoLivro > 0 ? t('livro.usando', { n: posicoesDoLivro }) : t('livro.indisponivel')}
-        </p>
-      )}
     </div>
   )
 }
