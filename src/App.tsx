@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 
-const ChessBoard3D = lazy(() => import('./components/ChessBoard3D').then((m) => ({ default: m.ChessBoard3D })))
+const ChessBoard3D = lazy(() => import('./tabuleiro/ChessBoard3D').then((m) => ({ default: m.ChessBoard3D })))
 
 export function App() {
   return (

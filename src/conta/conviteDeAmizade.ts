@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { ErroDoServidor, ouvirSessao, receberConvite, sessaoAtual, verConvite, type Jogador } from '../db/servidor'
+import { ErroDoServidor, ouvirSessao, receberConvite, sessaoAtual, verConvite, type Jogador } from '../dados/servidor'
 
 // Convite de amizade por link e por QR Code. O link leva o código fixo de quem convida (?convite=...), e o QR Code é o
 // mesmo link: a câmera do celular abre o site, a câmera do jogo lê na aba Amigos. O código fica guardado no aparelho até

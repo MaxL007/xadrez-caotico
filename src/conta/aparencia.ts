@@ -1,5 +1,5 @@
-import { enderecoDaFoto, type Jogador } from '../db/servidor'
-import listas from './aparencia.json'
+import { enderecoDaFoto, type Jogador } from '../dados/servidor'
+import listas from '../catalogos/aparencia.json'
 
 // O que dá pra usar no perfil. As listas ficam no JSON porque o servidor confere pelas mesmas.
 

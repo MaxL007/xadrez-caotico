@@ -14,16 +14,35 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 
 ## Mapa
 
-- `src/components/ChessBoard3D.tsx`: o jogo inteiro em three.js, num `useEffect` grande. `geracao` invalida
-  animações de um tabuleiro antigo; `acoesRef` é a ponte do React pra cena; `window.__xadrez` tem os ganchos
-  dos testes, só em desenvolvimento.
-- `src/components/MenuXadrez.tsx`, `PainelConta.tsx`, `PainelAmigos.tsx`, `PainelPerfil.tsx`: tela inicial, conta, amigos
-  e perfil. `ElementosDoJogador.tsx` tem o avatar com moldura, o ID e o placar que amigos e perfil dividem.
-- `src/db/db.ts`: salva primeiro no aparelho (IndexedDB, um banco por conta) e depois na nuvem, com fila.
-- `src/db/servidor.ts`: chamadas ao servidor e sessão.
-- `src/aplicativo.ts`: o jogo instalado como aplicativo (service worker, instalar, versão nova).
-- `src/online/salaAoVivo.ts`: WebSocket da partida, com reconexão. O token vai como subprotocolo.
-- `src/conta/senha.ts`: PBKDF2 no aparelho. A fórmula do sal não pode mudar sem migrar as contas.
+As pastas de `src` são por função:
+
+- `catalogos/`: o que se edita à mão e o servidor também lê: `personalizacao.json` (partes, armas por peça, habilidades,
+  preços da Loja, que conquista libera cada arma), `conquistas.json` (o que cada conquista pede e paga) e
+  `aparencia.json` (avatares e molduras). Mudou um deles, publica o servidor junto (`wrangler deploy`).
+- `tabuleiro/`: a partida em 3D. `ChessBoard3D.tsx` é a cena e o fluxo da partida, num `useEffect` grande: `geracao`
+  invalida animações de um tabuleiro antigo; `acoesRef` é a ponte do React pra cena; `window.__xadrez` tem os ganchos
+  dos testes, só em desenvolvimento. `casas.ts` tem as coordenadas, a câmera e as texturas do tabuleiro;
+  `ResultadoDaPartida.tsx` e `PainelDeLances.tsx`, o que aparece por cima dela.
+  - `tabuleiro/pecas/`: as peças. `modelosRPG.ts` (carregar os .glb, os clipes, a espada do peão), `geometricas.ts` (o
+    boneco de madeira, se o modelo não carregar), `materiais.ts`, `montarPeca.ts` (a peça de uma casa), `vestimenta.ts`
+    (o que as peças de quem joga vestem), `equipamentos.ts` (armaduras e armas em malha com esqueleto), `ossos.ts` (o
+    IK de dois ossos), `expositor.ts`, `vitrine.ts` e `emblemas.ts` (os símbolos das habilidades).
+  - `tabuleiro/animacoes/`: `movimento.ts` (andar, correr, virar, o salto do cavalo), `gestos.ts` (gestos, gesto
+    amigável, comemoração, recusa e descanso), `queda.ts` (a vítima caindo, arremessada, sumindo) e `cerimonias.ts`
+    (pétalas da honra e ascensão da promoção).
+  - `tabuleiro/combate/`: `golpes.ts` (a espada do peão, o alcance, o impacto), `poderes.ts` (orbe, raio, onda),
+    `marreta.ts` (marreta, machado e maça, com a peça presa), `efeitosDasArmas.ts` (os efeitos de cada arma) e
+    `lutaSemArma.ts` (socos e chute).
+- `telas/`: `MenuXadrez.tsx` (tela inicial e painéis), `PainelConta.tsx`, `PainelAmigos.tsx`, `PainelPerfil.tsx`,
+  `PainelConquistas.tsx`, `PainelLoja.tsx`, `PainelPersonalizacao.tsx`, `QrCode.tsx` e `ui/`. `ElementosDoJogador.tsx`
+  tem o avatar com moldura, o ID e o placar que amigos e perfil dividem.
+- `conta/`: `senha.ts` (PBKDF2 no aparelho; a fórmula do sal não pode mudar sem migrar as contas), `personalizacao.ts`,
+  `conquistas.ts`, `aparencia.ts`, `foto.ts`, `presenca.ts` e `conviteDeAmizade.ts`.
+- `dados/`: `db.ts` (salva primeiro no aparelho, IndexedDB com um banco por conta, e depois na nuvem, com fila),
+  `servidor.ts` (chamadas ao servidor e sessão), `salaAoVivo.ts` (WebSocket da partida, com reconexão; o token vai como
+  subprotocolo) e os repositórios das partidas e do aprendizado.
+- `jogo/` (regras, a máquina, o livro de aberturas e as configurações), `som/sons.ts`, `textos/idiomas.ts` e `app/`
+  (`aplicativo.ts`, o jogo instalado como aplicativo: service worker, instalar, versão nova; e utilidades).
 - `worker/src/index.ts` (rotas), `conta.ts` (senhas e limites), `sala.ts` (Durable Object, o árbitro).
 
 ## Amigos
@@ -62,7 +81,7 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   `npx wrangler d1 execute xadrez-caotico --remote --command "UPDATE usuarios SET tudo_liberado = 1 WHERE nome_busca = '<nome>'"`.
   Quem liga qual conta fica fora do repositório, que é público.
 - `usuarios.avatar` é uma sugestão do jogo (`peao-brancas`) ou a foto (`foto:<versão>`), e `moldura` é só o id. As listas
-  válidas ficam em `src/conta/aparencia.json`, que o Worker também importa: moldura nova entra ali e em `ANEL_DA_MOLDURA`.
+  válidas ficam em `src/catalogos/aparencia.json`, que o Worker também importa: moldura nova entra ali e em `ANEL_DA_MOLDURA`.
 - A foto é recortada e reduzida no aparelho (`src/conta/foto.ts`) e fica na tabela `fotos`. O servidor só aceita JPEG até
   60 KB em base64. `GET /fotos/<ID>` é aberto, porque uma `<img>` não manda sessão: quem tem o ID vê a foto.
 - Os avatares sugeridos em `public/avatares` saem dos modelos das peças: `node scripts/gerar-avatares.mjs`, com o site de
@@ -80,13 +99,13 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   porque uma tela aberta há tempo ainda pode pedir algum.
 - A página vem sempre da rede quando há internet: ninguém fica com o site velho falando com o servidor novo. Sem
   internet, vem do aparelho e dá pra jogar contra a máquina. O servidor do jogo (outro endereço) nunca passa pelo cache.
-- O service worker só é registrado no build de produção (`src/aplicativo.ts`). Ao voltar pro aplicativo, ele compara o
+- O service worker só é registrado no build de produção (`src/app/aplicativo.ts`). Ao voltar pro aplicativo, ele compara o
   código da tela aberta com o publicado e oferece "Versão nova: atualizar". O botão "Instalar app" aparece quando o
   navegador oferece (Android, computador) e, no iPhone, explica o "Adicionar à Tela de Início".
 
 ## Personalização das peças
 
-- Aberta a toda conta, mas só o padrão de cada parte é livre. Catálogo em `src/conta/personalizacao.json`, o mesmo que o
+- Aberta a toda conta, mas só o padrão de cada parte é livre. Catálogo em `src/catalogos/personalizacao.json`, o mesmo que o
   Worker confere: `loja` traz, por peça, o que se compra e o preço (tabela do usuário; a compra vale só pra aquela peça,
   item `peça:parte:opção` na tabela `itens`), inclusive as armas e o retalhamento da katana (`p:golpe:retalhamento`);
   `itens` traz a conquista que também libera cada arma: vale a compra ou a conquista. A conta com
@@ -94,19 +113,19 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   catálogo é ignorada.
 - Habilidade especial é uma parte própria (`golpe`, catálogo `habilidades`, por peça): por enquanto só o peão, com o
   retalhamento. Comprar não basta, tem de equipar na Personalização, e ele só sai com a katana na mão (a tela avisa).
-  O expositor mostra o símbolo da habilidade (`src/chess/emblemas.ts`), não a arma: o do retalhamento é o desenho do
+  O expositor mostra o símbolo da habilidade (`src/tabuleiro/pecas/emblemas.ts`), não a arma: o do retalhamento é o desenho do
   usuário, três órbitas cruzadas (faixas achatadas e inclinadas, que de frente ficam grossas nas pontas como pincel) e
   dois cortes em crescente por cima. A compra continua sendo o item `p:golpe:retalhamento`.
 - Toda peça começa sem arma, inclusive as da máquina e as do adversário: as armas aparecem só em quem liberou e vestiu.
   Peão: katana ou espada. Torre: marreta, machado (lâmina em meia-lua) ou maça. Cavalo: lança. Bispo: cajado ou cristal.
   Rainha: cajado, cristal ou lua. Rei: cajado, cristal ou cetro.
 - Sem arma (`userData.arma === 'nenhuma'`), toda peça menos o cavalo, que pisoteia com as patas, vai até a vítima e luta
-  com o corpo (`src/components/lutaSemArma.ts`): um jab e um direto, ou um chute de frente, sorteados, com sons próprios
+  com o corpo (`src/tabuleiro/combate/lutaSemArma.ts`): um jab e um direto, ou um chute de frente, sorteados, com sons próprios
   (`soco:jab`, `soco`, `chute:ar`, `chute`). A pose vai osso por osso por cima do clipe, com o IK de dois ossos de
-  `src/components/ossos.ts` (o mesmo da marreta): antes dos clipes o quadro desfaz a pose (`desfazerPosesDasLutas`), e
+  `src/tabuleiro/pecas/ossos.ts` (o mesmo da marreta): antes dos clipes o quadro desfaz a pose (`desfazerPosesDasLutas`), e
   depois deles guarda o que o clipe deixou e posa de novo (`atualizarLutas`). Quem bate para a `distanciaDaLuta` da
   vítima. O orbe do bispo e a onda do rei, que eram o ataque sem arma, ficaram sem uso no código.
-- O ataque da captura segue a arma (`src/components/efeitosDasArmas.ts`, cada um com som próprio em `sons.ts`):
+- O ataque da captura segue a arma (`src/tabuleiro/combate/efeitosDasArmas.ts`, cada um com som próprio em `sons.ts`):
   retalhamento da katana (vários cortes e a peça em pedaços, só pra quem comprou), marreta (rachaduras desenhadas a cada
   pancada e o tabuleiro tremendo), machado (a peça cortada ao meio por plano de recorte; a metade de cima é cópia pelo
   `SkeletonUtils`, sem o userData, que tem o mixer), maça (a torre para no alcance do cabo inteiro, `alcanceDaMaca`, e o golpe para
@@ -120,8 +139,8 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   `renderer.localClippingEnabled`.
 - A compra na Loja grava o item e tira as óticoins no mesmo lote: o item só entra se havia saldo (`INSERT ... SELECT ...
   WHERE oticoins >= preço`), e a moeda só sai se o item entrou (`changes()`).
-- Na aba, cada quadrado é um expositor: o equipamento sozinho, girando num pedestal (`src/components/expositor.ts`),
-  montado por `montarExpositor` (ChessBoard3D) e `equipamentoSozinho` (equipamentos.ts). A katana e o cajado de sempre
+- Na aba, cada quadrado é um expositor: o equipamento sozinho, girando num pedestal (`src/tabuleiro/pecas/expositor.ts`),
+  montado por `montarExpositor` (`tabuleiro/pecas/vitrine.ts`) e `equipamentoSozinho` (equipamentos.ts). A katana e o cajado de sempre
   são recortados do modelo. A Loja usa o mesmo expositor: um canvas por cima dela desenha cada cartão no seu retângulo,
   e tocar no cartão abre o equipamento grande, pra girar.
 - A Loja tem três abas: Armaduras, peça por peça, com atalhos no fim pras armas e habilidades daquela peça; Armas e
@@ -129,10 +148,10 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   cristal aparecem em cada peça que os usa, porque a compra é por peça; o retalhamento fica em Habilidades, com o
   símbolo dele. O canvas da Loja cobre só a faixa à vista de quem rola (`quemRola`), senão a lista das armas passaria
   do tamanho de canvas que um celular aceita.
-- `src/chess/equipamentos.ts` monta as armaduras e armas: cada parte vira malha com esqueleto presa ao osso que cobre,
+- `src/tabuleiro/pecas/equipamentos.ts` monta as armaduras e armas: cada parte vira malha com esqueleto presa ao osso que cobre,
   medida no corpo em pose de braços abertos (igual nas seis peças). O que a parte nova substitui (ombreira redonda,
   cajado, sela, katana) some do modelo pela regra de `ESCONDER`, numa cópia da geometria.
-- Quem joga veste só as próprias peças (`vestimenta` em ChessBoard3D); no menu, as brancas. A marreta da torre muda em
+- Quem joga veste só as próprias peças (`tabuleiro/pecas/vestimenta.ts`); no menu, as brancas. A marreta da torre muda em
   `criarMarreta`. A vitrine da aba tem renderizador próprio e é montada por `montarVitrine`.
 - `testes/fotos-personalizacao.mjs` fotografa cada peça vestida: é como se confere se as partes encaixam.
 
@@ -140,7 +159,7 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 
 - A óticoin é uma moeda 3D com o peão de um lado e o rei do outro: `node scripts/gerar-oticoin.mjs` gera em
   `public/oticoin` a fileira de quadros do giro e os dois lados parados, que o componente `Oticoin` mostra.
-- Catálogo em `src/chess/conquistas.json`, também lido pelo Worker. Só contam partidas contra a máquina; as com amigos
+- Catálogo em `src/catalogos/conquistas.json`, também lido pelo Worker. Só contam partidas contra a máquina; as com amigos
   ficam de fora. Capturas, xeques, roques e vitórias saem das partidas salvas (`contarPartidas`); convites aceitos, o
   servidor conta.
 - Vitória contra a máquina paga pela dificuldade: 1 no fácil, 2 no intermediário, 3 no difícil (`POST /vitorias/receber`,
@@ -248,5 +267,5 @@ fraco: a máquina responde a ele, mas nunca o joga.
 
 ## Som
 
-Tudo sintetizado em `src/chess/sons.ts`, sem arquivos de áudio. Foi medido, nunca ouvido: o ruído é sorteado e o
+Tudo sintetizado em `src/som/sons.ts`, sem arquivos de áudio. Foi medido, nunca ouvido: o ruído é sorteado e o
 pico oscila, então deixe folga abaixo de 1,0.

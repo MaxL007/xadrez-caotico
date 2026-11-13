@@ -1,4 +1,4 @@
-import { avisarQueSaiu, marcarPresenca, ouvirSessao, sessaoAtual } from '../db/servidor'
+import { avisarQueSaiu, marcarPresenca, ouvirSessao, sessaoAtual } from '../dados/servidor'
 
 // A bolinha verde dos amigos. Com a conta aberta e o jogo à vista (no menu, numa partida, em qualquer tela), o aparelho
 // avisa o servidor a cada minuto. Ao esconder a aba, trocar de aplicativo ou fechar, avisa que saiu: o amigo vê a

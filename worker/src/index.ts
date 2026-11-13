@@ -20,9 +20,9 @@ import {
   type Usuario,
 } from './conta'
 import type { Sala } from './sala'
-import aparencia from '../../src/conta/aparencia.json'
-import personalizacao from '../../src/conta/personalizacao.json'
-import conquistas from '../../src/chess/conquistas.json'
+import aparencia from '../../src/catalogos/aparencia.json'
+import personalizacao from '../../src/catalogos/personalizacao.json'
+import conquistas from '../../src/catalogos/conquistas.json'
 
 export { Sala } from './sala'
 

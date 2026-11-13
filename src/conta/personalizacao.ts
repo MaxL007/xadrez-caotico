@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import { comprarNaLoja, lerMeuPerfil, ouvirSessao, salvarEscolhaDaPeca, sessaoAtual, type EscolhasDasPecas } from '../db/servidor'
-import catalogo from './personalizacao.json'
+import { comprarNaLoja, lerMeuPerfil, ouvirSessao, salvarEscolhaDaPeca, sessaoAtual, type EscolhasDasPecas } from '../dados/servidor'
+import catalogo from '../catalogos/personalizacao.json'
 
 // O que cada peça de quem joga veste e o que a conta pode usar. O catálogo é o mesmo JSON que o servidor confere:
 // o básico é livre, o resto libera com uma conquista ou com a compra na Loja. As escolhas ficam guardadas também no
