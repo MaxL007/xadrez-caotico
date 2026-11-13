@@ -256,6 +256,7 @@ try {
   conferir('quem chamou vê o amigo chegar', (await h(ana, 'sala')).pretas === nomeBia)
   await ana.locator('[data-convite]').waitFor({ state: 'detached' })
   conferir('a espera some quando a partida começa', true)
+  conferir('cada um vê contra quem joga', (await ana.locator('[data-adversario]').innerText()) === `Contra ${nomeBia}` && (await bia.locator('[data-adversario]').innerText()) === `Contra ${nomeAna}`)
   await bia.waitForFunction(() => !window.__xadrez.camera().girando, null, { timeout: 30000, polling: 300 })
   conferir('o tabuleiro de quem joga de pretas fica virado', (await h(bia, 'camera')).z < 0, String((await h(bia, 'camera')).z))
   const vista = await h(bia, 'camera')

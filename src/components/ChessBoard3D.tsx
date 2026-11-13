@@ -5267,6 +5267,12 @@ export function ChessBoard3D() {
             {!resultadoOverlay && (statusTexto || avisoDoEmpate) && (
               <div className="pointer-events-auto flex max-w-full flex-col items-center gap-1" data-status-partida>
                 {statusTexto && <p className="rounded-lg bg-white/85 px-3 py-1.5 text-center text-sm font-medium text-[#3a2a1a] shadow backdrop-blur">{statusTexto}</p>}
+                {/* na partida com um amigo, contra quem é (ficava na barra da tela normal, que não existe mais) */}
+                {adversarioDaSala && (
+                  <p className="rounded-lg bg-white/70 px-2.5 py-0.5 text-center text-xs font-medium text-[#5a4630] shadow" data-adversario>
+                    {t('online.contra', { nome: adversarioDaSala })}
+                  </p>
+                )}
                 {avisoDoEmpate && (
                   <p className="rounded-lg bg-[#1c120a]/85 px-3 py-1 text-center text-xs font-medium text-[#f5e6c8] shadow" data-aviso-empate>
                     {avisoDoEmpate}
