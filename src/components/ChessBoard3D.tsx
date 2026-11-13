@@ -13,7 +13,10 @@ import { DIFICULDADES, escolherJogadaDaMaquina, maquinaAceitaEmpate, usaLivro, t
 import { PREMIO_DA_VITORIA } from '../chess/conquistas'
 import { ResultadoDaPartida, type FimDaPartida } from './ResultadoDaPartida'
 import { PainelDeLances } from './PainelDeLances'
-import { afundarPelaGravidade, convocarCristal, cortarAoMeio, despedacar, rachadurasNoTabuleiro, rastroDeCorte, tornadoDaLua, tremerTabuleiro } from './efeitosDasArmas'
+import { afundarPelaGravidade, convocarCristal, cortarAoMeio, despedacar, rachadurasNoTabuleiro, rastroDeCorte, soltarOCavalo, tornadoDaLua, tremerTabuleiro } from './efeitosDasArmas'
+import { girarOssoNoMundo, levarBracoAte, levarPernaAte, ossoRPG, restaurarOssos, salvarOssos, type OssoSalvo } from './ossos'
+import { emblemaDaHabilidade } from '../chess/emblemas'
+import { atualizarLutas, desfazerPosesDasLutas, distanciaDaLuta, estaLutando, forcarGolpeSemArma, lutarSemArma, sortearGolpeSemArma, type GolpeSemArma } from './lutaSemArma'
 import { ambienteDoTabuleiro, ambienteTocando, configurarSom, destravarSom, ritmoDosPassos, somDestravado, tocarSom, tocarUmPasso } from '../chess/sons'
 import { useConfigXadrez, type QualidadeXadrez } from '../chess/configXadrez'
 import { tradutor, type ChaveTexto, type Traduzir } from '../chess/idiomas'
@@ -24,7 +27,7 @@ import { entrarEmSala, pedirRevanche, recusarSala, sessaoAtual, useSessao } from
 import { abrirConexaoDaSala, type ConexaoDaSala, type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../online/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../db/xadrezAprendizadoRepo'
 import { cajadoDoModelo, equipamentoSozinho, katanaDoModelo, vestirPeca, type MateriaisDaPeca, type VitrineDaPeca } from '../chess/equipamentos'
-import { carregarPersonalizacao, opcaoLiberada, ouvirPersonalizacao, personalizacaoAtual } from '../conta/personalizacao'
+import { carregarPersonalizacao, ouvirPersonalizacao, personalizacaoAtual } from '../conta/personalizacao'
 import { contarPartidas } from '../chess/conquistas'
 
 const COR_SELECIONADA = 0x2a9d5f
@@ -675,6 +678,7 @@ function atualizarGestoRPG(mesh: THREE.Object3D, agora: number) {
   mesh.userData.proximoGestoRPG = sortearProximoGesto(agora)
   const ocupada =
     meshesEmGesto.has(mesh) ||
+    estaLutando(mesh) ||
     Boolean((mesh.userData.espadaRPG as EspadaRPG | undefined)?.fora) ||
     Object.entries(acoes).some(([nome, acao]) => nome !== 'Parado' && acao.enabled && acao.isScheduled() && acao.getEffectiveWeight() > 0.01)
   if (ocupada) return
@@ -800,10 +804,8 @@ function materiaisDaPeca(cor: 'w' | 'b'): MateriaisDaPeca {
 /** Quem joga veste as próprias peças com o que escolheu na Personalização; o adversário e a máquina, não. No menu,
  * as vestidas são as brancas. */
 let vestimenta: { cor: 'w' | 'b'; escolhas: Record<string, Record<string, string>> } = { cor: 'w', escolhas: {} }
-/** Só nos testes: veste as peças de quem joga sem passar pela conta. */
+/** Só nos testes: veste as peças de quem joga sem passar pela conta (as habilidades também). */
 let vestimentaDeTeste: Record<string, Record<string, string>> | null = null
-/** Só nos testes: o retalhamento sem ter comprado. */
-let retalhamentoDeTeste = false
 
 /** A arma do peão no tabuleiro: a escolhida, ou nenhuma. */
 const armaDoPeaoNoTabuleiro = (peao: THREE.Object3D) => peao.userData.arma as string | undefined
@@ -2222,7 +2224,7 @@ const suaveMarreta = (t: number) => t * t * (3 - 2 * t)
 
 /** Em que ponto do golpe a marreta está: `peso` é quanto os braços seguem o cabo (0 = o clipe
  * normal da peça) e `escala`, o tamanho da marreta, que surge e some nas mãos. */
-function poseDaMarreta(decorrido: number): { pose: PoseMarreta; peso: number; escala: number } {
+function poseDaMarreta(decorrido: number, pancada = POSE_MARRETA_PANCADA): { pose: PoseMarreta; peso: number; escala: number } {
   if (decorrido < MARRETA_SURGIU_MS) {
     const t = suaveMarreta(decorrido / MARRETA_SURGIU_MS)
     return { pose: POSE_MARRETA_GUARDA, peso: t, escala: t }
@@ -2238,23 +2240,24 @@ function poseDaMarreta(decorrido: number): { pose: PoseMarreta; peso: number; es
   }
   if (decorrido < MARRETA_PANCADA_MS) {
     const t = (decorrido - MARRETA_NO_ALTO_ATE_MS) / (MARRETA_PANCADA_MS - MARRETA_NO_ALTO_ATE_MS)
-    return { pose: misturarPoses(POSE_MARRETA_ERGUIDA, POSE_MARRETA_PANCADA, t * t * t), peso: 1, escala: 1 }
+    return { pose: misturarPoses(POSE_MARRETA_ERGUIDA, pancada, t * t * t), peso: 1, escala: 1 }
   }
   if (decorrido < MARRETA_CRAVADA_ATE_MS) {
     // pulo da cabeça da marreta logo depois de bater
     const t = (decorrido - MARRETA_PANCADA_MS) / (MARRETA_CRAVADA_ATE_MS - MARRETA_PANCADA_MS)
     const quique = 0.09 * Math.sin(Math.min(1, t * 2.5) * Math.PI)
-    return { pose: { ...POSE_MARRETA_PANCADA, angulo: POSE_MARRETA_PANCADA.angulo - quique }, peso: 1, escala: 1 }
+    return { pose: { ...pancada, angulo: pancada.angulo - quique }, peso: 1, escala: 1 }
   }
   const t = suaveMarreta(Math.min(1, (decorrido - MARRETA_CRAVADA_ATE_MS) / (MARRETA_FIM_MS - MARRETA_CRAVADA_ATE_MS)))
-  return { pose: misturarPoses(POSE_MARRETA_PANCADA, POSE_MARRETA_GUARDA, t), peso: 1 - t, escala: 1 - suaveMarreta(Math.max(0, t * 2 - 1)) }
+  return { pose: misturarPoses(pancada, POSE_MARRETA_GUARDA, t), peso: 1 - t, escala: 1 - suaveMarreta(Math.max(0, t * 2 - 1)) }
 }
 
-function poseDaMaca(decorrido: number): { pose: PoseMarreta; peso: number; escala: number } {
-  if (decorrido < MARRETA_CRAVADA_ATE_MS) return poseDaMarreta(decorrido)
+/** `pancada`: a maça para no peito da vítima (`pancadaNoPeito`), em vez de descer até o chão como a marreta. */
+function poseDaMaca(decorrido: number, pancada: PoseMarreta): { pose: PoseMarreta; peso: number; escala: number } {
+  if (decorrido < MARRETA_CRAVADA_ATE_MS) return poseDaMarreta(decorrido, pancada)
   if (decorrido < MACA_ERGUIDA_ATE_MS) {
     const t = suaveMarreta((decorrido - MARRETA_CRAVADA_ATE_MS) / (MACA_ERGUIDA_ATE_MS - MARRETA_CRAVADA_ATE_MS))
-    return { pose: misturarPoses(POSE_MARRETA_PANCADA, POSE_MACA_SACODE, t), peso: 1, escala: 1 }
+    return { pose: misturarPoses(pancada, POSE_MACA_SACODE, t), peso: 1, escala: 1 }
   }
   if (decorrido < MACA_SACODE_ATE_MS) {
     // chacoalha pra frente e pra trás, cada vez mais forte, até a peça soltar
@@ -2264,47 +2267,6 @@ function poseDaMaca(decorrido: number): { pose: PoseMarreta; peso: number; escal
   }
   const t = suaveMarreta(Math.min(1, (decorrido - MACA_SACODE_ATE_MS) / (MACA_FIM_MS - MACA_SACODE_ATE_MS)))
   return { pose: misturarPoses(POSE_MACA_SACODE, POSE_MARRETA_GUARDA, t), peso: 1 - t, escala: 1 - suaveMarreta(Math.max(0, t * 2 - 1)) }
-}
-
-function ossoRPG(mesh: THREE.Object3D, nome: string): THREE.Object3D | undefined {
-  return mesh.getObjectByName(`mixamorig${nome}`) ?? mesh.getObjectByName(`mixamorig:${nome}`)
-}
-
-/** Gira um osso por um giro dado no mundo, levando junto o que vem depois dele. */
-function girarOssoNoMundo(osso: THREE.Object3D, giro: THREE.Quaternion) {
-  const pai = (osso.parent as THREE.Object3D).getWorldQuaternion(new THREE.Quaternion())
-  osso.quaternion.premultiply(pai.clone().invert().multiply(giro).multiply(pai))
-  osso.updateWorldMatrix(false, true)
-}
-
-/** Vira o osso pro filho dele apontar pro alvo; com `peso` menor, vai só uma parte do caminho. */
-function apontarOsso(osso: THREE.Object3D, filho: THREE.Object3D, alvo: THREE.Vector3, peso: number) {
-  const base = osso.getWorldPosition(new THREE.Vector3())
-  const atual = filho.getWorldPosition(new THREE.Vector3()).sub(base).normalize()
-  const giro = new THREE.Quaternion().setFromUnitVectors(atual, alvo.clone().sub(base).normalize())
-  girarOssoNoMundo(osso, new THREE.Quaternion().slerp(giro, peso))
-}
-
-/** Leva a mão até `alvo` dobrando o cotovelo pra fora e pra baixo, como um braço de verdade. */
-function levarBracoAte(torre: THREE.Object3D, lado: 'Left' | 'Right', alvo: THREE.Vector3, peso: number) {
-  const ombro = ossoRPG(torre, `${lado}Arm`)
-  const cotovelo = ossoRPG(torre, `${lado}ForeArm`)
-  const mao = ossoRPG(torre, `${lado}Hand`)
-  if (!ombro || !cotovelo || !mao) return
-  const noOmbro = ombro.getWorldPosition(new THREE.Vector3())
-  const noCotovelo = cotovelo.getWorldPosition(new THREE.Vector3())
-  const braco = noOmbro.distanceTo(noCotovelo)
-  const antebraco = noCotovelo.distanceTo(mao.getWorldPosition(new THREE.Vector3()))
-  const rumo = alvo.clone().sub(noOmbro)
-  const distancia = Math.min(rumo.length(), (braco + antebraco) * 0.995)
-  rumo.normalize()
-  const aoLongo = (braco * braco - antebraco * antebraco + distancia * distancia) / (2 * distancia)
-  const pontaDoCotovelo = Math.sqrt(Math.max(0, braco * braco - aoLongo * aoLongo))
-  const dobra = new THREE.Vector3(lado === 'Right' ? -1 : 1, -0.8, -0.4).transformDirection(torre.matrixWorld)
-  dobra.addScaledVector(rumo, -dobra.dot(rumo)).normalize()
-  const destinoCotovelo = noOmbro.clone().addScaledVector(rumo, aoLongo).addScaledVector(dobra, pontaDoCotovelo)
-  apontarOsso(ombro, cotovelo, destinoCotovelo, peso)
-  apontarOsso(cotovelo, mao, noOmbro.clone().addScaledVector(rumo, distancia), peso)
 }
 
 /** O corpo por cima do clipe da peça: inclina o tronco e põe as duas mãos no cabo. */
@@ -2326,18 +2288,8 @@ function posarComMarreta(torre: THREE.Object3D, pose: PoseMarreta, peso: number)
  * do clipe muda: sem voltar pra essa posição a cada quadro, o giro de um quadro somava no do seguinte
  * e o tronco ia dobrando até o chão. */
 const OSSOS_DO_GOLPE = ['Spine', 'Spine1', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm']
-type OssoSalvo = [THREE.Object3D, THREE.Quaternion]
 
-function salvarOssosDoGolpe(torre: THREE.Object3D): OssoSalvo[] {
-  return OSSOS_DO_GOLPE.flatMap((nome): OssoSalvo[] => {
-    const osso = ossoRPG(torre, nome)
-    return osso ? [[osso, osso.quaternion.clone()]] : []
-  })
-}
-
-function restaurarOssos(ossos: OssoSalvo[]) {
-  for (const [osso, posicao] of ossos) osso.quaternion.copy(posicao)
-}
+const salvarOssosDoGolpe = (torre: THREE.Object3D): OssoSalvo[] => salvarOssos(torre, OSSOS_DO_GOLPE)
 
 interface Marretada {
   torre: THREE.Object3D
@@ -2350,11 +2302,14 @@ interface Marretada {
   /** Só a maça: quando a peça presa nos espinhos solta. */
   aoSoltar?: () => void
   soltou: boolean
+  /** Só a maça: onde ela para, no peito da vítima. */
+  pancada: PoseMarreta
 }
 const marretadas = new Set<Marretada>()
 
 function encerrarMarretada(m: Marretada) {
   restaurarOssos(m.ossos)
+  soltarDaMaca(m.marreta)
   m.torre.remove(m.marreta)
   marretadas.delete(m)
 }
@@ -2368,12 +2323,14 @@ function atualizarMarretadas(agora: number) {
     }
     const decorrido = agora - m.inicio
     const ehMaca = m.torre.userData.arma === 'maca'
-    const { pose, peso, escala } = ehMaca ? poseDaMaca(decorrido) : poseDaMarreta(decorrido)
+    const { pose, peso, escala } = ehMaca ? poseDaMaca(decorrido, m.pancada) : poseDaMarreta(decorrido)
     m.marreta.position.set(0, pose.y, pose.z)
     m.marreta.rotation.x = pose.angulo
     m.marreta.scale.setScalar(Math.max(0.001, escala))
     restaurarOssos(m.ossos)
     posarComMarreta(m.torre, pose, peso)
+    const presa = pecasPresas.get(m.marreta)
+    if (presa) pendurar(presa, agora)
     if (!m.acertou && decorrido >= MARRETA_PANCADA_MS) {
       m.acertou = true
       m.aoAcertar()
@@ -2386,14 +2343,123 @@ function atualizarMarretadas(agora: number) {
   }
 }
 
-/** Começa o golpe; `aoAcertar` roda no instante em que a marreta bate no chão. `continua` falso
- * (outro jogo entrou no meio) tira a marreta da mão sem acertar. */
-function baterComMarreta(torre: THREE.Object3D, cor: 'w' | 'b', continua: () => boolean, aoAcertar: () => void, aoSoltar?: () => void): THREE.Group {
+/** Começa o golpe; `aoAcertar` roda no instante em que a marreta bate no chão (a maça, no peito da vítima: `pancada`).
+ * `continua` falso (outro jogo entrou no meio) tira a marreta da mão sem acertar. */
+function baterComMarreta(
+  torre: THREE.Object3D,
+  cor: 'w' | 'b',
+  continua: () => boolean,
+  aoAcertar: () => void,
+  aoSoltar?: () => void,
+  pancada = POSE_MARRETA_PANCADA,
+): THREE.Group {
   const marreta = criarMarreta(cor, torre.userData.arma as string | undefined)
   marreta.scale.setScalar(0.001)
   torre.add(marreta)
-  marretadas.add({ torre, marreta, ossos: salvarOssosDoGolpe(torre), inicio: performance.now(), acertou: false, continua, aoAcertar, aoSoltar, soltou: false })
+  marretadas.add({ torre, marreta, ossos: salvarOssosDoGolpe(torre), inicio: performance.now(), acertou: false, continua, aoAcertar, aoSoltar, soltou: false, pancada })
   return marreta
+}
+
+/** O peito da peça, no mundo: o do cavaleiro, no cavalo. */
+function peitoDa(peca: THREE.Object3D): THREE.Vector3 {
+  const osso = ossoRPG(peca, 'Spine2')
+  if (osso) return osso.getWorldPosition(new THREE.Vector3())
+  return peca.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.48 * peca.scale.y, 0))
+}
+
+// A peça presa na maça, com as medidas de verdade: a bola tem raio 0,15 e o espinho da ponta do cabo sai uns 0,1 dela.
+// É esse espinho que entra no peito; a bola só encosta na frente do corpo, nunca passa por dentro dele.
+/** Do centro da bola até onde ela encosta no corpo (no tamanho da torre): o raio e um fio de folga. */
+const BOLA_ATE_O_CORPO = 0.162
+/** Do centro da torre até o peito da vítima pra maça chegar nele com o cabo esticado: a pegada, o cabo e a bola. */
+const ALCANCE_DA_MACA = 0.06 + COMPRIMENTO_CABO_MARRETA + BOLA_ATE_O_CORPO
+/** Da frente do peito até o osso do peito, quando não dá pra medir (no tamanho da vítima). */
+const FUNDO_DO_PEITO = 0.06
+
+/** A torre de maça para mais longe que a de marreta: o cabo inteiro e a bola ficam entre ela e a vítima. */
+const alcanceDaMaca = (torre: THREE.Object3D, vitima: THREE.Object3D) => ALCANCE_DA_MACA * torre.scale.x + FUNDO_DO_PEITO * vitima.scale.x
+
+/** A maça não desce até o chão: o golpe para com a bola encostada no peito da vítima e o espinho da ponta dentro dele.
+ * O cabo sai mais deitado ou mais em pé conforme a altura do peito (o do cavaleiro é mais alto) e a pegada recua ou
+ * avança pra bola chegar nele. */
+function pancadaNoPeito(torre: THREE.Object3D, vitima: THREE.Object3D): PoseMarreta {
+  torre.updateWorldMatrix(true, false)
+  vitima.updateWorldMatrix(true, true)
+  const peito = torre.worldToLocal(peitoDa(vitima))
+  const y = 0.48
+  const angulo = Math.acos(THREE.MathUtils.clamp((peito.y - y) / COMPRIMENTO_CABO_MARRETA, -0.4, 0.4))
+  const frente = Math.hypot(peito.x, peito.z) - BOLA_ATE_O_CORPO - (FUNDO_DO_PEITO * vitima.scale.x) / torre.scale.x
+  const z = THREE.MathUtils.clamp(frente - COMPRIMENTO_CABO_MARRETA * Math.sin(angulo), -0.08, 0.22)
+  return { angulo, y, z, tronco: 0.22 }
+}
+
+/** Visível de verdade: ela e tudo acima dela até a peça (a katana guardada, por exemplo, fica escondida). */
+function visivelNaPeca(objeto: THREE.Object3D, peca: THREE.Object3D): boolean {
+  for (let o: THREE.Object3D | null = objeto; o && o !== peca.parent; o = o.parent) if (!o.visible) return false
+  return true
+}
+
+/** Do osso do peito até a frente do corpo, medido no próprio modelo (com a armadura que ele estiver vestindo), na
+ * direção em que o espinho entra. */
+function fundoDoPeito(vitima: THREE.Object3D, peito: THREE.Vector3, rumo: THREE.Vector3): number {
+  vitima.updateMatrixWorld(true)
+  const raio = new THREE.Raycaster(peito.clone().addScaledVector(rumo, -3), rumo, 0, 3)
+  const frente = raio.intersectObject(vitima, true).find((acerto) => visivelNaPeca(acerto.object, vitima))
+  return frente ? THREE.MathUtils.clamp(peito.distanceTo(frente.point), 0.02, 0.3) : FUNDO_DO_PEITO * vitima.scale.x
+}
+
+/** Os ossos que a peça presa deixa cair com o peso: braços, pernas e a cabeça. */
+const OSSOS_PENDURADOS = ['Neck', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg']
+interface PecaPresa {
+  peca: THREE.Object3D
+  /** A pose em que ela foi espetada: a cada quadro, o peso é posto por cima dela. */
+  ossos: OssoSalvo[]
+  desde: number
+}
+/** Por maça, a peça presa nela. */
+const pecasPresas = new Map<THREE.Group, PecaPresa>()
+
+/** Espetada, a peça fica mole: os braços e as pernas caem pro chão, seja qual for a inclinação do cabo, e a cabeça
+ * tomba pra frente. Sem os clipes (ela saiu do tabuleiro), só isso mexe nos ossos dela. */
+function pendurar(presa: PecaPresa, agora: number) {
+  const { peca } = presa
+  restaurarOssos(presa.ossos)
+  const peso = suaveMarreta(Math.min(1, (agora - presa.desde) / 280))
+  peca.updateWorldMatrix(true, true)
+  const ponto = new THREE.Vector3()
+  for (const lado of ['Left', 'Right'] as const) {
+    const ombro = ossoRPG(peca, `${lado}Arm`)
+    if (ombro) levarBracoAte(peca, lado, ombro.getWorldPosition(ponto).add(new THREE.Vector3(0, -1, 0)), 0.9 * peso)
+    const quadril = ossoRPG(peca, `${lado}UpLeg`)
+    if (quadril) levarPernaAte(peca, lado, quadril.getWorldPosition(ponto).add(new THREE.Vector3(0, -1, 0)), 0.75 * peso)
+  }
+  const pescoco = ossoRPG(peca, 'Neck')
+  if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0).transformDirection(peca.matrixWorld), 0.5 * peso))
+}
+
+/** A maça soltou a peça (ou o golpe parou no meio): ela volta à pose dos clipes. */
+function soltarDaMaca(maca: THREE.Group) {
+  const presa = pecasPresas.get(maca)
+  if (!presa) return
+  restaurarOssos(presa.ossos)
+  pecasPresas.delete(maca)
+}
+
+/** No instante do golpe, a vítima vira de frente pra torre e o espinho da ponta entra no peito dela: o corpo fica
+ * encostado na bola, nem antes nem dentro dela, medido na frente do próprio corpo. Daí ela vai junto com a maça. */
+function prenderPeloPeito(maca: THREE.Group, vitima: THREE.Object3D, torre: THREE.Object3D) {
+  maca.updateWorldMatrix(true, false)
+  const bola = maca.localToWorld(new THREE.Vector3(0, COMPRIMENTO_CABO_MARRETA, 0))
+  const rumo = maca.localToWorld(new THREE.Vector3(0, COMPRIMENTO_CABO_MARRETA + 1, 0)).sub(bola).normalize()
+  // de frente pra quem bateu: é o peito que encontra o espinho, não o ombro
+  vitima.rotation.y = Math.atan2(-rumo.x, -rumo.z)
+  vitima.updateMatrixWorld(true)
+  const peito = peitoDa(vitima)
+  const ondeOPeitoFica = bola.addScaledVector(rumo, BOLA_ATE_O_CORPO * torre.scale.x + fundoDoPeito(vitima, peito, rumo))
+  vitima.position.add(ondeOPeitoFica.sub(peito))
+  vitima.updateWorldMatrix(false, true)
+  maca.attach(vitima)
+  pecasPresas.set(maca, { peca: vitima, ossos: salvarOssos(vitima, OSSOS_PENDURADOS), desde: performance.now() })
 }
 
 /** A peça que soltou dos espinhos cai no tabuleiro, rolando, e some. */
@@ -2462,9 +2528,9 @@ function montarVitrine(tipo: string, escolhas: Record<string, string>): VitrineD
  * sempre são recortados do próprio modelo, e o resto é montado em código. */
 function montarExpositor(tipo: string, parte: string, opcao: string): THREE.Object3D | null {
   if (parte === 'arma' && tipo === 'r') return ARMAS_DA_TORRE.includes(opcao) ? criarMarreta('w', opcao) : null
+  // a habilidade especial aparece como o símbolo dela
+  if (parte === 'golpe') return emblemaDaHabilidade(opcao)
   const modelo = modelosRPG[tipo]
-  // o ataque especial da katana aparece como a própria katana
-  if (parte === 'golpe' && modelo) return katanaDoModelo(buildPecaRPG(modelo, 'w'))
   if (parte === 'arma' && modelo && (opcao === 'katana' || opcao === 'cajado')) {
     const peca = buildPecaRPG(modelo, 'w')
     return tipo === 'p' ? katanaDoModelo(peca) : cajadoDoModelo(peca, tipo)
@@ -4016,16 +4082,33 @@ export function ChessBoard3D() {
         // sorteia o estilo do golpe a cada captura, pra não ser sempre a mesma animação
         const estilo: EstiloAtaque = Math.random() < 0.5 ? 'corte' : 'derrubada'
         const senha = novaSequenciaRPG(atacante)
-        // só rei, dama e bispo atacam à distância (cada um com o seu poder); peão e torre vão até a
-        // vítima e golpeiam com o corpo (o peão com a espada)
-        const aDistancia = ehRPG && (tipoAtacante === 'b' || tipoAtacante === 'q' || tipoAtacante === 'k')
+        // sem arma (toda peça começa assim), luta com o corpo: socos ou chute. O cavalo continua com as patas
+        const armaDoAtacante = (atacante.userData.arma as string | undefined) ?? 'nenhuma'
+        const semArma = ehRPG && tipoAtacante !== 'n' && armaDoAtacante === 'nenhuma'
+        // com arma, rei, dama e bispo atacam à distância (cada arma com o seu poder); peão e torre vão até a
+        // vítima e golpeiam com a arma
+        const aDistancia = ehRPG && !semArma && (tipoAtacante === 'b' || tipoAtacante === 'q' || tipoAtacante === 'k')
+
+        /** Vira pra vítima e vai até ficar a `alcance` dela; `depois` roda ao chegar. */
+        const chegarPerto = (alcance: number, depois: () => void) => {
+          const de = { x: atacante.position.x, z: atacante.position.z }
+          const distancia = Math.hypot(posVitima.x - de.x, posVitima.z - de.z)
+          virarRPG(atacante, rumoEntre(atacante.position, posVitima), () => {
+            if (distancia <= alcance + 0.05) {
+              depois()
+              return
+            }
+            const fracao = (distancia - alcance) / distancia
+            deslocarRPG(atacante, de, { x: de.x + (posVitima.x - de.x) * fracao, z: de.z + (posVitima.z - de.z) * fracao }, depois)
+          })
+        }
 
         // no instante em que o golpe acerta: a vítima cai (pra longe do atacante) e as aliadas
         // por perto comemoram
-        const acertar = (direcaoGolpe: { x: number; z: number }) => {
+        const acertar = (direcaoGolpe: { x: number; z: number }, derruba = estilo === 'derrubada') => {
           tocarSom(`queda:${vitima.userData.tipo as string}`)
           animarImpacto(scene, posVitima.x, posVitima.z)
-          const nocaute = estilo === 'derrubada' ? direcaoGolpe : undefined
+          const nocaute = derruba ? direcaoGolpe : undefined
           animarQuedaEDesaparecimento(
             vitima,
             () => {
@@ -4037,14 +4120,35 @@ export function ChessBoard3D() {
           )
           comemorarAliadas()
         }
-        // o retalhamento: o peão de katana de quem comprou o ataque especial dá uma série de cortes rápidos e a peça
-        // se desfaz em pedaços
+
+        if (semArma) {
+          const golpe: GolpeSemArma = sortearGolpeSemArma()
+          voltarAoDescanso(atacante)
+          // só outro jogo entrando no meio para a luta: um gesto que cai na peça não pode deixar a captura sem fim
+          chegarPerto(distanciaDaLuta(golpe, atacante, vitima), () => {
+            if (!vigente()) return
+            pararRPG(atacante)
+            const direcaoGolpe = { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }
+            lutarSemArma(atacante, vitima, golpe, vigente, {
+              antes: () => tocarSom(golpe === 'socos' ? 'soco:jab' : 'chute:ar'),
+              aoAcertar: () => {
+                tocarSom(golpe === 'socos' ? 'soco' : 'chute')
+                // o chute sempre joga a vítima longe; o direto, às vezes
+                acertar(direcaoGolpe, golpe === 'chute' || estilo === 'derrubada')
+              },
+            })
+          })
+          return
+        }
+
+        // o retalhamento: o peão de katana de quem equipou essa habilidade especial (o servidor só deixa equipar quem
+        // comprou) dá uma série de cortes rápidos e a peça se desfaz em pedaços
         const retalha =
           tipoAtacante === 'p' &&
           ehRPG &&
           armaDoPeaoNoTabuleiro(atacante) === 'katana' &&
           corAtacante === vestimenta.cor &&
-          (retalhamentoDeTeste || opcaoLiberada(personalizacaoAtual(), 'p', 'golpe', 'retalhamento'))
+          vestimenta.escolhas.p?.golpe === 'retalhamento'
         const retalhar = () => {
           const cortes = 4
           let feitos = 0
@@ -4101,7 +4205,10 @@ export function ChessBoard3D() {
               return
             }
             if (armaDaTorre === 'maca') {
-              // a maça: a peça fica presa nos espinhos, a torre sacode e ela cai no tabuleiro
+              // a maça: a peça fica presa nos espinhos pelo peito, a torre sacode e ela cai no tabuleiro. No cavalo, a
+              // maça pega o cavaleiro, e o cavalo, solto, foge a galope pra fora do tabuleiro
+              const acoesDaVitima = vitima.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
+              const galope = vitima.userData.tipo === 'n' ? acoesDaVitima?.Walk?.getClip() : undefined
               const maca = baterComMarreta(
                 atacante,
                 corAtacante,
@@ -4111,20 +4218,25 @@ export function ChessBoard3D() {
                   tocarSom('maca:sacode', (MACA_ERGUIDA_ATE_MS - MARRETA_PANCADA_MS) / 1000)
                   animarImpacto(scene, posVitima.x, posVitima.z)
                   tremerTabuleiro(scene, 0.08, 360)
-                  const acoesDaVitima = vitima.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
+                  if (galope) {
+                    tocarSom('fuga:n')
+                    soltarOCavalo(scene, vitima, atacante.position, galope)
+                  }
                   if (acoesDaVitima?.Morte) {
                     novaSequenciaRPG(vitima)
                     mostrarEspadaRPG(vitima, false)
                     tocarClipeRPGUmaVez(vitima, 'Morte', { entrada: 0.1, voltarAoParado: false })
                   }
                   // presa nos espinhos: vai junto com a cabeça da maça
-                  maca.attach(vitima)
+                  prenderPeloPeito(maca, vitima, atacante)
                   comemorarAliadas()
                 },
                 () => {
                   tocarSom('maca:solta')
+                  soltarDaMaca(maca)
                   cairDaMaca(piecesGroup, vitima, fim)
                 },
+                pancadaNoPeito(atacante, vitima),
               )
               return
             }
@@ -4205,24 +4317,14 @@ export function ChessBoard3D() {
             golpear()
             return
           }
-          const rumo = rumoEntre(atacante.position, posVitima)
           if (aDistancia) {
-            virarRPG(atacante, rumo, golpear)
+            virarRPG(atacante, rumoEntre(atacante.position, posVitima), golpear)
             return
           }
-          // corpo a corpo: vira, vai até a vítima (para no alcance do golpe) e golpeia
-          const alcance = (ALCANCE_GOLPE[tipoAtacante] ?? 0.55) * atacante.scale.x
-          const de = { x: atacante.position.x, z: atacante.position.z }
-          const distancia = Math.hypot(posVitima.x - de.x, posVitima.z - de.z)
-          virarRPG(atacante, rumo, () => {
-            if (distancia <= alcance + 0.05) {
-              golpear()
-              return
-            }
-            const fracao = (distancia - alcance) / distancia
-            const ate = { x: de.x + (posVitima.x - de.x) * fracao, z: de.z + (posVitima.z - de.z) * fracao }
-            deslocarRPG(atacante, de, ate, golpear)
-          })
+          // corpo a corpo: vira, vai até a vítima (para no alcance do golpe) e golpeia. A maça alcança mais longe: o cabo
+          // e a bola inteiros ficam entre a torre e a vítima
+          const comMaca = tipoAtacante === 'r' && armaDoAtacante === 'maca'
+          chegarPerto(comMaca ? alcanceDaMaca(atacante, vitima) : (ALCANCE_GOLPE[tipoAtacante] ?? 0.55) * atacante.scale.x, golpear)
         })
         return
       }
@@ -4744,11 +4846,13 @@ export function ChessBoard3D() {
       ultimoQuadro = agoraDoQuadro
       const delta = relogio.getDelta()
       const agora = performance.now()
+      desfazerPosesDasLutas()
       for (const peca of piecesGroup.children) {
         ;(peca.userData.mixer as THREE.AnimationMixer | undefined)?.update(delta)
         atualizarGestoRPG(peca, agora)
       }
       atualizarMarretadas(agora)
+      atualizarLutas(agora)
       atualizarGiroCamera(agora)
       if (xequeMesh.visible) xequeMat.opacity = 0.45 + 0.25 * ((Math.sin(agora / 260) + 1) / 2)
       controls.update()
@@ -4820,11 +4924,12 @@ export function ChessBoard3D() {
       ;(window as unknown as { __xadrez?: object }).__xadrez = {
         casaEmXeque: () => (xequeMesh.visible ? (xequeMesh.userData.casa as string) : null),
         /** Veste as peças de quem joga como se fosse a escolha da conta. */
-        vestirParaTeste: (escolhas: Record<string, Record<string, string>> | null, retalhamento = false) => {
+        vestirParaTeste: (escolhas: Record<string, Record<string, string>> | null) => {
           vestimentaDeTeste = escolhas
-          retalhamentoDeTeste = retalhamento
           sincronizarPecas()
         },
+        /** A luta sem arma deixa de sortear e usa sempre esse golpe (null volta a sortear). */
+        forcarGolpeSemArma: (golpe: GolpeSemArma | null) => forcarGolpeSemArma(golpe),
         /** O que as conquistas contam nessas partidas. */
         contarConquistas: (partidas: PartidaXadrez[]) => contarPartidas(partidas),
         /** As partes da personalização que a peça daquela casa está vestindo. */
@@ -4935,6 +5040,12 @@ export function ChessBoard3D() {
       interacaoTimeoutId = window.setTimeout(tentarInteracaoAmigavel, 6000 + Math.random() * 7000)
     }
     function tentarInteracaoAmigavel() {
+      // no meio de um lance, não: o gesto começa outra sequência na peça, e quem estava indo capturar perdia o golpe
+      // (a captura nunca terminava e o jogo travava)
+      if (lancesEmAndamento > 0) {
+        agendarProximaInteracaoAmigavel()
+        return
+      }
       const casasComPeca: { square: Square; color: 'w' | 'b' }[] = []
       for (const linha of chessRef.current.board()) {
         for (const casa of linha) {

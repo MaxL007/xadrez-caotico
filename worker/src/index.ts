@@ -491,11 +491,13 @@ const lerPersonalizacao = (texto: string | null): Personalizacao => {
   }
 }
 
-/** O que a parte aceita naquela peça; a primeira opção é a de sempre. Só o cavalo tem montaria. */
+/** O que a parte aceita naquela peça; a primeira opção é a de sempre. Só o cavalo tem montaria, e só quem tem
+ * habilidade especial tem a parte 'golpe'. */
 function opcoesDaParte(peca: string, parte: string): string[] | undefined {
   if (!personalizacao.pecas.includes(peca)) return undefined
   if (Object.hasOwn(personalizacao.corpo, parte)) return personalizacao.corpo[parte as keyof typeof personalizacao.corpo]
   if (parte === 'arma' && Object.hasOwn(personalizacao.armas, peca)) return personalizacao.armas[peca as keyof typeof personalizacao.armas]
+  if (parte === 'golpe' && Object.hasOwn(personalizacao.habilidades, peca)) return personalizacao.habilidades[peca as keyof typeof personalizacao.habilidades]
   if (peca === 'n' && Object.hasOwn(personalizacao.montaria, parte)) return personalizacao.montaria[parte as keyof typeof personalizacao.montaria]
   return undefined
 }

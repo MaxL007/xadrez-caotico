@@ -92,22 +92,43 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
   `itens` traz a conquista que também libera cada arma: vale a compra ou a conquista. A conta com
   `tudo_liberado` usa tudo. A escolha fica em `usuarios.personalizacao`, só o que foge do padrão; opção que saiu do
   catálogo é ignorada.
+- Habilidade especial é uma parte própria (`golpe`, catálogo `habilidades`, por peça): por enquanto só o peão, com o
+  retalhamento. Comprar não basta, tem de equipar na Personalização, e ele só sai com a katana na mão (a tela avisa).
+  O expositor mostra o símbolo da habilidade (`src/chess/emblemas.ts`), não a arma: o do retalhamento é o desenho do
+  usuário, três órbitas cruzadas (faixas achatadas e inclinadas, que de frente ficam grossas nas pontas como pincel) e
+  dois cortes em crescente por cima. A compra continua sendo o item `p:golpe:retalhamento`.
 - Toda peça começa sem arma, inclusive as da máquina e as do adversário: as armas aparecem só em quem liberou e vestiu.
   Peão: katana ou espada. Torre: marreta, machado (lâmina em meia-lua) ou maça. Cavalo: lança. Bispo: cajado ou cristal.
-  Rainha: cajado, cristal ou lua. Rei: cajado, cristal ou cetro. Torre sem arma bate com o golpe comum (`ARMAS_DA_TORRE`).
+  Rainha: cajado, cristal ou lua. Rei: cajado, cristal ou cetro.
+- Sem arma (`userData.arma === 'nenhuma'`), toda peça menos o cavalo, que pisoteia com as patas, vai até a vítima e luta
+  com o corpo (`src/components/lutaSemArma.ts`): um jab e um direto, ou um chute de frente, sorteados, com sons próprios
+  (`soco:jab`, `soco`, `chute:ar`, `chute`). A pose vai osso por osso por cima do clipe, com o IK de dois ossos de
+  `src/components/ossos.ts` (o mesmo da marreta): antes dos clipes o quadro desfaz a pose (`desfazerPosesDasLutas`), e
+  depois deles guarda o que o clipe deixou e posa de novo (`atualizarLutas`). Quem bate para a `distanciaDaLuta` da
+  vítima. O orbe do bispo e a onda do rei, que eram o ataque sem arma, ficaram sem uso no código.
 - O ataque da captura segue a arma (`src/components/efeitosDasArmas.ts`, cada um com som próprio em `sons.ts`):
   retalhamento da katana (vários cortes e a peça em pedaços, só pra quem comprou), marreta (rachaduras desenhadas a cada
   pancada e o tabuleiro tremendo), machado (a peça cortada ao meio por plano de recorte; a metade de cima é cópia pelo
-  `SkeletonUtils`, sem o userData, que tem o mixer), maça (a peça presa nos espinhos vai junto com a maça, `poseDaMaca`, e
-  cai ao sacudir), cajado (o raio), cristal (convocado a 75° do tabuleiro, dentro da casa), cetro (a peça afunda no
-  tabuleiro, recortada no tampo) e lua (tornado que a arremessa pra fora do tabuleiro). Sem arma, cada peça ataca como
-  antes. O recorte pede `renderer.localClippingEnabled`.
+  `SkeletonUtils`, sem o userData, que tem o mixer), maça (a torre para no alcance do cabo inteiro, `alcanceDaMaca`, e o golpe para
+  com a bola encostada no peito, `pancadaNoPeito`: a vítima vira de frente, o espinho da ponta do cabo entra no peito e o
+  corpo fica encostado na bola, medido na frente do próprio modelo por um raio, `fundoDoPeito`, nunca com a bola por
+  dentro dele; presa, vai junto com a maça, `poseDaMaca`, mole, com braços e pernas caindo pro chão e a cabeça tombada,
+  `pendurar`, e cai ao sacudir; num cavalo, a maça pega
+  o cavaleiro e o cavalo foge a galope e pula pra fora do tabuleiro, `soltarOCavalo`: a malha é dividida pelo osso que
+  mais puxa cada vértice, os do Mixamo são do cavaleiro e os outros, do animal), cajado (o raio), cristal (convocado a 75° do tabuleiro, dentro da casa), cetro (a peça afunda no
+  tabuleiro, recortada no tampo) e lua (tornado que a arremessa pra fora do tabuleiro). O recorte pede
+  `renderer.localClippingEnabled`.
 - A compra na Loja grava o item e tira as óticoins no mesmo lote: o item só entra se havia saldo (`INSERT ... SELECT ...
   WHERE oticoins >= preço`), e a moeda só sai se o item entrou (`changes()`).
 - Na aba, cada quadrado é um expositor: o equipamento sozinho, girando num pedestal (`src/components/expositor.ts`),
   montado por `montarExpositor` (ChessBoard3D) e `equipamentoSozinho` (equipamentos.ts). A katana e o cajado de sempre
   são recortados do modelo. A Loja usa o mesmo expositor: um canvas por cima dela desenha cada cartão no seu retângulo,
   e tocar no cartão abre o equipamento grande, pra girar.
+- A Loja tem três abas: Armaduras, peça por peça, com atalhos no fim pras armas e habilidades daquela peça; Armas e
+  Habilidades, cada uma numa lista só separada por peça, cada cartão com o retrato e o nome de quem usa. Cajado e
+  cristal aparecem em cada peça que os usa, porque a compra é por peça; o retalhamento fica em Habilidades, com o
+  símbolo dele. O canvas da Loja cobre só a faixa à vista de quem rola (`quemRola`), senão a lista das armas passaria
+  do tamanho de canvas que um celular aceita.
 - `src/chess/equipamentos.ts` monta as armaduras e armas: cada parte vira malha com esqueleto presa ao osso que cobre,
   medida no corpo em pose de braços abertos (igual nas seis peças). O que a parte nova substitui (ombreira redonda,
   cajado, sela, katana) some do modelo pela regra de `ESCONDER`, numa cópia da geometria.
@@ -168,9 +189,12 @@ Todas usam o mesmo esqueleto Mixamo, construído por `scripts/blender/importar_a
 sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
 
 - Clipes: Parado, Gesto1/2, Walk, Attack1..N, Mortal, MortalTombo. Materiais: Corpo/Detalhe/Coroa/Brilho.
-- Só o peão tem katana (e só depois de liberar). Rainha e rei batem com cetro e cajado. O bispo lança um orbe. O cavalo é um cavaleiro
+- Sem arma, as peças lutam com socos e chutes feitos em código (ver Personalização). O cavalo é um cavaleiro
   com ossos de cavalo e clipes procedurais. A torre usa a marreta feita em código (`posarComMarreta`, IK de dois
   ossos depois do mixer).
+- As interações amigáveis sorteadas (dois aliados trocando um gesto a cada 6 a 13 s) esperam o lance acabar
+  (`lancesEmAndamento`): o gesto começa outra sequência na peça (`novaSequenciaRPG`), e uma captura que esperava a
+  senha dela perdia o golpe e travava o jogo. A luta sem arma só para se outro jogo entrar (`vigente`).
 - O AnimationMixer só reescreve um osso quando o valor do clipe muda: rotações somadas acumulam de quadro em
   quadro, então salve e restaure a pose a cada quadro (`salvarOssosDoGolpe`).
 - Regras do usuário: cada tipo de peça tem golpes próprios; golpe só na captura, sorteado; peão contra peão tem

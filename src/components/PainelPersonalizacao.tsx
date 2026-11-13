@@ -22,6 +22,8 @@ const GIRO_INICIAL = 0.55
 /** Osso que o traço do quadrado aponta na peça. */
 function ossoDaParte(peca: Peca, parte: string): string {
   if (parte === 'arma') return peca === 'b' ? 'mixamorigLeftHand' : 'mixamorigRightHand'
+  // a habilidade especial sai do braço da arma
+  if (parte === 'golpe') return 'mixamorigRightForeArm'
   const ossos: Record<string, string> = {
     cabeca: 'mixamorigHead',
     ombros: 'mixamorigLeftArm',
@@ -39,6 +41,8 @@ function ossoDaParte(peca: Peca, parte: string): string {
 type MontarExpositor = (tipo: string, parte: string, opcao: string) => THREE.Object3D | null
 
 const rotuloDaParte = (t: Traduzir, peca: Peca, parte: string) => t((parte === 'arma' ? `personalizacao.arma.${peca}` : `personalizacao.parte.${parte}`) as ChaveTexto)
+/** Embaixo do quadrado cabe pouco: a habilidade especial vira só "Habilidade". */
+const rotuloDoQuadrado = (t: Traduzir, peca: Peca, parte: string) => (parte === 'golpe' ? t('personalizacao.parte.golpeCurto') : rotuloDaParte(t, peca, parte))
 
 /** O corpo de cima vai à esquerda; o de baixo e a arma ou a montaria, à direita. */
 const ladoDoQuadrado = (indice: number) => (indice < 4 ? 'esquerda' : 'direita')
@@ -279,7 +283,7 @@ function Vitrine({ t, peca, escolhas, selecionada, onSelecionar, montarVitrine, 
             >
               {!vestido && <span className="text-[0.6rem] text-[#8f7a58]">{t('personalizacao.vazio')}</span>}
             </span>
-            <span className="mt-0.5 max-w-full truncate text-[0.6rem] font-semibold text-[#c9b48a]">{rotuloDaParte(t, peca, parte.parte)}</span>
+            <span className="mt-0.5 max-w-full truncate text-[0.6rem] font-semibold text-[#c9b48a]">{rotuloDoQuadrado(t, peca, parte.parte)}</span>
           </button>
         )
       })}
@@ -305,6 +309,8 @@ export function PainelPersonalizacao({
   const [erro, setErro] = useState(false)
   const parte = partesDaPeca(peca).find((p) => p.parte === selecionada) ?? partesDaPeca(peca)[0]
   const atual = escolhaDaParte(personalizacao.escolhas, peca, parte)
+  const parteDaArma = partesDaPeca(peca).find((p) => p.parte === 'arma')
+  const retalhamentoSemKatana = atual === 'retalhamento' && (!parteDaArma || escolhaDaParte(personalizacao.escolhas, peca, parteDaArma) !== 'katana')
 
   return (
     <div className="space-y-3">
@@ -379,6 +385,15 @@ export function PainelPersonalizacao({
             )
           })}
         </div>
+        {parte.parte === 'golpe' && (
+          // o retalhamento é da katana: sem ela na mão, a habilidade fica guardada
+          <p className="text-[0.65rem] leading-snug text-[#c9b48a]" data-dica-habilidade>
+            {t('personalizacao.habilidade.retalhamento')}
+            {retalhamentoSemKatana && (
+              <span className="mt-0.5 block font-semibold text-[#ffcf8a]">⚠ {t('personalizacao.habilidade.semKatana')}</span>
+            )}
+          </p>
+        )}
       </div>
     </div>
   )

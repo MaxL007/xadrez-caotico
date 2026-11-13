@@ -3,21 +3,70 @@ import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { ChaveTexto, Traduzir } from '../chess/idiomas'
 import { desenhoDosPaineis } from '../chess/configXadrez'
+import { urlDoAvatar } from '../conta/aparencia'
 import { comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Peca } from '../conta/personalizacao'
 import { ErroDoServidor } from '../db/servidor'
 import { Oticoin } from './ElementosDoJogador'
 import { criarExpositor, desenharNoExpositor, noSuporte } from './expositor'
 
-// A Loja: o que cada peça compra com óticoins, a tabela de preços por peça. Cada equipamento aparece em 3D num
-// expositor; tocar abre ele grande, pra girar com o dedo. As armas e o resto saem pelas conquistas.
+// A Loja tem três abas: Armaduras, peça por peça; Armas e Habilidades especiais, cada uma numa lista só, separada pela
+// peça que usa. A compra vale só pra aquela peça (o item é 'peça:parte:opção'): por isso o cajado e o cristal aparecem
+// uma vez em cada peça que os usa. Cada equipamento aparece em 3D num expositor (a habilidade, pelo símbolo dela);
+// tocar abre ele grande, pra girar com o dedo.
 
 type MontarExpositor = (tipo: string, parte: string, opcao: string) => THREE.Object3D | null
+type Aba = 'armaduras' | 'armas' | 'habilidades'
+/** As abas que são uma lista só, separada por peça. */
+type AbaPorPeca = Exclude<Aba, 'armaduras'>
+
+const ABAS: Aba[] = ['armaduras', 'armas', 'habilidades']
+const ICONE_DA_ABA: Record<Aba, string> = { armaduras: '🛡️', armas: '⚔️', habilidades: '✨' }
+const AVATAR_DA_PECA: Record<Peca, string> = { p: 'peao-brancas', r: 'torre-brancas', n: 'cavalo-brancas', b: 'bispo-brancas', q: 'dama-brancas', k: 'rei-brancas' }
+
+/** A parte de cada aba por peça: as armas e as habilidades especiais ('golpe'). */
+const PARTE_DA_ABA: Record<AbaPorPeca, string> = { armas: 'arma', habilidades: 'golpe' }
+const daAbaPorPeca = (id: string) => Object.values(PARTE_DA_ABA).includes(id.split(':')[0])
+
+/** Por peça, os itens daquela parte, na ordem do catálogo; só as peças que têm algum. */
+function porPeca(parte: string) {
+  return PECAS.map((peca) => ({
+    peca,
+    itens: Object.entries(NA_LOJA[peca])
+      .filter(([id]) => id.startsWith(`${parte}:`))
+      .map(([id, preco]): [string, number] => [`${peca}:${id}`, preco]),
+  })).filter(({ itens }) => itens.length > 0)
+}
+
+const POR_PECA: Record<AbaPorPeca, ReturnType<typeof porPeca>> = { armas: porPeca('arma'), habilidades: porPeca('golpe') }
+const TODOS_POR_PECA: Record<AbaPorPeca, string[]> = {
+  armas: POR_PECA.armas.flatMap(({ itens }) => itens.map(([item]) => item)),
+  habilidades: POR_PECA.habilidades.flatMap(({ itens }) => itens.map(([item]) => item)),
+}
+
+function partesDoItem(item: string) {
+  const [peca, parte, opcao] = item.split(':')
+  return { peca: peca as Peca, parte, opcao }
+}
+
+function precoDoItem(item: string): number | undefined {
+  const { peca, parte, opcao } = partesDoItem(item)
+  return NA_LOJA[peca]?.[`${parte}:${opcao}`]
+}
+
+/** O elemento que rola a Loja: o canvas cobre só a parte dela que está à vista, senão uma lista comprida passaria do
+ * tamanho de canvas que o celular aceita. */
+function quemRola(el: HTMLElement): HTMLElement | null {
+  for (let pai = el.parentElement; pai; pai = pai.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(pai).overflowY)) return pai
+  }
+  return null
+}
 
 /** Um renderizador por cima da Loja, que só desenha dentro dos retângulos dos expositores. */
-function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor: MontarExpositor, peca: Peca, ids: string[]) {
+function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor: MontarExpositor, itens: string[]) {
   const vistasRef = useRef(new Map<string, HTMLElement>())
   const giroManualRef = useRef<number | null>(null)
-  const cenaRef = useRef<{ montar: (tipo: Peca, ids: string[]) => void } | null>(null)
+  const cenaRef = useRef<{ montar: (itens: string[]) => void } | null>(null)
 
   useEffect(() => {
     const caixa = raiz.current
@@ -28,8 +77,9 @@ function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor:
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.setClearColor(0x000000, 0)
     // sem margem: o espaçamento entre os filhos da Loja empurraria o canvas pra baixo dos cartões
-    Object.assign(renderer.domElement.style, { position: 'absolute', inset: '0', margin: '0', pointerEvents: 'none', zIndex: '10' })
+    Object.assign(renderer.domElement.style, { position: 'absolute', left: '0', top: '0', margin: '0', pointerEvents: 'none', zIndex: '10' })
     caixa.append(renderer.domElement)
+    const rolagem = quemRola(caixa)
     const gerador = new THREE.PMREMGenerator(renderer)
     const reflexo = gerador.fromScene(new RoomEnvironment(), 0.04)
     gerador.dispose()
@@ -37,40 +87,56 @@ function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor:
     const equipamentos = new Map<string, THREE.Group>()
 
     cenaRef.current = {
-      montar(tipo, lista) {
+      montar(lista) {
         for (const antigo of equipamentos.values()) expositor.cena.remove(antigo)
         equipamentos.clear()
-        for (const id of lista) {
-          const [parte, opcao] = id.split(':')
-          const equipamento = montarExpositor(tipo, parte, opcao)
+        for (const item of lista) {
+          const { peca, parte, opcao } = partesDoItem(item)
+          const equipamento = montarExpositor(peca, parte, opcao)
           if (!equipamento) continue
           const suporte = noSuporte(equipamento)
-          equipamentos.set(id, suporte)
+          equipamentos.set(item, suporte)
           expositor.cena.add(suporte)
         }
       },
     }
 
+    const medida = { largura: 0, altura: 0, topo: -1 }
     let quadro = 0
     function animar() {
       quadro = requestAnimationFrame(animar)
+      // o canvas acompanha a faixa da Loja que aparece dentro de quem rola
+      const fora = caixa!.getBoundingClientRect()
+      const janela = rolagem?.getBoundingClientRect()
+      const deCima = Math.max(fora.top, janela?.top ?? 0, 0)
+      const deBaixo = Math.min(fora.bottom, janela?.bottom ?? window.innerHeight, window.innerHeight)
+      const topo = Math.max(0, Math.round(deCima - fora.top))
       const largura = caixa!.clientWidth
-      const altura = caixa!.clientHeight
-      if (renderer.domElement.width !== Math.round(largura * renderer.getPixelRatio()) || renderer.domElement.height !== Math.round(altura * renderer.getPixelRatio())) {
+      const altura = Math.max(1, Math.round(deBaixo - deCima))
+      if (medida.largura !== largura || medida.altura !== altura) {
         renderer.setSize(largura, altura, false)
         Object.assign(renderer.domElement.style, { width: `${largura}px`, height: `${altura}px` })
+        medida.largura = largura
+        medida.altura = altura
       }
+      if (medida.topo !== topo) {
+        renderer.domElement.style.top = `${topo}px`
+        medida.topo = topo
+      }
+      const cima = fora.top + topo
+      const baixo = cima + altura
       renderer.setScissorTest(false)
       renderer.clear()
       renderer.setScissorTest(true)
-      const fora = caixa!.getBoundingClientRect()
       const giro = giroManualRef.current ?? performance.now() / 1400
-      for (const [id, vista] of vistasRef.current) {
-        const equipamento = equipamentos.get(id)
+      for (const [item, vista] of vistasRef.current) {
+        const equipamento = equipamentos.get(item)
         if (!equipamento || !vista.isConnected) continue
         const r = vista.getBoundingClientRect()
+        // fora da vista não desenha
+        if (r.bottom <= cima || r.top >= baixo || r.width === 0) continue
         equipamento.rotation.y = giro
-        desenharNoExpositor(renderer, expositor, equipamento, equipamentos.values(), [r.left - fora.left, fora.bottom - r.bottom, r.width, r.height])
+        desenharNoExpositor(renderer, expositor, equipamento, equipamentos.values(), [r.left - fora.left, baixo - r.bottom, r.width, r.height])
       }
       renderer.setScissorTest(false)
     }
@@ -87,10 +153,10 @@ function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor:
     // o palco é um só; os equipamentos são trocados pelo efeito de baixo
   }, [raiz, montarExpositor])
 
-  const assinatura = ids.join('|')
+  const assinatura = itens.join('|')
   useEffect(() => {
-    cenaRef.current?.montar(peca, assinatura.split('|'))
-  }, [peca, assinatura, montarExpositor])
+    cenaRef.current?.montar(assinatura.split('|'))
+  }, [assinatura, montarExpositor])
 
   return { vistasRef, giroManualRef }
 }
@@ -107,25 +173,40 @@ export function PainelLoja({
   montarExpositor: MontarExpositor
 }) {
   const personalizacao = usePersonalizacao()
+  const [aba, setAba] = useState<Aba>('armaduras')
   const [peca, setPeca] = useState<Peca>('p')
+  /** O item aberto grande, inteiro ('peça:parte:opção'). */
   const [aberto, setAberto] = useState<string | null>(null)
+  /** Depois de trocar de tela, rola até esse elemento: a parte de uma peça nas Armas (ou Habilidades) ou o cartão que
+   * estava aberto. */
+  const [rolarAte, setRolarAte] = useState<string | null>(null)
   const [comprando, setComprando] = useState(false)
   const [erro, setErro] = useState<ChaveTexto | null>(null)
   const raizRef = useRef<HTMLDivElement>(null)
   const arrasteRef = useRef<{ x: number; giro: number } | null>(null)
-  const itens = Object.entries(NA_LOJA[peca])
-  const { vistasRef, giroManualRef } = usePalco(raizRef, montarExpositor, peca, itens.map(([id]) => id))
+  const armaduras = Object.entries(NA_LOJA[peca])
+    .filter(([id]) => !daAbaPorPeca(id))
+    .map(([id, preco]): [string, number] => [`${peca}:${id}`, preco])
+  /** No fim das armaduras, os atalhos pras armas e as habilidades daquela peça. */
+  const atalhos = (['armas', 'habilidades'] as AbaPorPeca[]).filter((a) => POR_PECA[a].some((daPeca) => daPeca.peca === peca))
+  const { vistasRef, giroManualRef } = usePalco(raizRef, montarExpositor, aba === 'armaduras' ? armaduras.map(([item]) => item) : TODOS_POR_PECA[aba])
 
-  const vista = (id: string) => (el: HTMLElement | null) => {
-    if (el) vistasRef.current.set(id, el)
-    else vistasRef.current.delete(id)
+  useEffect(() => {
+    if (!rolarAte) return
+    raizRef.current?.querySelector(rolarAte)?.scrollIntoView({ block: rolarAte.startsWith('[data-item') ? 'center' : 'start' })
+    setRolarAte(null)
+  }, [rolarAte])
+
+  const vista = (item: string) => (el: HTMLElement | null) => {
+    if (el) vistasRef.current.set(item, el)
+    else vistasRef.current.delete(item)
   }
 
-  async function comprar(id: string) {
+  async function comprar(item: string) {
     setComprando(true)
     setErro(null)
     try {
-      onSaldo(await comprarItem(`${peca}:${id}`))
+      onSaldo(await comprarItem(item))
     } catch (falha) {
       setErro(falha instanceof ErroDoServidor && falha.message === 'saldo-insuficiente' ? 'loja.semSaldo' : 'conta.erroConexao')
     } finally {
@@ -133,21 +214,44 @@ export function PainelLoja({
     }
   }
 
-  const nomeDoItem = (id: string) => {
-    const [parte, opcao] = id.split(':')
-    return { nome: t(`personalizacao.opcao.${opcao}` as ChaveTexto), parte: t(`personalizacao.parte.${parte}` as ChaveTexto) }
+  const nomeDaPeca = (p: Peca) => t(`personalizacao.peca.${p}` as ChaveTexto)
+  const nomeDoItem = (item: string) => t(`personalizacao.opcao.${partesDoItem(item).opcao}` as ChaveTexto)
+
+  function abrir(item: string) {
+    giroManualRef.current = null
+    setAberto(item)
   }
 
-  function botaoDeCompra(id: string, preco: number) {
-    const [parte, opcao] = id.split(':')
-    if (opcaoLiberada(personalizacao, peca, parte, opcao)) return <span className="text-xs font-semibold text-[#9fe0a8]">✓ {t('loja.liberado')}</span>
+  function irPara(destino: AbaPorPeca, p: Peca) {
+    setAba(destino)
+    setAberto(null)
+    setRolarAte(`[data-${destino}-da-peca="${p}"]`)
+  }
+
+  /** Nas armas e habilidades, de quem é: o retrato e o nome da peça (e, no retalhamento, que ele pede a katana). */
+  function etiquetaDaPeca(item: string, grande = false) {
+    const { peca: p, opcao } = partesDoItem(item)
+    return (
+      <span className={`flex min-w-0 items-center gap-1 font-semibold text-[#e6c675] ${grande ? 'text-xs' : 'text-[0.65rem]'}`} data-peca-da-arma={p}>
+        <img src={urlDoAvatar(AVATAR_DA_PECA[p])} alt="" className={`${grande ? 'h-5 w-5' : 'h-4 w-4'} shrink-0 rounded-full bg-[#1c120a] object-cover ring-1 ring-[#c9a24a]/60`} />
+        <span className="truncate">
+          {nomeDaPeca(p)}
+          {opcao === 'retalhamento' && ` · ${t('loja.comAKatana')}`}
+        </span>
+      </span>
+    )
+  }
+
+  function botaoDeCompra(item: string, preco: number) {
+    const { peca: p, parte, opcao } = partesDoItem(item)
+    if (opcaoLiberada(personalizacao, p, parte, opcao)) return <span className="text-xs font-semibold text-[#9fe0a8]">✓ {t('loja.liberado')}</span>
     return (
       <button
         type="button"
         disabled={saldo == null || saldo < preco || comprando}
         onClick={(e) => {
           e.stopPropagation()
-          void comprar(id)
+          void comprar(item)
         }}
         className="flex items-center gap-1 rounded-lg border border-[#c9a24a]/60 px-2.5 py-1.5 text-xs font-semibold text-[#f5e6c8] transition enabled:hover:bg-[#3a2614] disabled:opacity-50"
       >
@@ -158,7 +262,25 @@ export function PainelLoja({
     )
   }
 
-  const precoAberto = aberto ? NA_LOJA[peca][aberto] : undefined
+  function cartao(item: string, preco: number) {
+    const { parte } = partesDoItem(item)
+    return (
+      <div key={item} className="rounded-lg bg-[#2a1c10] p-2" data-item={item}>
+        <button type="button" aria-label={`${nomeDoItem(item)} · ${t('loja.ver')}`} onClick={() => abrir(item)} className="block w-full">
+          <span ref={vista(item)} className="block aspect-square w-full rounded-md bg-[radial-gradient(ellipse_at_center,#3a2614_0%,#1c120a_80%)]" />
+          <span className="mt-1.5 block truncate text-left text-xs font-semibold">{nomeDoItem(item)}</span>
+          {aba !== 'armaduras' ? (
+            <span className="mt-0.5 block">{etiquetaDaPeca(item)}</span>
+          ) : (
+            <span className="block truncate text-left text-[0.65rem] text-[#c9b48a]">{t(`personalizacao.parte.${parte}` as ChaveTexto)}</span>
+          )}
+        </button>
+        <div className="mt-1.5">{botaoDeCompra(item, preco)}</div>
+      </div>
+    )
+  }
+
+  const precoAberto = aberto ? precoDoItem(aberto) : undefined
 
   return (
     <div ref={raizRef} className="relative space-y-3" data-loja>
@@ -171,25 +293,46 @@ export function PainelLoja({
         <p className="text-xs text-[#c9b48a]">{t('loja.entrar')}</p>
       )}
 
-      <div role="tablist" aria-label={t('menu.loja')} className="grid grid-cols-6 gap-1">
-        {PECAS.map((p) => (
+      <div role="tablist" aria-label={t('menu.loja')} className="grid grid-cols-3 gap-1 rounded-xl border border-[#c9a24a]/40 bg-[#2a1c10]/60 p-1">
+        {ABAS.map((a) => (
           <button
-            key={p}
+            key={a}
             type="button"
             role="tab"
-            aria-selected={peca === p}
+            aria-selected={aba === a}
             onClick={() => {
-              setPeca(p)
+              setAba(a)
               setAberto(null)
             }}
-            className={`truncate rounded-lg border px-1 py-1.5 text-[0.7rem] font-semibold transition ${peca === p ? 'border-[#e6c675] bg-[#c9a24a] text-[#1c120a]' : 'border-[#c9a24a]/40 text-[#f5e6c8] hover:bg-[#3a2614]'}`}
+            className={`truncate rounded-lg px-1 py-2 text-[0.8rem] font-semibold transition ${aba === a ? 'bg-[#c9a24a] text-[#1c120a]' : 'text-[#f5e6c8] hover:bg-[#3a2614]'}`}
           >
-            {t(`personalizacao.peca.${p}` as ChaveTexto)}
+            <span aria-hidden="true">{ICONE_DA_ABA[a]} </span>
+            {t(`loja.aba.${a}` as ChaveTexto)}
           </button>
         ))}
       </div>
 
-      <p className="text-xs text-[#c9b48a]">{t('loja.explicacao')}</p>
+      {aba === 'armaduras' && (
+        <div role="tablist" aria-label={t('loja.aba.armaduras')} className="grid grid-cols-6 gap-1">
+          {PECAS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={peca === p}
+              onClick={() => {
+                setPeca(p)
+                setAberto(null)
+              }}
+              className={`truncate rounded-lg border px-1 py-1.5 text-[0.7rem] font-semibold transition ${peca === p ? 'border-[#e6c675] bg-[#c9a24a] text-[#1c120a]' : 'border-[#c9a24a]/40 text-[#f5e6c8] hover:bg-[#3a2614]'}`}
+            >
+              {nomeDaPeca(p)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs text-[#c9b48a]">{t(aba === 'armas' ? 'loja.explicacaoArmas' : aba === 'habilidades' ? 'loja.explicacaoHabilidades' : 'loja.explicacao')}</p>
       {erro && (
         <p role="alert" className="text-xs font-medium text-[#ffb4a8]">
           {t(erro)}
@@ -198,8 +341,15 @@ export function PainelLoja({
 
       {aberto && precoAberto !== undefined ? (
         // o equipamento grande, pra ver de perto e girar com o dedo
-        <div className="space-y-3" data-item-aberto={`${peca}:${aberto}`}>
-          <button type="button" className="text-xs font-semibold text-[#c9b48a] underline-offset-2 hover:underline" onClick={() => setAberto(null)}>
+        <div className="space-y-3" data-item-aberto={aberto}>
+          <button
+            type="button"
+            className="text-xs font-semibold text-[#c9b48a] underline-offset-2 hover:underline"
+            onClick={() => {
+              setAberto(null)
+              setRolarAte(`[data-item="${aberto}"]`)
+            }}
+          >
             {t('loja.voltar')}
           </button>
           <div
@@ -219,37 +369,46 @@ export function PainelLoja({
           <p className="text-center text-[0.65rem] text-[#c9b48a]">{t('personalizacao.girar')}</p>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-base font-semibold">{nomeDoItem(aberto).nome}</p>
-              <p className="text-xs text-[#c9b48a]">
-                {nomeDoItem(aberto).parte} · {t(`personalizacao.peca.${peca}` as ChaveTexto)}
-              </p>
+              <p className="truncate text-base font-semibold">{nomeDoItem(aberto)}</p>
+              {aba !== 'armaduras' ? (
+                etiquetaDaPeca(aberto, true)
+              ) : (
+                <p className="text-xs text-[#c9b48a]">
+                  {t(`personalizacao.parte.${partesDoItem(aberto).parte}` as ChaveTexto)} · {nomeDaPeca(partesDoItem(aberto).peca)}
+                </p>
+              )}
             </div>
             {botaoDeCompra(aberto, precoAberto)}
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {itens.map(([id, preco]) => (
-            <div key={id} className="rounded-lg bg-[#2a1c10] p-2" data-item={`${peca}:${id}`}>
-              <button
-                type="button"
-                aria-label={`${nomeDoItem(id).nome} · ${t('loja.ver')}`}
-                onClick={() => {
-                  giroManualRef.current = null
-                  setAberto(id)
-                }}
-                className="block w-full"
-              >
-                <span ref={vista(id)} className="block aspect-square w-full rounded-md bg-[radial-gradient(ellipse_at_center,#3a2614_0%,#1c120a_80%)]" />
-                <span className="mt-1.5 block truncate text-left text-xs font-semibold">{nomeDoItem(id).nome}</span>
-                <span className="block truncate text-left text-[0.65rem] text-[#c9b48a]">{nomeDoItem(id).parte}</span>
-              </button>
-              <div className="mt-1.5">
-                {botaoDeCompra(id, preco)}
-              </div>
+      ) : aba !== 'armaduras' ? (
+        <div className="space-y-5">
+          {POR_PECA[aba].map(({ peca: p, itens }) => (
+            <div key={p} className="scroll-mt-2 space-y-2" {...{ [`data-${aba}-da-peca`]: p }}>
+              <h4 className="flex items-center gap-2 border-b border-[#c9a24a]/30 pb-1.5 font-display text-base font-semibold">
+                <img src={urlDoAvatar(AVATAR_DA_PECA[p])} alt="" className="h-9 w-9 shrink-0 rounded-full bg-[#2a1c10] object-cover ring-1 ring-[#c9a24a]/60" />
+                {t(`loja.${aba}Da.${p}` as ChaveTexto)}
+              </h4>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{itens.map(([item, preco]) => cartao(item, preco))}</div>
             </div>
           ))}
         </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{armaduras.map(([item, preco]) => cartao(item, preco))}</div>
+          {atalhos.map((destino) => (
+            <button
+              key={destino}
+              type="button"
+              onClick={() => irPara(destino, peca)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#c9a24a]/60 px-3 py-2 text-xs font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614]"
+              data-ir-para={destino}
+            >
+              <span aria-hidden="true">{ICONE_DA_ABA[destino]}</span>
+              {t(`loja.${destino}Da.${peca}` as ChaveTexto)} →
+            </button>
+          ))}
+        </>
       )}
     </div>
   )

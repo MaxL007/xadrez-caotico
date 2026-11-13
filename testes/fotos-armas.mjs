@@ -55,9 +55,10 @@ async function andarAte(condicao, arg, maximo, oQue) {
 const livre = () => andarAte(() => !window.__xadrez.ocupado(), null, 90000, 'fim do lance')
 
 /** `momentos`: [som, ms depois do som, arquivo]. O som fica registrado quando é pedido, mesmo que toque mais tarde. */
-async function fotografar(nome, { pgn, vestir, retalhamento = false, de, para, camera, momentos }) {
+async function fotografar(nome, { pgn, vestir, golpe = null, de, para, camera, momentos }) {
   if (so && !so.includes(nome)) return
-  await h('vestirParaTeste', vestir, retalhamento)
+  await h('vestirParaTeste', vestir)
+  await h('forcarGolpeSemArma', golpe)
   await h('carregarTeste', pgn, 'w', 'facil')
   await livre()
   await page.clock.runFor(2500)
@@ -89,12 +90,27 @@ const BISPO = { pgn: '1. e4 e5 2. Bc4 d6', de: 'c4', para: 'f7', camera: [4.6, -
 try {
   await fotografar('marreta', { ...TORRE, vestir: { r: { arma: 'marreta' } }, momentos: [['marreta:impacto', 120, 'marreta.png'], ['marreta:impacto', 900, 'marreta-rachaduras.png']] })
   await fotografar('machado', { ...TORRE, vestir: { r: { arma: 'machado' } }, momentos: [['marreta:ergue', 500, 'machado-erguido.png'], ['machado:corte', 300, 'machado-corte.png'], ['machado:corte', 800, 'machado-tombando.png'], ['machado:corte', 1400, 'machado-no-chao.png']] })
-  await fotografar('maca', { ...TORRE, vestir: { r: { arma: 'maca' } }, momentos: [['maca:espinhos', 400, 'maca-presa.png'], ['maca:espinhos', 1250, 'maca-sacudindo.png'], ['maca:solta', 250, 'maca-solta.png']] })
-  await fotografar('retalhamento', { ...PEAO, vestir: { p: { arma: 'katana' } }, retalhamento: true, momentos: [['retalho:corte', 40, 'retalho-corte.png'], ['retalho:pedacos', 200, 'retalho-pedacos.png'], ['retalho:pedacos', 900, 'retalho-caindo.png']] })
+  await fotografar('maca', { ...TORRE, camera: [3.6, -90, 70], vestir: { r: { arma: 'maca' } }, momentos: [['maca:espinhos', 60, 'maca-no-peito.png'], ['maca:espinhos', 700, 'maca-presa.png'], ['maca:espinhos', 1250, 'maca-sacudindo.png'], ['maca:solta', 250, 'maca-solta.png']] })
+  // a maça num cavalo: o cavaleiro fica preso, e o cavalo foge pra fora do tabuleiro
+  await fotografar('maca-cavalo', {
+    pgn: '1. a4 Nc6 2. a5 Nxa5',
+    de: 'a1',
+    para: 'a5',
+    camera: [5.2, -70, 62],
+    vestir: { r: { arma: 'maca' } },
+    momentos: [['maca:espinhos', 60, 'maca-cavalo-golpe.png'], ['maca:espinhos', 350, 'maca-cavalo-foge.png'], ['maca:espinhos', 700, 'maca-cavalo-pula.png'], ['maca:espinhos', 1300, 'maca-cavaleiro-preso.png']],
+  })
+  await fotografar('retalhamento', { ...PEAO, vestir: { p: { arma: 'katana', golpe: 'retalhamento' } }, momentos: [['retalho:corte', 40, 'retalho-corte.png'], ['retalho:pedacos', 200, 'retalho-pedacos.png'], ['retalho:pedacos', 900, 'retalho-caindo.png']] })
   await fotografar('cristal', { ...BISPO, vestir: { b: { arma: 'cristal' } }, momentos: [['cristal:convoca', 300, 'cristal-convocado.png'], ['cristal:convoca', 600, 'cristal-descendo.png'], ['cristal:quebra', 60, 'cristal-quebra.png']] })
   await fotografar('cetro', { pgn: '1. e4 d5 2. Ke2 dxe4 3. Ke3 a6', de: 'e3', para: 'e4', camera: [4.6, 30, 55], vestir: { k: { arma: 'cetro' } }, momentos: [['gravidade', 500, 'cetro.png'], ['gravidade', 1500, 'cetro-afundando.png']] })
   await fotografar('lua', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', camera: [6.5, 40, 62], vestir: { q: { arma: 'lua' } }, momentos: [['tornado', 700, 'lua.png'], ['tornado', 1600, 'lua-arremesso.png']] })
   await fotografar('lanca', { pgn: '1. Nc3 d5', de: 'c3', para: 'd5', camera: [4.6, 35, 50], vestir: { n: { arma: 'lanca' } }, momentos: [['salto:n', 0, 'lanca.png']] })
+  // sem arma: os socos e o chute
+  const DE_LADO = [3, -40, 74]
+  await fotografar('socos', { ...PEAO, camera: DE_LADO, vestir: {}, golpe: 'socos', momentos: [['soco:jab', 0, 'socos-jab.png'], ['soco', 0, 'socos-direto.png'], ['soco', 350, 'socos-queda.png']] })
+  await fotografar('chute', { ...PEAO, camera: DE_LADO, vestir: {}, golpe: 'chute', momentos: [['chute:ar', 0, 'chute-camara.png'], ['chute', 0, 'chute-acerto.png'], ['chute', 350, 'chute-queda.png']] })
+  await fotografar('chute-torre', { ...TORRE, camera: [3.4, -90, 74], vestir: {}, golpe: 'chute', momentos: [['chute', 0, 'chute-torre.png']] })
+  await fotografar('socos-rainha', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', camera: [3.4, 100, 74], vestir: {}, golpe: 'socos', momentos: [['soco', 0, 'socos-rainha.png']] })
 } finally {
   await browser.close()
 }

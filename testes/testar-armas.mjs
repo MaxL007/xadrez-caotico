@@ -31,10 +31,13 @@ const esperarParar = async () => {
 }
 const sons = () => page.evaluate(() => [...window.__sonsTocados])
 const limparSons = () => page.evaluate(() => (window.__sonsTocados.length = 0))
+/** A luta sem arma: o jab antes do direto, ou a perna no ar antes do chute, e a vítima caindo. */
+const socou = ({ tocados }) => tocados.indexOf('soco:jab') >= 0 && tocados.indexOf('soco:jab') < tocados.indexOf('soco') && tocados.some((s) => s.startsWith('queda:'))
+const chutou = ({ tocados }) => tocados.indexOf('chute:ar') >= 0 && tocados.indexOf('chute:ar') < tocados.indexOf('chute') && tocados.some((s) => s.startsWith('queda:'))
 
 /** Monta a posição com a peça de quem joga vestida, captura e devolve os sons tocados e o estado do tabuleiro. */
-async function capturar(nome, { pgn, vestir, retalhamento = false, de, para }) {
-  await h('vestirParaTeste', vestir, retalhamento)
+async function capturar(nome, { pgn, vestir, de, para }) {
+  await h('vestirParaTeste', vestir)
   await h('carregarTeste', pgn, 'w')
   await esperarParar()
   await limparSons()
@@ -65,22 +68,42 @@ try {
     ['maca:espinhos', 'maca:sacode', 'maca:solta'].every((s) => maca.tocados.includes(s)) && maca.problemas.length === 0,
     `${maca.tocados.join(' ')} | ${maca.problemas.join('; ')}`,
   )
+  const macaNoCavalo = await capturar('maça no cavalo', { pgn: '1. a4 Nc6 2. a5 Nxa5', de: 'a1', para: 'a5', vestir: { r: { arma: 'maca' } } })
+  conferir(
+    'maça num cavalo: o cavaleiro fica preso, e o cavalo relincha e foge',
+    ['maca:espinhos', 'fuga:n', 'maca:solta'].every((s) => macaNoCavalo.tocados.includes(s)) && macaNoCavalo.problemas.length === 0,
+    `${macaNoCavalo.tocados.join(' ')} | ${macaNoCavalo.problemas.join('; ')}`,
+  )
+  conferir('numa peça que não é cavalo, nada foge', !maca.tocados.includes('fuga:n'), maca.tocados.join(' '))
+  await h('forcarGolpeSemArma', 'chute')
+  const torreSemArma = await capturar('torre sem arma', { ...COM_TORRE, vestir: {} })
+  conferir('torre sem arma: chuta, sem marreta', chutou(torreSemArma) && !torreSemArma.tocados.includes('marreta:impacto') && torreSemArma.problemas.length === 0, `${torreSemArma.tocados.join(' ')} | ${torreSemArma.problemas.join('; ')}`)
+  await h('forcarGolpeSemArma', null)
 
   // =================== peão ===================
   // a vítima é um cavalo: peão contra peão pode se render com honra (15%), e aí não há golpe
   const COM_PEAO = { pgn: '1. e4 Nc6 2. d4 a6 3. d5 a5', de: 'd5', para: 'c6' }
   const katana = await capturar('katana', { ...COM_PEAO, vestir: { p: { arma: 'katana' } } })
   conferir('a katana tem som ao sair da bainha', katana.tocados.includes('katana:saca') && !katana.tocados.includes('espada:saca'), katana.tocados.join(' '))
+  conferir('a katana sem a habilidade equipada não retalha', !katana.tocados.includes('retalho:corte'), katana.tocados.join(' '))
   const espada = await capturar('espada', { ...COM_PEAO, vestir: { p: { arma: 'espada' } } })
   conferir('a espada tem outro som ao sair da bainha', espada.tocados.includes('espada:saca') && !espada.tocados.includes('katana:saca'), espada.tocados.join(' '))
+  await h('forcarGolpeSemArma', 'socos')
   const semArma = await capturar('sem arma', { ...COM_PEAO, vestir: {} })
   conferir('sem arma, não há som de saque', !semArma.tocados.some((s) => s.endsWith(':saca')), semArma.tocados.join(' '))
-  const retalho = await capturar('retalhamento', { ...COM_PEAO, vestir: { p: { arma: 'katana' } }, retalhamento: true })
+  conferir('o peão sem arma luta com os punhos: um jab e o direto', socou(semArma) && semArma.problemas.length === 0, `${semArma.tocados.join(' ')} | ${semArma.problemas.join('; ')}`)
+  await h('forcarGolpeSemArma', 'chute')
+  const peaoChuta = await capturar('peão chuta', { ...COM_PEAO, vestir: {} })
+  conferir('ou com um chute', chutou(peaoChuta) && peaoChuta.problemas.length === 0, `${peaoChuta.tocados.join(' ')} | ${peaoChuta.problemas.join('; ')}`)
+  await h('forcarGolpeSemArma', null)
+  const retalho = await capturar('retalhamento', { ...COM_PEAO, vestir: { p: { arma: 'katana', golpe: 'retalhamento' } } })
   conferir(
-    'retalhamento: vários cortes e a peça em pedaços',
+    'retalhamento equipado: vários cortes e a peça em pedaços',
     retalho.tocados.filter((s) => s === 'retalho:corte').length >= 3 && retalho.tocados.includes('retalho:pedacos') && retalho.problemas.length === 0,
     `${retalho.tocados.join(' ')} | ${retalho.problemas.join('; ')}`,
   )
+  const retalhoDeEspada = await capturar('retalhamento com espada', { ...COM_PEAO, vestir: { p: { arma: 'espada', golpe: 'retalhamento' } } })
+  conferir('equipado, mas com a espada na mão, não retalha', !retalhoDeEspada.tocados.includes('retalho:corte') && retalhoDeEspada.tocados.includes('espada:saca'), retalhoDeEspada.tocados.join(' '))
 
   // =================== bispo, rainha e rei ===================
   const COM_BISPO = { pgn: '1. e4 e5 2. Bc4 d6', de: 'c4', para: 'f7' }
@@ -88,11 +111,21 @@ try {
   conferir('cristal: convocado e quebrado na peça', cristal.tocados.includes('cristal:convoca') && cristal.tocados.includes('cristal:quebra') && cristal.problemas.length === 0, `${cristal.tocados.join(' ')} | ${cristal.problemas.join('; ')}`)
   const cajado = await capturar('cajado', { ...COM_BISPO, vestir: { b: { arma: 'cajado' } } })
   conferir('cajado: o raio', cajado.tocados.includes('raio:q') && cajado.problemas.length === 0, cajado.tocados.join(' '))
+  await h('forcarGolpeSemArma', 'chute')
   const bispoSemArma = await capturar('bispo sem arma', { ...COM_BISPO, vestir: {} })
-  conferir('bispo sem arma: o orbe de sempre', bispoSemArma.tocados.includes('magia:b'), bispoSemArma.tocados.join(' '))
-  const lua = await capturar('lua', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', vestir: { q: { arma: 'lua' } } })
+  conferir('bispo sem arma: vai até a peça e chuta, sem poder', chutou(bispoSemArma) && !bispoSemArma.tocados.includes('magia:b') && bispoSemArma.problemas.length === 0, `${bispoSemArma.tocados.join(' ')} | ${bispoSemArma.problemas.join('; ')}`)
+  const COM_RAINHA = { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7' }
+  await h('forcarGolpeSemArma', 'socos')
+  const rainhaSemArma = await capturar('rainha sem arma', { ...COM_RAINHA, vestir: {} })
+  conferir('rainha sem arma: socos, sem o raio', socou(rainhaSemArma) && !rainhaSemArma.tocados.includes('raio:q') && rainhaSemArma.problemas.length === 0, `${rainhaSemArma.tocados.join(' ')} | ${rainhaSemArma.problemas.join('; ')}`)
+  const COM_REI = { pgn: '1. e4 d5 2. Ke2 dxe4 3. Ke3 a6', de: 'e3', para: 'e4' }
+  await h('forcarGolpeSemArma', 'chute')
+  const reiSemArma = await capturar('rei sem arma', { ...COM_REI, vestir: {} })
+  conferir('rei sem arma: chute, sem a onda', chutou(reiSemArma) && !reiSemArma.tocados.includes('onda:k') && reiSemArma.problemas.length === 0, `${reiSemArma.tocados.join(' ')} | ${reiSemArma.problemas.join('; ')}`)
+  await h('forcarGolpeSemArma', null)
+  const lua = await capturar('lua', { ...COM_RAINHA, vestir: { q: { arma: 'lua' } } })
   conferir('lua: o tornado que arremessa a peça longe', lua.tocados.includes('tornado') && lua.problemas.length === 0, `${lua.tocados.join(' ')} | ${lua.problemas.join('; ')}`)
-  const cetro = await capturar('cetro', { pgn: '1. e4 d5 2. Ke2 dxe4 3. Ke3 a6', de: 'e3', para: 'e4', vestir: { k: { arma: 'cetro' } } })
+  const cetro = await capturar('cetro', { ...COM_REI, vestir: { k: { arma: 'cetro' } } })
   conferir('cetro: a gravidade que afunda a peça no chão', cetro.tocados.includes('gravidade') && cetro.problemas.length === 0, `${cetro.tocados.join(' ')} | ${cetro.problemas.join('; ')}`)
 
   // =================== cavalo ===================

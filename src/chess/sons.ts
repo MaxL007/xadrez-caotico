@@ -452,6 +452,43 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { inicio: 0.12, dur: 0.03, vol: 0.12, freq: 1600, q: 3 })
     return 0.5
   },
+  // o cavalo largado pela maça: relincha e sai a galope, cada vez mais longe
+  'fuga:n': (s) => {
+    relincho(s, 0, 0.17)
+    for (let i = 0; i < 7; i++) {
+      const longe = 1 - i / 8
+      casco(s, 0.24 * longe, 0.22 + i * 0.19)
+      casco(s, 0.17 * longe, 0.29 + i * 0.19)
+    }
+    return 1.7
+  },
+  // --- a luta sem arma
+  // o jab: o braço cortando o ar e o punho estalando leve
+  'soco:jab': (s) => {
+    sopro(s, { ataque: 0.01, dur: 0.07, vol: 0.13, freq: 900, ate: 2600, q: 1.2 })
+    pancada(s, 230, 130, 0.05, 0.24, 0.05)
+    sopro(s, { inicio: 0.05, dur: 0.02, vol: 0.08, freq: 2200, q: 2 })
+    return 0.2
+  },
+  // o direto: o ar mais grosso e o punho batendo seco e pesado
+  soco: (s) => {
+    sopro(s, { ataque: 0.02, dur: 0.09, vol: 0.18, freq: 650, ate: 2300, q: 1 })
+    pancada(s, 160, 62, 0.13, 0.52, 0.06)
+    sopro(s, { inicio: 0.06, dur: 0.05, vol: 0.12, filtro: 'lowpass', freq: 1500 })
+    return 0.35
+  },
+  // a perna esticando: um arrasto de pano no ar
+  'chute:ar': (s) => {
+    sopro(s, { ataque: 0.05, dur: 0.12, vol: 0.16, freq: 420, ate: 1700, q: 0.9 })
+    return 0.2
+  },
+  // o pé batendo de chapa: mais grave e mais cheio que o soco
+  chute: (s) => {
+    pancada(s, 125, 46, 0.18, 0.62)
+    sopro(s, { dur: 0.07, vol: 0.15, filtro: 'lowpass', freq: 1100 })
+    sopro(s, { inicio: 0.02, dur: 0.03, vol: 0.07, freq: 1800, q: 2 })
+    return 0.45
+  },
   // a queda da vítima: quanto maior a peça, mais grave
   'queda:p': quedaDe(150, 0.25),
   'queda:n': quedaDe(120, 0.3),

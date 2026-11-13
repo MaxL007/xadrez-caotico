@@ -4,7 +4,8 @@ import { clone as clonarComEsqueleto } from 'three/examples/jsm/utils/SkeletonUt
 // Os ataques de cada arma na captura, como o usuário descreveu: o retalhamento da katana (a peça em pedaços), o
 // machado que corta a peça ao meio, as rachaduras e o tremor da marreta, o cristal convocado a 75°, a gravidade do
 // cetro que afunda a peça no chão e o tornado da lua que a arremessa longe. A maça (a peça presa nos espinhos) mora
-// na marretada, em ChessBoard3D, porque segue o braço da torre.
+// na marretada, em ChessBoard3D, porque segue o braço da torre; aqui fica só o cavalo que foge quando ela pega o
+// cavaleiro.
 // Cada efeito chama `aoTerminar` quando a vítima já sumiu: aí o lance segue.
 
 /** O tabuleiro: as peças pisam em y = 0,05 e o tampo das casas fica logo abaixo. */
@@ -702,4 +703,128 @@ export function tornadoDaLua(cena: THREE.Object3D, peca: THREE.Object3D, rumo: {
       aoTerminar()
     },
   )
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Maça num cavalo: o cavaleiro fica preso nos espinhos e o cavalo, solto, foge do tabuleiro
+// ---------------------------------------------------------------------------------------------------------------
+
+/** O cavalo foge a essa velocidade (casas por segundo) e com o passo do clipe acelerado assim. */
+const GALOPE = 2.6
+const RITMO_DO_GALOPE = 2.2
+/** Na beirada do tabuleiro, pula pra mesa; some entre essas distâncias do centro, já fora dele. */
+const PULA_DA_BEIRADA = 4.2
+const COMECA_A_SUMIR = 4.4
+const SUMIU = 5.3
+
+/** Divide a malha do cavalo montado em duas pelo osso que mais puxa cada vértice: os do Mixamo são do cavaleiro, os
+ * outros (Cavalo, Cauda, as patas, o pescoço), do animal. As duas partes usam os mesmos dados dos vértices; só a lista
+ * de triângulos muda, então a malha das outras peças, que é a mesma, fica inteira. */
+function dividirCavaleiro(malha: THREE.SkinnedMesh): { cavalo: THREE.BufferGeometry; cavaleiro: THREE.BufferGeometry } {
+  const geo = malha.geometry
+  const ossos = geo.getAttribute('skinIndex')
+  const pesos = geo.getAttribute('skinWeight')
+  const total = geo.getAttribute('position').count
+  const doCavalo = new Uint8Array(total)
+  for (let v = 0; v < total; v++) {
+    let maior = -1
+    let osso = 0
+    for (let k = 0; k < 4; k++) {
+      const peso = pesos.getComponent(v, k)
+      if (peso > maior) {
+        maior = peso
+        osso = ossos.getComponent(v, k)
+      }
+    }
+    doCavalo[v] = malha.skeleton.bones[osso]?.name.startsWith('mixamorig') ? 0 : 1
+  }
+  const ordem = geo.index ? Array.from(geo.index.array) : Array.from({ length: total }, (_, i) => i)
+  const cavalo: number[] = []
+  const cavaleiro: number[] = []
+  for (let i = 0; i + 2 < ordem.length; i += 3) {
+    const [a, b, c] = [ordem[i], ordem[i + 1], ordem[i + 2]]
+    ;(doCavalo[a] + doCavalo[b] + doCavalo[c] >= 2 ? cavalo : cavaleiro).push(a, b, c)
+  }
+  const parte = (triangulos: number[]) => {
+    const nova = new THREE.BufferGeometry()
+    for (const [nome, atributo] of Object.entries(geo.attributes)) nova.setAttribute(nome, atributo)
+    nova.setIndex(triangulos)
+    return nova
+  }
+  return { cavalo: parte(cavalo), cavaleiro: parte(cavaleiro) }
+}
+
+/** Pra que lado o cavalo foge: a borda do tabuleiro mais perto, sem voltar pro lado de quem bateu. */
+function rumoDaFuga(de: THREE.Vector3, quemBateu: THREE.Vector3): THREE.Vector3 {
+  const longe = de.clone().sub(quemBateu).setY(0).normalize()
+  const rumos = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)]
+  const ateABorda = (r: THREE.Vector3) => SUMIU - (r.x !== 0 ? de.x * r.x : de.z * r.z)
+  const possiveis = rumos.filter((r) => r.dot(longe) > -0.2)
+  return (possiveis.length ? possiveis : rumos).reduce((melhor, r) => (ateABorda(r) < ateABorda(melhor) ? r : melhor))
+}
+
+/** A maça pegou o cavaleiro: daqui em diante `peca` é só ele (preso nos espinhos), e uma cópia só do cavalo, sem
+ * ninguém montado, vira, foge a galope pra fora do tabuleiro e some. `galope` é o clipe do passo do cavalo. */
+export function soltarOCavalo(cena: THREE.Object3D, peca: THREE.Object3D, quemBateu: THREE.Vector3, galope: THREE.AnimationClip) {
+  peca.updateMatrixWorld(true)
+  // copiar a peça copia os dados dela, e os da animação (o mixer) não se copiam: a cópia sai sem eles
+  const dadosGuardados: [THREE.Object3D, Record<string, unknown>][] = []
+  peca.traverse((obj) => {
+    dadosGuardados.push([obj, obj.userData])
+    obj.userData = {}
+  })
+  const cavalo = clonarComEsqueleto(peca) as THREE.Object3D
+  for (const [obj, dados] of dadosGuardados) obj.userData = dados
+  cena.add(cavalo)
+  peca.matrixWorld.decompose(cavalo.position, cavalo.quaternion, cavalo.scale)
+
+  const malhasDaPeca: THREE.Mesh[] = []
+  const malhasDoCavalo: THREE.Mesh[] = []
+  peca.traverse((obj) => obj instanceof THREE.Mesh && malhasDaPeca.push(obj))
+  cavalo.traverse((obj) => obj instanceof THREE.Mesh && malhasDoCavalo.push(obj))
+  malhasDaPeca.forEach((malha, i) => {
+    const copia = malhasDoCavalo[i]
+    if (!copia) return
+    if (!(malha instanceof THREE.SkinnedMesh) || !malha.geometry.getAttribute('skinIndex')) {
+      // sem esqueleto, fica com o cavaleiro
+      copia.visible = false
+      return
+    }
+    const partes = dividirCavaleiro(malha)
+    malha.geometry = partes.cavaleiro
+    copia.geometry = partes.cavalo
+  })
+
+  const mixer = new THREE.AnimationMixer(cavalo)
+  mixer.clipAction(galope).setLoop(THREE.LoopRepeat, Infinity).setEffectiveTimeScale(RITMO_DO_GALOPE).play()
+  const sumir = materiaisSoDela(cavalo)
+  const rumo = rumoDaFuga(cavalo.position, quemBateu)
+  const giroInicial = cavalo.rotation.y
+  const alturaInicial = cavalo.position.y
+  let giro = Math.atan2(rumo.x, rumo.z) - giroInicial
+  giro = Math.atan2(Math.sin(giro), Math.cos(giro))
+  const inicio = performance.now()
+  let anterior = inicio
+  const quadro = (agora: number) => {
+    const dt = Math.min(0.05, (agora - anterior) / 1000)
+    anterior = agora
+    const decorrido = (agora - inicio) / 1000
+    mixer.update(dt)
+    // vira pro lado da fuga já arrancando, e acelera até o galope
+    cavalo.rotation.y = giroInicial + giro * suave(Math.min(1, decorrido / 0.3))
+    cavalo.position.addScaledVector(rumo, GALOPE * Math.min(1, decorrido / 0.35) * dt)
+    const longe = rumo.x !== 0 ? cavalo.position.x * rumo.x : cavalo.position.z * rumo.z
+    // da beirada, um salto curto e a queda até a mesa
+    const salto = Math.min(1, Math.max(0, (longe - PULA_DA_BEIRADA) / (SUMIU - PULA_DA_BEIRADA)))
+    cavalo.position.y = alturaInicial + 0.22 * Math.sin(Math.min(1, salto * 2) * Math.PI) + (CHAO_DA_MESA - alturaInicial) * salto * salto
+    const some = Math.min(1, Math.max(0, (longe - COMECA_A_SUMIR) / (SUMIU - COMECA_A_SUMIR)))
+    sumir(1 - some)
+    if (some < 1 && decorrido < 6) {
+      requestAnimationFrame(quadro)
+      return
+    }
+    mixer.stopAllAction()
+    liberar(cavalo)
+  }
+  requestAnimationFrame(quadro)
 }

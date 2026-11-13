@@ -83,6 +83,12 @@
       "guerra"
     ]
   },
+  "habilidades": {
+    "p": [
+      "nenhuma",
+      "retalhamento"
+    ]
+  },
   "itens": {
     "arma:katana": {
       "conquista": "peoes-50"

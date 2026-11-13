@@ -15,11 +15,16 @@ export interface ParteDaPeca {
   opcoes: string[]
 }
 
-/** O corpo de cima a baixo, a montaria (só no cavalo) e a arma. */
+/** As habilidades especiais de cada peça (a parte 'golpe'): por enquanto, só o retalhamento do peão. */
+const HABILIDADES = catalogo.habilidades as Partial<Record<Peca, string[]>>
+
+/** O corpo de cima a baixo, a montaria (só no cavalo), a arma e, na peça que tem, a habilidade especial. */
 export function partesDaPeca(peca: Peca): ParteDaPeca[] {
   const corpo = Object.entries(catalogo.corpo).map(([parte, opcoes]) => ({ parte, opcoes }))
   const montaria = peca === 'n' ? Object.entries(catalogo.montaria).map(([parte, opcoes]) => ({ parte, opcoes })) : []
-  return [...corpo, ...montaria, { parte: 'arma', opcoes: catalogo.armas[peca] }]
+  const habilidades = HABILIDADES[peca]
+  const habilidade = habilidades ? [{ parte: 'golpe', opcoes: habilidades }] : []
+  return [...corpo, ...montaria, { parte: 'arma', opcoes: catalogo.armas[peca] }, ...habilidade]
 }
 
 /** Equipamentos que saem por conquista: valem pra toda peça que usa aquela parte. */

@@ -122,7 +122,10 @@ try {
   await botao(ana, 'Personalização').click()
   await ana.locator('[data-vitrine="p"]').waitFor()
   await ana.waitForFunction(() => !document.querySelector('[data-vitrine]').textContent.includes('Carregando'), null, { timeout: 120000, polling: 300 })
-  conferir('a personalização mostra a peça em 3D com um quadrado por parte', (await ana.locator('[data-vitrine] canvas').count()) === 1 && (await ana.locator('[data-caixa]').count()) === 7)
+  conferir('a personalização mostra a peça em 3D com um quadrado por parte, e o peão tem a habilidade especial', (await ana.locator('[data-vitrine] canvas').count()) === 1 && (await ana.locator('[data-caixa]').count()) === 8 && (await ana.locator('[data-caixa="golpe"]').count()) === 1)
+  await ana.locator('[data-caixa="golpe"]').click()
+  conferir('a habilidade especial: o retalhamento trancado, com o que ele faz', (await ana.locator('[data-opcoes="golpe"]').getByRole('radio', { name: '🔒 Retalhamento', exact: true }).isDisabled()) && (await ana.locator('[data-dica-habilidade]').innerText()).includes('katana'))
+  await ana.locator('[data-caixa="cabeca"]').click()
   conferir('sem nada vestido, o quadrado fica vazio', (await ana.locator('[data-caixa="cabeca"]').getByText('Vazio').count()) === 1)
   await ana.getByText('Entre na sua conta para personalizar').waitFor()
   conferir('sem conta, as opções ficam trancadas', await ana.locator('[data-opcoes]').getByRole('radio', { name: '🔒 Elmo', exact: true }).isDisabled())
@@ -138,7 +141,52 @@ try {
   conferir('sem conta, a loja não vende', await ana.locator('[data-item="q:cabeca:elmo"]').getByRole('button', { name: /Comprar/ }).isDisabled())
   await ana.getByRole('tab', { name: 'Cavalo', exact: true }).click()
   await ana.locator('[data-item="n:sela:guerra"]').waitFor()
-  conferir('o cavalo vende também a armadura, a sela, o cabresto e a lança', (await ana.locator('[data-loja] [data-item]').count()) === 12 && (await ana.locator('[data-item="n:cavalo:armadura"]').innerText()).includes('40') && (await ana.locator('[data-item="n:cabresto:guerra"]').innerText()).includes('15'))
+  conferir('o cavalo vende também a armadura, a sela e o cabresto; a lança fica nas Armas', (await ana.locator('[data-loja] [data-item]').count()) === 11 && (await ana.locator('[data-item="n:arma:lanca"]').count()) === 0 && (await ana.locator('[data-item="n:cavalo:armadura"]').innerText()).includes('40') && (await ana.locator('[data-item="n:cabresto:guerra"]').innerText()).includes('15'))
+  await botao(ana, 'Arma do cavalo →').click()
+  await ana.locator('[data-armas-da-peca]').first().waitFor()
+  await ana.waitForTimeout(300)
+  const lancaAVista = await ana.evaluate(() => {
+    const painel = document.querySelector('section[role=dialog]').getBoundingClientRect()
+    const lanca = document.querySelector('[data-item="n:arma:lanca"]').getBoundingClientRect()
+    return lanca.top >= painel.top && lanca.bottom <= painel.bottom
+  })
+  conferir('o atalho do cavalo abre a aba Armas já na lança', (await ana.getByRole('tab', { name: 'Armas', exact: true }).getAttribute('aria-selected')) === 'true' && lancaAVista)
+  const cartoesDasArmas = await ana.locator('[data-loja] [data-item]').evaluateAll((cartoes) => cartoes.map((c) => c.dataset.item))
+  conferir(
+    'a aba Armas separa as armas por peça, com o cajado e o cristal em cada peça que os usa',
+    (await ana.locator('[data-armas-da-peca]').count()) === 6 &&
+      cartoesDasArmas.length === 14 &&
+      ['b', 'q', 'k'].every((p) => cartoesDasArmas.includes(`${p}:arma:cajado`) && cartoesDasArmas.includes(`${p}:arma:cristal`)),
+    cartoesDasArmas.join(', '),
+  )
+  conferir('o retalhamento saiu das armas: é habilidade', !cartoesDasArmas.some((item) => item.includes(':golpe:')), cartoesDasArmas.join(', '))
+  conferir(
+    'cada arma mostra de qual peça é, com o preço da tabela',
+    (await ana.locator('[data-item="q:arma:cajado"] [data-peca-da-arma]').innerText()) === 'Rainha' &&
+      (await ana.locator('[data-item="k:arma:cetro"] [data-peca-da-arma]').innerText()) === 'Rei' &&
+      (await ana.locator('[data-item="k:arma:cetro"]').innerText()).includes('50'),
+  )
+  conferir('a lista comprida não aumenta o desenho além da parte à vista', await ana.evaluate(() => document.querySelector('[data-loja] > canvas').getBoundingClientRect().height <= document.querySelector('section[role=dialog]').getBoundingClientRect().height + 1))
+  await ana.locator('[data-item="b:arma:cristal"] button').first().click()
+  await ana.locator('[data-item-aberto="b:arma:cristal"]').waitFor()
+  conferir('a arma aberta grande diz de qual peça é', (await ana.locator('[data-item-aberto] [data-peca-da-arma]').innerText()) === 'Bispo')
+  await botao(ana, 'Voltar para a Loja').click()
+  await ana.locator('[data-item="b:arma:cristal"]').waitFor()
+  await ana.getByRole('tab', { name: 'Habilidades', exact: true }).click()
+  await ana.locator('[data-habilidades-da-peca="p"]').waitFor()
+  const habilidadesNaLoja = await ana.locator('[data-loja] [data-item]').evaluateAll((cartoes) => cartoes.map((c) => c.dataset.item))
+  conferir(
+    'a aba Habilidades vende o retalhamento do peão, com o preço e o aviso da katana',
+    habilidadesNaLoja.join(',') === 'p:golpe:retalhamento' &&
+      (await ana.locator('[data-item="p:golpe:retalhamento"]').innerText()).includes('80') &&
+      (await ana.locator('[data-item="p:golpe:retalhamento"] [data-peca-da-arma]').innerText()) === 'Peão · com a katana',
+    habilidadesNaLoja.join(', '),
+  )
+  await ana.getByRole('tab', { name: 'Armaduras', exact: true }).click()
+  await ana.getByRole('tab', { name: 'Peão', exact: true }).click()
+  await botao(ana, 'Habilidades do peão →').click()
+  await ana.locator('[data-habilidades-da-peca="p"]').waitFor()
+  conferir('o peão tem atalho pras armas e pras habilidades', (await ana.getByRole('tab', { name: 'Habilidades', exact: true }).getAttribute('aria-selected')) === 'true')
   await botao(ana, 'Voltar').click()
   conferir('joga sem conta: o menu oferece entrar, sem obrigar', (await botao(ana, 'Entrar').count()) === 1 && (await botao(ana, 'Novo jogo').count()) === 1)
   await botao(ana, 'Novo jogo').click()
@@ -379,10 +427,21 @@ try {
   await ana.locator('[data-opcoes="cabeca"]').getByRole('radio', { name: 'Padrão', exact: true }).click()
   await ana.waitForFunction(() => !window.__xadrez.vestimentaDaCasa('a2').includes('vestimenta:fixa:armadura'), null, { timeout: 30000, polling: 300 })
   conferir('voltar ao padrão tira a peça nova', true)
+  await ana.locator('[data-caixa="golpe"]').click()
+  await ana.locator('[data-opcoes="golpe"]').getByRole('radio', { name: 'Retalhamento', exact: true }).click()
+  await ana.locator('[data-dica-habilidade]').getByText('Vista a katana', { exact: false }).waitFor({ timeout: 30000 })
+  conferir('equipar o retalhamento com a espada na mão avisa que ele é da katana', true)
+  await ana.locator('[data-caixa="arma"]').click()
+  await ana.locator('[data-opcoes="arma"]').getByRole('radio', { name: 'Katana', exact: true }).click()
+  await ana.locator('[data-caixa="golpe"]').click()
+  await ana.waitForFunction(() => !document.querySelector('[data-dica-habilidade]')?.textContent.includes('Vista a katana'), null, { timeout: 30000, polling: 300 })
+  conferir('com a katana, o aviso some e o retalhamento fica equipado', (await ana.locator('[data-opcoes="golpe"]').getByRole('radio', { name: 'Retalhamento', exact: true }).getAttribute('aria-checked')) === 'true')
   await botao(ana, 'Voltar').click()
   await botao(ana, 'Loja').click()
   await ana.locator('[data-loja] [data-item]').first().waitFor()
-  conferir('a loja do peão lista os equipamentos, as armas e o retalhamento, em 3D, com o saldo de óticoins', (await ana.locator('[data-loja] [data-item]').count()) === 11 && (await ana.locator('[data-loja] > canvas').count()) === 1 && (await ana.locator('[data-saldo-loja]').count()) === 1)
+  await ana.locator('[data-saldo-loja]').waitFor({ timeout: 30000 }).catch(() => {})
+  const naLoja = [await ana.locator('[data-loja] [data-item]').count(), await ana.locator('[data-loja] > canvas').count(), await ana.locator('[data-saldo-loja]').count()]
+  conferir('a loja do peão lista as armaduras em 3D, com o saldo de óticoins', naLoja.join(',') === '8,1,1', `itens, canvas, saldo: ${naLoja.join(', ')}`)
   await ana.locator('[data-item="p:ombros:espinhos"] button').first().click()
   await ana.locator('[data-item-aberto="p:ombros:espinhos"]').waitFor()
   conferir('tocar no equipamento abre ele grande', (await ana.locator('[data-loja] [data-item]').count()) === 0)

@@ -28,12 +28,12 @@ execFileSync(process.execPath, [path.join(pastaDoServidor, 'node_modules', 'wran
 const CORPO_1 = [['cabeca', 'Elmo'], ['ombros', 'Placas'], ['maos', 'Manoplas'], ['peito', 'Brasão'], ['calca', 'Grevas'], ['botas', 'De ferro']]
 const CORPO_2 = [['cabeca', 'Padrão'], ['ombros', 'Espinhos'], ['maos', 'Garras'], ['peito', 'Padrão'], ['calca', 'Padrão'], ['botas', 'Padrão']]
 const PECAS = [
-  ['Peão', [[...CORPO_1, ['arma', 'Espada']], [...CORPO_2, ['arma', 'Katana']]]],
+  ['Peão', [[...CORPO_1, ['arma', 'Espada']], [...CORPO_2, ['arma', 'Katana'], ['golpe', 'Retalhamento']]]],
   ['Torre', [[...CORPO_1, ['arma', 'Machado']], [...CORPO_2, ['arma', 'Maça']]]],
-  ['Cavalo', [[...CORPO_1, ['cavalo', 'Armadura'], ['sela', 'De guerra'], ['cabresto', 'De guerra']], [...CORPO_2, ['cavalo', 'Padrão'], ['sela', 'Padrão'], ['cabresto', 'Padrão']]]],
-  ['Bispo', [[...CORPO_1, ['arma', 'Cristal']], [...CORPO_2, ['arma', 'Lua']]]],
-  ['Rainha', [[...CORPO_1, ['arma', 'Cetro']], [...CORPO_2, ['arma', 'Cristal']]]],
-  ['Rei', [[...CORPO_1, ['arma', 'Lua']], [...CORPO_2, ['arma', 'Cetro']]]],
+  ['Cavalo', [[...CORPO_1, ['cavalo', 'Armadura'], ['sela', 'De guerra'], ['cabresto', 'De guerra'], ['arma', 'Lança']], [...CORPO_2, ['cavalo', 'Padrão'], ['sela', 'Padrão'], ['cabresto', 'Padrão']]]],
+  ['Bispo', [[...CORPO_1, ['arma', 'Cristal']], [...CORPO_2, ['arma', 'Cajado']]]],
+  ['Rainha', [[...CORPO_1, ['arma', 'Lua']], [...CORPO_2, ['arma', 'Cristal']]]],
+  ['Rei', [[...CORPO_1, ['arma', 'Cetro']], [...CORPO_2, ['arma', 'Cajado']]]],
 ]
 
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
@@ -70,7 +70,7 @@ try {
     }
   }
 
-  // a Loja: os expositores de cada peça e um equipamento aberto
+  // a Loja: as armaduras de cada peça, as armas de cada uma e um equipamento aberto
   await page.locator('main').getByRole('button', { name: 'Voltar', exact: true }).click()
   await page.locator('main').getByRole('button', { name: 'Loja', exact: true }).click()
   await page.locator('[data-loja] [data-item]').first().waitFor()
@@ -79,6 +79,15 @@ try {
     await page.waitForTimeout(2500)
     await page.locator('section[role=dialog]').screenshot({ path: path.join(FOTOS, `loja-${peca}.png`), timeout: 150000 })
     console.log('foto loja', peca)
+  }
+  await page.getByRole('tab', { name: 'Armas', exact: true }).click()
+  await page.locator('[data-armas-da-peca]').first().waitFor()
+  for (const [peca] of PECAS.filter(([nome]) => !so || so.includes(nome))) {
+    const letra = { Peão: 'p', Torre: 'r', Cavalo: 'n', Bispo: 'b', Rainha: 'q', Rei: 'k' }[peca]
+    await page.locator(`[data-armas-da-peca="${letra}"]`).evaluate((parte) => parte.scrollIntoView({ block: 'start' }))
+    await page.waitForTimeout(2500)
+    await page.locator('section[role=dialog]').screenshot({ path: path.join(FOTOS, `loja-armas-${peca}.png`), timeout: 150000 })
+    console.log('foto loja armas', peca)
   }
   await page.locator('[data-loja] [data-item] button').first().click()
   await page.locator('[data-item-aberto]').waitFor()

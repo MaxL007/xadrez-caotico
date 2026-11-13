@@ -614,6 +614,10 @@ try {
     conferir(`cada arma na sua peça: ${nome} não`, (await personalizar(corpo)).status === 422)
   }
   conferir('a lança vai no cavalo', (await personalizar({ peca: 'n', parte: 'arma', opcao: 'lanca' })).status === 200)
+  const habilidade = await personalizar({ peca: 'p', parte: 'golpe', opcao: 'retalhamento' })
+  conferir('o peão equipa a habilidade especial', habilidade.status === 200 && habilidade.json?.personalizacao?.p?.golpe === 'retalhamento', JSON.stringify(habilidade.json))
+  conferir('a torre não tem o retalhamento', (await personalizar({ peca: 'r', parte: 'golpe', opcao: 'retalhamento' })).status === 422)
+  conferir('habilidade inventada não entra', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'voo' })).status === 422)
   const semElmo = (await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'padrao' })).json?.personalizacao
   conferir('voltar ao padrão apaga a escolha e mantém as outras', semElmo?.p?.cabeca === undefined && semElmo?.p?.arma === 'espada', JSON.stringify(semElmo))
   const invalidas = [
@@ -634,6 +638,8 @@ try {
   conferir('o resto fica trancado até a conquista ou a compra, mesmo chamando o servidor direto', fora.status === 403 && fora.json?.erro === 'item-bloqueado')
   conferir('a peça começa sem arma: a katana também fica trancada', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'katana' }, bia.token)).status === 403)
   conferir('e o cajado do bispo', (await personalizar({ peca: 'b', parte: 'arma', opcao: 'cajado' }, bia.token)).status === 403)
+  conferir('o retalhamento só se equipa comprado', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'retalhamento' }, bia.token)).status === 403)
+  conferir('tirar a habilidade qualquer um pode', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'nenhuma' }, bia.token)).status === 200)
 
   // =================== conquistas e óticoins ===================
   const receber = (ids, token = ana.token) => api('POST', '/conquistas/receber', { token, corpo: { ids } })
