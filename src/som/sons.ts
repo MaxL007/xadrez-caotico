@@ -527,6 +527,40 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { ataque: 0.7, dur: 0.9, vol: 0.05, freq: 2500, ate: 6000, q: 0.7 })
     return 2.3
   },
+  // os equipamentos da peça promovida surgindo em volta dela: um brilho de vidro subindo
+  'equipamento:surge': (s) => {
+    for (const [i, nota] of [1568, 2093, 2637].entries()) tom(s, { freq: nota, ate: nota * 1.06, inicio: i * 0.06, ataque: 0.04, dur: 0.5, vol: 0.035 })
+    sopro(s, { ataque: 0.15, dur: 0.45, vol: 0.06, freq: 3000, ate: 7500, q: 1.5 })
+    return 0.8
+  },
+  // e cada um se prendendo no lugar: o estalo do metal travando e um anel curto
+  encaixe: (s) => {
+    pancada(s, 420, 240, 0.05, 0.24)
+    sopro(s, { dur: 0.018, vol: 0.14, freq: 3200, q: 3 })
+    sino(s, 1760, 0.35, 0.045, 0.01)
+    return 0.4
+  },
+  // o cavalo da promoção chegando a galope: as batidas em três tempos, cada vez mais perto, e o relincho ao parar
+  'cavalo:chega': (s) => {
+    for (let i = 0; i < 9; i++) {
+      const perto = 0.35 + 0.65 * (i / 8)
+      const quando = i * 0.17
+      casco(s, 0.26 * perto, quando)
+      casco(s, 0.2 * perto, quando + 0.045)
+      casco(s, 0.17 * perto, quando + 0.09)
+    }
+    sopro(s, { ataque: 0.8, dur: 0.9, vol: 0.06, filtro: 'lowpass', freq: 600, ate: 300 })
+    relincho(s, 1.55, 0.17)
+    return 2.5
+  },
+  // o peão montando: o couro da sela rangendo no impulso e o peso assentando nela
+  montar: (s) => {
+    sopro(s, { ataque: 0.06, dur: 0.22, vol: 0.12, freq: 900, ate: 2200, q: 1.2 })
+    tom(s, { tipo: 'sawtooth', freq: 140, ate: 95, inicio: 0.05, ataque: 0.04, dur: 0.22, vol: 0.05, corte: 700 })
+    pancada(s, 150, 70, 0.16, 0.42, 0.7)
+    sopro(s, { inicio: 0.7, dur: 0.1, vol: 0.1, filtro: 'lowpass', freq: 900 })
+    return 1
+  },
   xeque: (s) => {
     trompa(s, 110, 0.32, 0.19)
     trompa(s, 116.5, 0.32, 0.19)
@@ -590,24 +624,43 @@ let pararAmbienteAtual: (() => void) | null = null
 const tocados: string[] = []
 if (import.meta.env.DEV) (window as unknown as { __sonsTocados?: string[] }).__sonsTocados = tocados
 
+/** Quanto os sons do jogo sobem por cima do volume escolhido: os efeitos, o ambiente e o ganho depois do limitador.
+ * O limitador segura os picos, então o som fica mais alto sem estourar (medido: ver testes/medir-som.mjs). */
+const REFORCO_DOS_EFEITOS = 1.5
+const REFORCO_DO_AMBIENTE = 1.6
+const GANHO_DEPOIS_DO_LIMITE = 1.12
+
+/** A cadeia de saída: efeitos e ambiente → volume geral → limitador → reforço → alto-falante. */
+export function cadeiaDeSaida(ctx: BaseAudioContext, volume: number) {
+  const geralDaCadeia = ctx.createGain()
+  geralDaCadeia.gain.value = volume
+  const limite = ctx.createDynamicsCompressor()
+  limite.threshold.value = -12
+  limite.knee.value = 4
+  limite.ratio.value = 14
+  limite.attack.value = 0.001
+  limite.release.value = 0.18
+  const reforco = ctx.createGain()
+  reforco.gain.value = GANHO_DEPOIS_DO_LIMITE
+  geralDaCadeia.connect(limite).connect(reforco).connect(ctx.destination)
+  const efeitosDaCadeia = ctx.createGain()
+  efeitosDaCadeia.gain.value = REFORCO_DOS_EFEITOS
+  efeitosDaCadeia.connect(geralDaCadeia)
+  const trilhaDaCadeia = ctx.createGain()
+  trilhaDaCadeia.gain.value = VOLUME_DO_AMBIENTE * REFORCO_DO_AMBIENTE
+  trilhaDaCadeia.connect(geralDaCadeia)
+  return { geral: geralDaCadeia, efeitos: efeitosDaCadeia, trilha: trilhaDaCadeia }
+}
+
 /** Monta o contexto no primeiro gesto da pessoa: antes disso o navegador recusaria o som. Um limitador
  * no fim da cadeia segura vários sons juntos sem estourar. */
 export function destravarSom() {
   if (!contexto) {
     contexto = new AudioContext()
-    geral = contexto.createGain()
-    geral.gain.value = somLigado ? volumeGeral : 0
-    const limite = contexto.createDynamicsCompressor()
-    limite.threshold.value = -9
-    limite.ratio.value = 10
-    limite.attack.value = 0.003
-    limite.release.value = 0.2
-    geral.connect(limite).connect(contexto.destination)
-    efeitos = contexto.createGain()
-    efeitos.connect(geral)
-    trilha = contexto.createGain()
-    trilha.gain.value = VOLUME_DO_AMBIENTE
-    trilha.connect(geral)
+    const cadeia = cadeiaDeSaida(contexto, somLigado ? volumeGeral : 0)
+    geral = cadeia.geral
+    efeitos = cadeia.efeitos
+    trilha = cadeia.trilha
   }
   if (contexto.state === 'suspended') void contexto.resume()
   atualizarAmbiente()

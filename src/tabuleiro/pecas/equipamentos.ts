@@ -33,6 +33,9 @@ interface Parte {
   camada?: Camada
   /** Matriz pronta, quando a parte segue uma linha qualquer (a bainha). Substitui pos/rot/esc. */
   matriz?: THREE.Matrix4
+  /** A parte da personalização de onde ela vem (cabeca, arma, sela…): vestida com `porParte`, cada uma vira malha
+   * própria, que pode aparecer sozinha. */
+  parte?: string
 }
 
 type Lado = 'Left' | 'Right'
@@ -424,8 +427,12 @@ export interface EspadaDoPeao {
 /**
  * Veste a peça montada do modelo (o grupo de buildPecaRPG) com o que a pessoa escolheu pra ela. As malhas do
  * modelo trazem o nome do material original em `userData.material`. Devolve as escolhas que valeram.
+ *
+ * Com `porParte`, cada parte da personalização vira malha própria (com `userData.parte`), pra aparecer sozinha: é
+ * como a peça da promoção recebe os equipamentos um por um. Nas outras não, porque seriam muitas malhas a mais pro
+ * celular desenhar.
  */
-export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record<string, string>, materiais: MateriaisDaPeca) {
+export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record<string, string>, materiais: MateriaisDaPeca, { porParte = false } = {}) {
   const malhas: THREE.SkinnedMesh[] = []
   grupo.traverse((filho) => {
     if (filho instanceof THREE.SkinnedMesh && typeof filho.userData.material === 'string') malhas.push(filho)
@@ -436,6 +443,8 @@ export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record
   const partes: Parte[] = []
   const regras: Esconder[] = []
   const escolha = (parte: string) => escolhas[parte]
+  /** Cada pedaço sabe de que parte da personalização ele é. */
+  const daParte = (lista: Parte[], parte: string) => lista.map((p) => ({ ...p, parte }))
 
   const doCorpo: [string, Record<string, () => Parte[]>][] = [
     ['cabeca', CABECA],
@@ -448,7 +457,7 @@ export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record
   for (const [parte, catalogo] of doCorpo) {
     const montar = catalogo[escolha(parte) ?? '']
     if (!montar) continue
-    partes.push(...montar())
+    partes.push(...daParte(montar(), parte))
     if (parte === 'ombros') regras.push(ESCONDER.ombros)
   }
 
@@ -457,48 +466,49 @@ export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record
   const maoDoCajado = MAO_DO_CAJADO[tipo]
   if (maoDoCajado && arma !== 'cajado') {
     regras.push(ESCONDER.cajado)
-    if (CAJADOS[arma]) partes.push(...CAJADOS[arma](...maoDoCajado))
+    if (CAJADOS[arma]) partes.push(...daParte(CAJADOS[arma](...maoDoCajado), 'arma'))
   }
   // a arma escolhida fica na peça: o golpe da captura depende dela
   grupo.userData.arma = arma
-  if (tipo === 'n' && arma === 'lanca') partes.push(...lanca())
+  if (tipo === 'n' && arma === 'lanca') partes.push(...daParte(lanca(), 'arma'))
 
   const semKatana = tipo === 'p' && arma !== 'katana'
   if (tipo === 'p' && arma === 'espada') {
     const linha = linhaDaBainha(malhas)
-    if (linha) partes.push(...espadaNaMao(), ...espadaNaBainha(linha.cabo, linha.ponta))
+    if (linha) partes.push(...daParte([...espadaNaMao(), ...espadaNaBainha(linha.cabo, linha.ponta)], 'arma'))
   }
 
   if (tipo === 'n') {
     for (const [parte, catalogo] of Object.entries(MONTARIA)) {
       const montar = catalogo[escolha(parte) ?? '']
       if (!montar) continue
-      partes.push(...montar())
+      partes.push(...daParte(montar(), parte))
       if (parte === 'sela') regras.push(ESCONDER.sela)
     }
   }
 
   if (regras.length) for (const malha of malhas) esconderNaMalha(malha, regras)
 
-  // as partes novas, juntas por material e por camada
+  // as partes novas, juntas por material e por camada (e por parte da personalização, com `porParte`)
   const indiceDoOsso = (nome: string) => corpo.skeleton.bones.findIndex((osso) => nomeDoOsso(osso) === nome)
-  const porGrupo = new Map<string, { papel: Papel; camada: Camada; geos: THREE.BufferGeometry[] }>()
+  const porGrupo = new Map<string, { papel: Papel; camada: Camada; parte?: string; geos: THREE.BufferGeometry[] }>()
   for (const parte of partes) {
     const geo = geometriaComOssos(parte, indiceDoOsso)
     if (!geo) continue
     const camada = parte.camada ?? 'fixa'
-    const chave = `${camada}:${parte.papel}`
-    const grupoDaChave = porGrupo.get(chave) ?? { papel: parte.papel, camada, geos: [] }
+    const chave = porParte ? `${parte.parte}:${camada}:${parte.papel}` : `${camada}:${parte.papel}`
+    const grupoDaChave = porGrupo.get(chave) ?? { papel: parte.papel, camada, parte: porParte ? parte.parte : undefined, geos: [] }
     grupoDaChave.geos.push(geo)
     porGrupo.set(chave, grupoDaChave)
   }
   const naMao: THREE.Object3D[] = []
   const naBainha: THREE.Object3D[] = []
-  for (const { papel, camada, geos } of porGrupo.values()) {
+  for (const { papel, camada, parte, geos } of porGrupo.values()) {
     const geo = mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)))
     if (!geo) continue
     const malha = new THREE.SkinnedMesh(geo, materiais[papel])
     malha.name = `vestimenta:${camada}:${papel}`
+    if (parte) malha.userData.parte = parte
     malha.castShadow = true
     malha.receiveShadow = true
     malha.frustumCulled = false
@@ -563,6 +573,76 @@ export function katanaDoModelo(peao: THREE.Object3D): THREE.Object3D | null {
   const katana = pedacoDoModelo(peao, (v) => v.material === 'EspadaLamina' || v.material === 'EspadaCabo')
   katana.rotation.z = EM_PE
   return katana.children.length ? katana : null
+}
+
+// --- a promoção: cada equipamento voa até a peça nova --------------------------------------------------
+
+/** Um pedaço solto do equipamento, centrado em si mesmo, e o osso da peça em que ele se prende. */
+export interface PedacoQueVoa {
+  objeto: THREE.Group
+  osso: string
+}
+
+/** O equipamento em pedaços soltos, pra voar até a peça na promoção: nos pares (ombros, mãos, calça, botas), um de
+ * cada lado, cada um indo pro seu osso. Vazio pra opção que não monta nada aqui (o cajado de sempre, que vem no
+ * modelo: ver `cajadoQueVoa`). */
+export function pecasDoEquipamento(tipo: string, parte: string, opcao: string, materiais: MateriaisDaPeca): PedacoQueVoa[] {
+  let partes: Parte[] = []
+  if (parte === 'arma') {
+    if (tipo === 'n' && opcao === 'lanca') partes = lanca()
+    else if (MAO_DO_CAJADO[tipo] && CAJADOS[opcao]) partes = CAJADOS[opcao](...MAO_DO_CAJADO[tipo])
+  } else if (tipo === 'n' && MONTARIA[parte]) {
+    partes = MONTARIA[parte][opcao]?.() ?? []
+  } else {
+    partes = DO_CORPO[parte]?.[opcao]?.() ?? []
+  }
+  const lados = EM_PAR.has(parte) ? [partes.filter((p) => p.pos[0] >= 0), partes.filter((p) => p.pos[0] < 0)] : [partes]
+  return lados
+    .filter((lista) => lista.length > 0)
+    .map((lista) => {
+      const objeto = new THREE.Group()
+      for (const p of lista) {
+        const malha = new THREE.Mesh(p.geo, materiais[p.papel])
+        malha.applyMatrix4(matrizDaParte(p))
+        objeto.add(malha)
+      }
+      centrar(objeto)
+      const osso = lista[0].osso
+      return { objeto, osso: typeof osso === 'string' ? osso : osso.alto }
+    })
+}
+
+/** Leva o meio do pedaço pra origem: ele gira em volta de si mesmo enquanto voa. */
+function centrar(objeto: THREE.Group) {
+  const meio = new THREE.Box3().setFromObject(objeto).getCenter(new THREE.Vector3())
+  for (const filho of objeto.children) filho.position.sub(meio)
+}
+
+/** O cajado de sempre (o do modelo) voando até a mão: o pedaço solto e a função que o esconde da peça até ele chegar
+ * (devolve a que mostra de novo). Null pra peça sem cajado. */
+export function cajadoQueVoa(peca: THREE.Object3D, tipo: string): { pedaco: PedacoQueVoa; esconder: () => () => void } | null {
+  const lado = MAO_DO_CAJADO[tipo]
+  if (!lado) return null
+  const objeto = pedacoDoModelo(peca, ESCONDER.cajado)
+  if (!objeto.children.length) return null
+  centrar(objeto)
+  const esconder = () => {
+    const originais: [THREE.SkinnedMesh, THREE.BufferGeometry][] = []
+    peca.traverse((filho) => {
+      if (!(filho instanceof THREE.SkinnedMesh) || typeof filho.userData.material !== 'string') return
+      const { dentro, fora } = separarTriangulos(filho, [ESCONDER.cajado])
+      if (dentro.length === 0) return
+      originais.push([filho, filho.geometry])
+      const semCajado = new THREE.BufferGeometry()
+      for (const nome of Object.keys(filho.geometry.attributes)) semCajado.setAttribute(nome, filho.geometry.getAttribute(nome))
+      semCajado.setIndex(fora)
+      filho.geometry = semCajado
+    })
+    return () => {
+      for (const [malha, geometria] of originais) malha.geometry = geometria
+    }
+  }
+  return { pedaco: { objeto, osso: `${lado[1]}Hand` }, esconder }
 }
 
 /** O cajado que vem no modelo do bispo, da rainha ou do rei, sozinho e com o enfeite em cima. */

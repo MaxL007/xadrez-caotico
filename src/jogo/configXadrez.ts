@@ -28,7 +28,7 @@ const PADRAO: ConfigXadrez = {
   // a média: boa de jogar e bonita na maioria dos aparelhos. A baixa fica pros fracos, a alta pros fortes
   qualidade: 'media',
   som: true,
-  volume: 0.6,
+  volume: 0.8,
   ambiente: true,
   toque: true,
   registro: true,

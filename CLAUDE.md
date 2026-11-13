@@ -240,6 +240,19 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
   (`maquinaAceitaEmpate`); fica gravado como "Empate por acordo". Entre amigos, a sala é o árbitro: um pedido por vez e
   um por lance de cada um, jogar recusa o pedido, e aceito termina com `motivo: 'acordo'`.
 
+## Promoção
+
+- A peça nova nasce sem os equipamentos: `sincronizarPecas(false, casa)` monta só ela vestida `porParte` (cada
+  equipamento numa malha própria, com `userData.parte`; nas outras peças não, por causa do desenho no celular), e
+  `encaixarEquipamentos` (`tabuleiro/animacoes/promocao.ts`) faz cada um surgir em volta, voar até o osso em que se
+  prende (`pecasDoEquipamento`, um pedaço por lado nos pares) e aparecer na peça ao chegar (som `encaixe`). O cajado de
+  sempre, que vem no modelo, some da mão até a cópia chegar (`cajadoQueVoa`).
+- No cavalo, o peão continua peão (`peaoCavaleiro`, sem a katana) e recebe o equipamento do cavaleiro; o cavalo da
+  casa chega sem ninguém (`esconderCavaleiro`) a galope, de fora do tabuleiro, numa curva até a casa, recebe a
+  montaria e o peão monta (`montarNoCavalo`): pé no estribo e mãos na sela, impulso, a perna direita passa por cima da
+  garupa, senta. Os pontos saem dos ossos do cavaleiro escondido; no fim ele volta e o peão sai, e o cavalo vira pro
+  inimigo. A pose vai por cima do clipe com `animacoes/posturas.ts`, como a luta sem arma.
+
 ## Tela de partida
 
 - Não há tela normal: o jogo ocupa sempre a página inteira, e no celular cada toque pede de novo a tela cheia do
@@ -269,3 +282,8 @@ fraco: a máquina responde a ele, mas nunca o joga.
 
 Tudo sintetizado em `src/som/sons.ts`, sem arquivos de áudio. Foi medido, nunca ouvido: o ruído é sorteado e o
 pico oscila, então deixe folga abaixo de 1,0.
+
+- A saída (`cadeiaDeSaida`): efeitos (×1,5) e ambiente (×1,6) → volume escolhido (padrão 0,8) → limitador a -12 dB
+  (ataque de 1 ms, senão o raio passava) → ×1,12. Ficou uns 11 dB acima do de antes, a pedido do usuário.
+  `node testes/medir-som.mjs` renderiza cada som fora da tela por essa mesma cadeia, no volume máximo, sozinho e em
+  grupo, e falha se algum pico passar de 0,98. Som novo ou reforço novo: rodar ele.

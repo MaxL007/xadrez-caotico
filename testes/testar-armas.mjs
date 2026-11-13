@@ -36,12 +36,16 @@ const socou = ({ tocados }) => tocados.indexOf('soco:jab') >= 0 && tocados.index
 const chutou = ({ tocados }) => tocados.indexOf('chute:ar') >= 0 && tocados.indexOf('chute:ar') < tocados.indexOf('chute') && tocados.some((s) => s.startsWith('queda:'))
 
 /** Monta a posição com a peça de quem joga vestida, captura e devolve os sons tocados e o estado do tabuleiro. */
-async function capturar(nome, { pgn, vestir, de, para }) {
+async function capturar(nome, { pgn, vestir, de, para, promocao = null }) {
   await h('vestirParaTeste', vestir)
   await h('carregarTeste', pgn, 'w')
   await esperarParar()
   await limparSons()
   await h('jogar', de, para)
+  if (promocao) {
+    await page.locator('[role=dialog] button').first().waitFor({ timeout: 20000 })
+    await h('escolherPromocao', promocao)
+  }
   await esperarParar()
   const tocados = await sons()
   const problemas = await h('problemasDoTabuleiro')
@@ -131,6 +135,48 @@ try {
   // =================== cavalo ===================
   const lanca = await capturar('lança', { pgn: '1. Nc3 d5', de: 'c3', para: 'd5', vestir: { n: { arma: 'lanca' } } })
   conferir('lança: o golpe do cavaleiro com som próprio', lanca.tocados.includes('golpe:lanca') && lanca.problemas.length === 0, lanca.tocados.join(' '))
+
+  // =================== promoção com equipamentos ===================
+  // o peão captura o cavalo em g8 e promove: os equipamentos surgem e se prendem na peça nova; no cavalo, vão pro
+  // peão, um cavalo chega, recebe a montaria e o peão monta
+  const PROMOVE = { pgn: '1. h4 g5 2. hxg5 h6 3. gxh6 Nf6 4. h7 Ng8', de: 'h7', para: 'g8' }
+  const encaixes = ({ tocados }) => tocados.filter((s) => s === 'encaixe').length
+  // a máquina joga logo depois e pode tomar a peça nova: o que estava à vista em g8 é anotado enquanto ela é branca
+  const vigiarG8 = () =>
+    page.evaluate(() => {
+      window.__vistoEmG8 = ''
+      window.__vigia = setInterval(() => {
+        const oitava = window.__xadrez.fen().split(' ')[0].split('/')[0].replace(/\d/g, (n) => '.'.repeat(Number(n)))
+        if (/[A-Z]/.test(oitava[6])) window.__vistoEmG8 = window.__xadrez.partesVisiveis('g8').join(',')
+      }, 80)
+    })
+  const vistoEmG8 = () => page.evaluate(() => (clearInterval(window.__vigia), window.__vistoEmG8))
+  await h('forcarGolpeSemArma', 'socos')
+  await vigiarG8()
+  const rainha = await capturar('promoção à rainha com equipamentos', { ...PROMOVE, promocao: 'q', vestir: { q: { cabeca: 'elmo', ombros: 'placas', arma: 'lua' } } })
+  conferir(
+    'promoção: os equipamentos surgem em volta da rainha e cada um se prende (elmo, duas placas, lua)',
+    rainha.tocados.includes('equipamento:surge') && encaixes(rainha) === 4 && rainha.problemas.length === 0 && (rainha.visto = await vistoEmG8()) === 'arma,cabeca,ombros',
+    `${rainha.tocados.join(' ')} | ${rainha.problemas.join('; ')} | à vista: ${rainha.visto}`,
+  )
+  await vigiarG8()
+  const cavalo = await capturar('promoção ao cavalo com equipamentos', { ...PROMOVE, promocao: 'n', vestir: { n: { cabeca: 'elmo', sela: 'guerra', arma: 'lanca' } } })
+  conferir(
+    'promoção ao cavalo: o elmo e a lança vão pro peão, o cavalo chega a galope, recebe a sela e o peão monta',
+    ['equipamento:surge', 'cavalo:chega', 'montar'].every((s) => cavalo.tocados.includes(s)) &&
+      encaixes(cavalo) === 3 &&
+      cavalo.tocados.indexOf('cavalo:chega') < cavalo.tocados.indexOf('montar') &&
+      cavalo.problemas.length === 0 &&
+      (cavalo.visto = await vistoEmG8()) === 'arma,cabeca,sela',
+    `${cavalo.tocados.join(' ')} | ${cavalo.problemas.join('; ')} | à vista: ${cavalo.visto}`,
+  )
+  const cavaloSemNada = await capturar('promoção ao cavalo sem equipamento', { ...PROMOVE, promocao: 'n', vestir: {} })
+  conferir(
+    'sem equipamento, o cavalo chega e o peão monta do mesmo jeito',
+    cavaloSemNada.tocados.includes('cavalo:chega') && cavaloSemNada.tocados.includes('montar') && encaixes(cavaloSemNada) === 0 && cavaloSemNada.problemas.length === 0,
+    `${cavaloSemNada.tocados.join(' ')} | ${cavaloSemNada.problemas.join('; ')}`,
+  )
+  await h('forcarGolpeSemArma', null)
 
   // =================== passos ===================
   await h('vestirParaTeste', null)

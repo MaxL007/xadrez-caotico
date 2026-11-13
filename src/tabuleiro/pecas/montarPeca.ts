@@ -8,7 +8,8 @@ import { assinaturaDaVestimenta, vestimenta } from './vestimenta'
 
 // Monta a peça de uma casa: o modelo RPG vestido ou, sem ele, a geométrica.
 
-export function buildPieceMesh(tipo: string, cor: 'w' | 'b'): THREE.Group {
+/** `porParte`: cada equipamento numa malha própria, pra ele aparecer sozinho (a peça da promoção). */
+export function buildPieceMesh(tipo: string, cor: 'w' | 'b', { porParte = false } = {}): THREE.Group {
   // peça com o modelo RPG carregado (malha + esqueleto + animações do Blender) em vez da
   // geométrica de sempre — mesmo "contrato" externo (userData.tipo/cor, rotação por cor, escala),
   // só a montagem interna que muda. Sem bainha/espada procedural aqui: o modelo é autocontido. Os
@@ -18,7 +19,7 @@ export function buildPieceMesh(tipo: string, cor: 'w' | 'b'): THREE.Group {
     const grupo = buildPecaRPG(modeloRPG, cor)
     // toda peça passa por aqui: sem escolha (o adversário, a máquina), fica sem arma
     const escolhas = cor === vestimenta.cor ? vestimenta.escolhas[tipo] : undefined
-    vestirPeca(grupo, tipo, escolhas ?? {}, materiaisDaPeca(cor))
+    vestirPeca(grupo, tipo, escolhas ?? {}, materiaisDaPeca(cor), { porParte })
     grupo.userData.vestimenta = assinaturaDaVestimenta(tipo, cor)
     grupo.userData.tipo = tipo
     grupo.userData.cor = cor

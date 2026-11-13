@@ -38,10 +38,11 @@ node testes/testar-convites.mjs    # convite por link e QR Code, com a câmera f
 node testes/testar-dificuldade.mjs # fácil, intermediário e difícil, e a força da máquina em cada um
 node testes/testar-empate.mjs      # empate com a máquina, taça no centro, aba de lances e peça que volta ao centro
 node testes/testar-qualidade.mjs   # média como padrão e a resolução de cada qualidade no computador e no celular
-node testes/testar-armas.mjs       # o ataque e o som de cada arma, o saque e os passos
+node testes/testar-armas.mjs       # o ataque e o som de cada arma, o saque, os passos e a promoção com equipamentos
+node testes/medir-som.mjs          # o pico de cada som pela cadeia de saída do jogo: nada estoura
 node testes/fotos-online.mjs       # fotos das telas, com o 3D ligado
 node testes/fotos-personalizacao.mjs  # fotos de cada peça vestida, na vitrine da Personalização
-node testes/fotos-armas.mjs        # fotos de cada ataque das armas, no instante certo (relógio parado)
+node testes/fotos-armas.mjs        # fotos de cada ataque das armas e da promoção, no instante certo (relógio parado)
 ```
 
 O aplicativo instalável só existe no build de produção, e o teste dele sobe o próprio servidor:

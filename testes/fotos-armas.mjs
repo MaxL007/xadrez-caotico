@@ -55,7 +55,7 @@ async function andarAte(condicao, arg, maximo, oQue) {
 const livre = () => andarAte(() => !window.__xadrez.ocupado(), null, 90000, 'fim do lance')
 
 /** `momentos`: [som, ms depois do som, arquivo]. O som fica registrado quando é pedido, mesmo que toque mais tarde. */
-async function fotografar(nome, { pgn, vestir, golpe = null, de, para, camera, momentos }) {
+async function fotografar(nome, { pgn, vestir, golpe = null, de, para, promocao = null, camera, momentos }) {
   if (so && !so.includes(nome)) return
   await h('vestirParaTeste', vestir)
   await h('forcarGolpeSemArma', golpe)
@@ -65,6 +65,10 @@ async function fotografar(nome, { pgn, vestir, golpe = null, de, para, camera, m
   await h('aproximarDaCasa', para, ...camera)
   await page.evaluate(() => (window.__sonsTocados.length = 0))
   await h('jogar', de, para)
+  if (promocao) {
+    await andarAte(() => document.querySelector('[role=dialog] button') !== null, null, 20000, `${nome}: pergunta da promoção`)
+    await h('escolherPromocao', promocao)
+  }
   let antes = 0
   let somAnterior = null
   for (const [som, espera, arquivo] of momentos) {
@@ -111,6 +115,45 @@ try {
   await fotografar('chute', { ...PEAO, camera: DE_LADO, vestir: {}, golpe: 'chute', momentos: [['chute:ar', 0, 'chute-camara.png'], ['chute', 0, 'chute-acerto.png'], ['chute', 350, 'chute-queda.png']] })
   await fotografar('chute-torre', { ...TORRE, camera: [3.4, -90, 74], vestir: {}, golpe: 'chute', momentos: [['chute', 0, 'chute-torre.png']] })
   await fotografar('socos-rainha', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', camera: [3.4, 100, 74], vestir: {}, golpe: 'socos', momentos: [['soco', 0, 'socos-rainha.png']] })
+  // a promoção com equipamentos: eles surgem em volta da peça nova e se prendem nela; no cavalo, o peão recebe o do
+  // cavaleiro, um cavalo chega a galope, recebe a montaria e o peão monta
+  const PROMOCAO = { pgn: '1. h4 g5 2. hxg5 h6 3. gxh6 Nf6 4. h7 Ng8', de: 'h7', para: 'g8', golpe: 'socos' }
+  await fotografar('promocao-rainha', {
+    ...PROMOCAO,
+    promocao: 'q',
+    camera: [3.6, -35, 62],
+    vestir: { q: { cabeca: 'elmo', ombros: 'espinhos', maos: 'garras', arma: 'lua' } },
+    momentos: [['equipamento:surge', 350, 'promocao-rainha-surgem.png'], ['encaixe', 0, 'promocao-rainha-encaixe.png'], ['encaixe', 900, 'promocao-rainha-vestida.png']],
+  })
+  await fotografar('promocao-cavalo', {
+    ...PROMOCAO,
+    promocao: 'n',
+    camera: [5.4, -30, 56],
+    vestir: { n: { cabeca: 'elmo', ombros: 'placas', peito: 'brasao', arma: 'lanca', cavalo: 'armadura', sela: 'guerra', cabresto: 'guerra' } },
+    momentos: [
+      ['equipamento:surge', 350, 'promocao-cavalo-surgem.png'],
+      ['cavalo:chega', 700, 'promocao-cavalo-chegando.png'],
+      ['cavalo:chega', 1700, 'promocao-cavalo-parou.png'],
+      ['montar', 0, 'promocao-cavalo-estribo.png'],
+      ['montar', 450, 'promocao-cavalo-perna.png'],
+      ['montar', 1000, 'promocao-cavalo-sentado.png'],
+      ['montar', 2600, 'promocao-cavalo-montado.png'],
+    ],
+  })
+  // a montaria de perto, do lado em que o peão sobe
+  await fotografar('promocao-montar', {
+    ...PROMOCAO,
+    promocao: 'n',
+    camera: [2.4, 80, 72],
+    vestir: { n: { cabeca: 'elmo', sela: 'guerra' } },
+    momentos: [
+      ['montar', -50, 'montar-1-estribo.png'],
+      ['montar', 300, 'montar-2-impulso.png'],
+      ['montar', 600, 'montar-3-perna.png'],
+      ['montar', 900, 'montar-4-sentando.png'],
+      ['montar', 1300, 'montar-5-sentado.png'],
+    ],
+  })
 } finally {
   await browser.close()
 }

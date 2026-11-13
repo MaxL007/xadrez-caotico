@@ -22,8 +22,10 @@ import { ouvirDados } from '../dados/db'
 import { entrarEmSala, pedirRevanche, recusarSala, sessaoAtual, useSessao } from '../dados/servidor'
 import { abrirConexaoDaSala, type ConexaoDaSala, type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../dados/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../dados/xadrezAprendizadoRepo'
-import { carregarPersonalizacao, ouvirPersonalizacao, personalizacaoAtual } from '../conta/personalizacao'
+import { carregarPersonalizacao, ouvirPersonalizacao, personalizacaoAtual, type Peca } from '../conta/personalizacao'
 import { animarAscensao, animarPetalas } from './animacoes/cerimonias'
+import { cavaloChegaEMontam, daMontaria, doCavaleiro, encaixarEquipamentos, esconderPartes, partesVestidas, peaoCavaleiro } from './animacoes/promocao'
+import { atualizarPosturas, desfazerPosturas } from './animacoes/posturas'
 import { animarComemoracao, animarGestoAmigavel, animarRecusa, atualizarGestoRPG, POOL_GESTOS, voltarAoDescanso } from './animacoes/gestos'
 import { animarPosicao, animarPosicaoRPG, deslocarRPG, diferencaAngular, pararRPG, pecaSaltaRPG, rumoDeDescanso, rumoEntre, virarRPG } from './animacoes/movimento'
 import { animarQuedaEDesaparecimento, arremessarPeca, prepararParaSumir } from './animacoes/queda'
@@ -31,7 +33,7 @@ import { COR_DESTINO, COR_SELECIONADA, COR_XEQUE, criarTexturaMadeira, criarText
 import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, CHANCE_HONRA_SAMURAI, DISTANCIA_REVERENCIA, type EstiloAtaque } from './combate/golpes'
 import { alcanceDaMaca, ARMAS_DA_TORRE, atualizarMarretadas, baterComMarreta, cairDaMaca, esmagarPeca, MACA_ERGUIDA_ATE_MS, MARRETA_PANCADA_MS, marretadas, ondaDaMarretada, pancadaNoPeito, poeiraDaPancada, prenderPeloPeito, soltarDaMaca } from './combate/marreta'
 import { lancarOndaDoRei, lancarPoderDoBispo, lancarRaioDaDama } from './combate/poderes'
-import { materiaisPorFaccao, materialCoroa } from './pecas/materiais'
+import { materiaisDaPeca, materiaisPorFaccao, materialCoroa } from './pecas/materiais'
 import { clipesRPGComPrefixo, type EspadaRPG, garantirModelosRPG, guardarEspadaRPG, modelosRPG, mostrarEspadaRPG, novaSequenciaRPG, sacarEspadaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez, tocarGolpeRPG } from './pecas/modelosRPG'
 import { buildPieceMesh } from './pecas/montarPeca'
 import { armaDoPeaoNoTabuleiro, assinaturaDaVestimenta, definirVestimenta, vestimenta } from './pecas/vestimenta'
@@ -550,7 +552,9 @@ export function ChessBoard3D() {
 
     // as peças usam geometria/material compartilhados (cache por tipo/cor), então aqui só
     // desmonta o grupo — nunca chama dispose(), senão quebraria as peças que ainda usam o cache
-    function sincronizarPecas(recriar = false) {
+    /** `porParteEm`: a peça nova dessa casa sai com cada equipamento numa malha própria (a da promoção, que recebe
+     * os equipamentos voando). */
+    function sincronizarPecas(recriar = false, porParteEm?: string) {
       definirVestimenta({ cor: corHumanoRef.current, escolhas: vestimentaDeTeste ?? personalizacaoAtual().escolhas })
       if (recriar) {
         // inclusive as que estavam caindo/sumindo de uma captura em andamento
@@ -581,7 +585,7 @@ export function ChessBoard3D() {
             meshesAntigos.delete(casa.square)
             continue
           }
-          const mesh = buildPieceMesh(casa.type, casa.color)
+          const mesh = buildPieceMesh(casa.type, casa.color, { porParte: casa.square === porParteEm })
           const { x, z } = squareToPosPeca(casa.square)
           mesh.position.set(x, 0.05, z)
           piecesGroup.add(mesh)
@@ -929,18 +933,86 @@ export function ChessBoard3D() {
             terminouUma()
             return
           }
-          // promoção: a ascensão — a luz envolve o peão, ele levita e vira a peça nova
+          // promoção: a ascensão — a luz envolve o peão, ele levita e vira a peça nova, que nasce sem os
+          // equipamentos: eles surgem em volta e voam até ela. No cavalo, o peão continua peão, recebe o equipamento
+          // do cavaleiro, e um cavalo chega a galope pra ele montar
           tocarSom('promocao')
+          const tipoNovo = (lance.promotion ?? 'q') as Peca
+          const corDoBrilho = materiaisPorFaccao[lance.color].brilho.color
+          const escolhas = lance.color === vestimenta.cor ? vestimenta.escolhas : {}
+          const vestidas = partesVestidas(tipoNovo, escolhas)
+          const materiais = materiaisDaPeca(lance.color)
+          const destino = squareToPosPeca(casaDestino)
+          if (tipoNovo === 'n' && modelosRPG.n && modelosRPG.p) {
+            let cavalo: THREE.Group | undefined
+            let peao: THREE.Group | null = null
+            animarAscensao(
+              scene,
+              meshMovendo,
+              corDoBrilho,
+              () => {
+                if (!vigente()) return undefined
+                sincronizarPecas(false, casaDestino)
+                cavalo = pieceMeshBySquare.get(casaDestino)
+                peao = peaoCavaleiro(lance.color, escolhas.n ?? {}, materiais)
+                if (!cavalo || !peao) return cavalo
+                cavalo.visible = false
+                peao.position.set(destino.x, 0.05, destino.z)
+                esconderPartes(peao, doCavaleiro(vestidas))
+                piecesGroup.add(peao)
+                return peao
+              },
+              () => {
+                const peaoQueMonta = peao
+                if (!vigente() || !cavalo || !peaoQueMonta) {
+                  terminouUma()
+                  return
+                }
+                const cavaloDaCasa = cavalo
+                encaixarEquipamentos({
+                  cena: scene,
+                  peca: peaoQueMonta,
+                  tipo: 'n',
+                  partes: doCavaleiro(vestidas),
+                  materiais,
+                  cor: corDoBrilho,
+                  continua: vigente,
+                  aoTerminar: () =>
+                    cavaloChegaEMontam({
+                      cena: scene,
+                      cavalo: cavaloDaCasa,
+                      peao: peaoQueMonta,
+                      destino,
+                      partesDaMontaria: daMontaria(vestidas),
+                      materiais,
+                      cor: corDoBrilho,
+                      continua: vigente,
+                      aoTerminar: terminouUma,
+                    }),
+                })
+              },
+            )
+            return
+          }
+          let pecaNova: THREE.Object3D | undefined
           animarAscensao(
             scene,
             meshMovendo,
-            materiaisPorFaccao[lance.color].brilho.color,
+            corDoBrilho,
             () => {
               if (!vigente()) return undefined
-              sincronizarPecas()
-              return pieceMeshBySquare.get(casaDestino)
+              sincronizarPecas(false, casaDestino)
+              pecaNova = pieceMeshBySquare.get(casaDestino)
+              if (pecaNova) esconderPartes(pecaNova, vestidas)
+              return pecaNova
             },
-            terminouUma,
+            () => {
+              if (!vigente() || !pecaNova) {
+                terminouUma()
+                return
+              }
+              encaixarEquipamentos({ cena: scene, peca: pecaNova, tipo: tipoNovo, partes: vestidas, materiais, cor: corDoBrilho, continua: vigente, aoTerminar: terminouUma })
+            },
           )
         })
         const torre = torreDe ? pieceMeshBySquare.get(torreDe) : undefined
@@ -1846,12 +1918,14 @@ export function ChessBoard3D() {
       const delta = relogio.getDelta()
       const agora = performance.now()
       desfazerPosesDasLutas()
+      desfazerPosturas()
       for (const peca of piecesGroup.children) {
         ;(peca.userData.mixer as THREE.AnimationMixer | undefined)?.update(delta)
         atualizarGestoRPG(peca, agora)
       }
       atualizarMarretadas(agora)
       atualizarLutas(agora)
+      atualizarPosturas(agora)
       atualizarGiroCamera(agora)
       if (xequeMesh.visible) xequeMat.opacity = 0.45 + 0.25 * ((Math.sin(agora / 260) + 1) / 2)
       controls.update()
@@ -2010,6 +2084,16 @@ export function ChessBoard3D() {
         jogar: (de: string, para: string) => {
           tentarSelecionar(de as Square)
           tentarMover(para as Square)
+        },
+        /** Responde a pergunta da promoção, como quem toca na peça. */
+        escolherPromocao: (peca: PecaPromocao) => resolverPromocaoRef.current?.(peca),
+        /** As partes da personalização à vista na peça da casa (a da promoção, vestida parte por parte). */
+        partesVisiveis: (casa: string) => {
+          const partes = new Set<string>()
+          pieceMeshBySquare.get(casa as Square)?.traverse((filho) => {
+            if (typeof filho.userData.parte === 'string' && filho.visible) partes.add(filho.userData.parte)
+          })
+          return [...partes].sort()
         },
         lancesDoJogador: () => (chessRef.current.turn() === corHumanoRef.current ? chessRef.current.moves({ verbose: true }).map((m) => [m.from, m.to]) : []),
         fen: () => chessRef.current.fen(),

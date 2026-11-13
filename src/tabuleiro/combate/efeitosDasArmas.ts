@@ -754,6 +754,20 @@ function dividirCavaleiro(malha: THREE.SkinnedMesh): { cavalo: THREE.BufferGeome
   return { cavalo: parte(cavalo), cavaleiro: parte(cavaleiro) }
 }
 
+/** Deixa só o cavalo, sem ninguém montado (na promoção, ele chega sozinho), e devolve a função que traz o cavaleiro de
+ * volta. */
+export function esconderCavaleiro(peca: THREE.Object3D): () => void {
+  const originais: [THREE.SkinnedMesh, THREE.BufferGeometry][] = []
+  peca.traverse((obj) => {
+    if (!(obj instanceof THREE.SkinnedMesh) || !obj.geometry.getAttribute('skinIndex')) return
+    originais.push([obj, obj.geometry])
+    obj.geometry = dividirCavaleiro(obj).cavalo
+  })
+  return () => {
+    for (const [malha, geometria] of originais) malha.geometry = geometria
+  }
+}
+
 /** Pra que lado o cavalo foge: a borda do tabuleiro mais perto, sem voltar pro lado de quem bateu. */
 function rumoDaFuga(de: THREE.Vector3, quemBateu: THREE.Vector3): THREE.Vector3 {
   const longe = de.clone().sub(quemBateu).setY(0).normalize()
