@@ -41,13 +41,77 @@ function malhasDasPartes(peca: THREE.Object3D, partes: string[]): THREE.Object3D
   return malhas
 }
 
-/** Some com esses equipamentos da peça, até eles chegarem voando. */
-export function esconderPartes(peca: THREE.Object3D, partes: [string, string][]) {
+/** O cajado de sempre (o do modelo) que saiu da mão no clarão: o pedaço que vai voar e a função que devolve ele. */
+const cajadosEscondidos = new WeakMap<THREE.Object3D, { pedaco: PedacoQueVoa; mostrar: () => void }>()
+
+/** Some com esses equipamentos da peça, até eles chegarem voando. Com o `tipo`, some também o cajado que vem no
+ * modelo, se ele for um deles: senão ele aparece na mão já na descida e só depois sai pra voar. */
+export function esconderPartes(peca: THREE.Object3D, partes: [string, string][], tipo?: string) {
   for (const malha of malhasDasPartes(
     peca,
     partes.map(([parte]) => parte),
   ))
     malha.visible = false
+  if (tipo && !cajadosEscondidos.has(peca) && partes.some(([parte, opcao]) => parte === 'arma' && opcao === 'cajado')) {
+    const cajado = cajadoQueVoa(peca, tipo)
+    if (cajado) cajadosEscondidos.set(peca, { pedaco: cajado.pedaco, mostrar: cajado.esconder() })
+  }
+}
+
+const DA_ESPADA = ['EspadaLamina', 'EspadaCabo', 'CaboBainha', 'BainhaKatana']
+const DESFAZ_MS = 750
+
+/**
+ * O peão que vai ser promovido larga o que veste: cada equipamento e a arma brilham e se desfazem na luz, e ele sobe
+ * sem nada. A peça nova só fica completa no fim, quando o último equipamento chega e se encaixa. Os materiais são
+ * cópias (os de sempre são de todas as peças da mesma cor), devolvidas no fim.
+ */
+export function desfazerEquipamentos(peca: THREE.Object3D, continua: () => boolean) {
+  const malhas: THREE.Mesh[] = []
+  peca.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.visible && (obj.name.startsWith('vestimenta:') || DA_ESPADA.includes(obj.userData.material as string))) malhas.push(obj)
+  })
+  if (malhas.length === 0) return
+  const originais = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>()
+  const copias: THREE.Material[] = []
+  for (const malha of malhas) {
+    originais.set(malha, malha.material)
+    const copiar = (m: THREE.Material) => {
+      const copia = m.clone()
+      copia.transparent = true
+      copias.push(copia)
+      return copia
+    }
+    malha.material = Array.isArray(malha.material) ? malha.material.map(copiar) : copiar(malha.material)
+  }
+  const branco = new THREE.Color(0xffffff)
+  const devolver = () => {
+    for (const [malha, material] of originais) {
+      malha.material = material
+      malha.visible = false
+    }
+    copias.forEach((m) => m.dispose())
+  }
+  const inicio = performance.now()
+  const quadro = (agora: number) => {
+    if (!continua()) {
+      devolver()
+      return
+    }
+    const t = Math.min(1, (agora - inicio) / DESFAZ_MS)
+    // primeiro acende, depois some
+    const acende = Math.min(1, t / 0.45)
+    for (const copia of copias) {
+      copia.opacity = 1 - suave(entre(t, 0.35, 1))
+      if (copia instanceof THREE.MeshStandardMaterial) {
+        copia.emissive.copy(branco)
+        copia.emissiveIntensity = 1.4 * acende
+      }
+    }
+    if (t < 1) requestAnimationFrame(quadro)
+    else devolver()
+  }
+  requestAnimationFrame(quadro)
 }
 
 /** O osso do esqueleto do Mixamo (o corpo) ou do cavalo (Cavalo, Pescoco…). */
@@ -83,7 +147,7 @@ const VOO_MS = 640
 /** Cada equipamento surge em volta da peça, brilhando, voa até a parte dela e se prende ali. */
 export function encaixarEquipamentos(e: Encaixe) {
   const { cena, peca } = e
-  esconderPartes(peca, e.partes)
+  esconderPartes(peca, e.partes, e.tipo)
   interface Voo {
     parte: string
     pedaco: PedacoQueVoa
@@ -97,12 +161,12 @@ export function encaixarEquipamentos(e: Encaixe) {
   for (const [parte, opcao] of e.partes) {
     let pedacos: PedacoQueVoa[] = pecasDoEquipamento(e.tipo, parte, opcao, e.materiais)
     if (parte === 'arma' && opcao === 'cajado') {
-      // o cajado de sempre vem no modelo: some da mão até a cópia chegar
-      const cajado = cajadoQueVoa(peca, e.tipo)
+      // o cajado de sempre vem no modelo: saiu da mão no clarão (esconderPartes) e volta quando a cópia chegar
+      const cajado = cajadosEscondidos.get(peca)
+      cajadosEscondidos.delete(peca)
       if (cajado) {
         pedacos = [cajado.pedaco]
-        const mostrar = cajado.esconder()
-        mostrarAoChegar.set(parte, [mostrar])
+        mostrarAoChegar.set(parte, [cajado.mostrar])
       }
     }
     for (const pedaco of pedacos) voos.push({ parte, pedaco, brilho: spriteDeBrilho(e.cor, 0.5), saida: new THREE.Vector3(), giro: Math.random() * Math.PI * 2, chegou: false })

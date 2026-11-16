@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useEstadoPersistente } from '../app/estadoPersistente'
 import type { Idioma } from '../textos/idiomas'
 import type { Dificuldade } from './engine'
+import { RITMO_PADRAO, type Ritmo } from './relogio'
 
 export type QualidadeXadrez = 'baixa' | 'media' | 'alta'
 
@@ -22,6 +23,9 @@ export interface ConfigXadrez {
   idioma: Idioma
   /** A dificuldade escolhida no último "Novo jogo": a tela já abre com ela marcada. */
   dificuldade: Dificuldade
+  /** O modo do último "Novo jogo": normal, sem relógio, ou blitz, com o relógio no `ritmo`. */
+  modo: 'normal' | 'blitz'
+  ritmo: Ritmo
 }
 
 const PADRAO: ConfigXadrez = {
@@ -35,6 +39,8 @@ const PADRAO: ConfigXadrez = {
   telaMovel: true,
   idioma: 'pt-BR',
   dificuldade: 'intermediario',
+  modo: 'normal',
+  ritmo: RITMO_PADRAO,
 }
 
 /** A qualidade em uso, pra quem desenha 3D fora do tabuleiro (Loja, vitrine, taça) sem precisar do hook. */

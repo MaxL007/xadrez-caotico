@@ -672,15 +672,29 @@ async function guardarProgresso(pedido: Request, env: Ambiente) {
   return responder({ contagem: depois })
 }
 
-/** Vitória contra a máquina paga pela dificuldade em que foi jogada. */
+/** Vitória contra a máquina paga pela dificuldade em que foi jogada (no modo normal e na blitz, igual). */
 const PREMIO_DA_VITORIA: Record<string, number> = { facil: 1, intermediario: 2, dificil: 3 }
-const VITORIAS_PAGAS_POR_HORA = 20
+/** Recompensas de óticoins por vitória que uma conta recebe em 60 minutos, somando todos os modos. */
+const RECOMPENSAS_POR_HORA = 3
 const VITORIAS_POR_PEDIDO = 20
+
+/** Quando entraram as recompensas pagas na última hora (as vitórias sem prêmio, de valor 0, não contam). */
+async function recompensasNaHora(env: Ambiente, usuarioId: string, agora: number): Promise<number[]> {
+  const linhas = await env.DB.prepare('SELECT paga_em FROM vitorias_pagas WHERE usuario_id = ?1 AND paga_em > ?2 AND oticoins > 0 ORDER BY paga_em')
+    .bind(usuarioId, agora - UMA_HORA)
+    .all<{ paga_em: number }>()
+  return linhas.results.map((l) => l.paga_em)
+}
 
 /**
  * Paga as vitórias contra a máquina que o aparelho manda, cada partida uma vez só. O servidor confere a partida salva
  * na conta: terminada, vencida por quem joga e com a dificuldade dela. Como nas conquistas, confia no que o aparelho
- * salvou (refazer a partida não cabe nos 10 ms); o teto de vitórias pagas por hora segura quem tentar inventar.
+ * salvou (refazer a partida não cabe nos 10 ms).
+ *
+ * No máximo 3 recompensas por hora, em qualquer modo: a vitória que chega com as 3 vagas da hora já usadas fica
+ * registrada sem prêmio (valor 0) e não paga depois. Cada vitória vai num lote só, que é uma transação: o recibo pago
+ * só entra se a conta ainda tem vaga (contada dentro do próprio lote, então dois pedidos juntos não passam do teto), a
+ * moeda só entra se o recibo entrou, e o recibo sem prêmio só entra se o pago não entrou.
  */
 async function receberVitorias(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
@@ -690,15 +704,11 @@ async function receberVitorias(pedido: Request, env: Ambiente) {
   }
   const ids = [...new Set(partidas as string[])]
   const lista = ids.map((_, i) => `?${i + 2}`).join(', ')
-  const [salvas, recentes] = await Promise.all([
-    env.DB.prepare(`SELECT id, dados FROM registros WHERE usuario_id = ?1 AND store = 'xadrezPartidas' AND id IN (${lista})`)
-      .bind(usuario.id, ...ids)
-      .all<{ id: string; dados: string }>(),
-    env.DB.prepare('SELECT COUNT(*) AS n FROM vitorias_pagas WHERE usuario_id = ?1 AND paga_em > ?2').bind(usuario.id, Date.now() - UMA_HORA).first<{ n: number }>(),
-  ])
-  let vagas = VITORIAS_PAGAS_POR_HORA - (recentes?.n ?? 0)
+  const salvas = await env.DB.prepare(`SELECT id, dados FROM registros WHERE usuario_id = ?1 AND store = 'xadrezPartidas' AND id IN (${lista})`)
+    .bind(usuario.id, ...ids)
+    .all<{ id: string; dados: string }>()
   const agora = Date.now()
-  const candidatas: { id: string; valor: number }[] = []
+  const candidatas: { id: string; dificuldade: string; valor: number }[] = []
   for (const salva of salvas.results) {
     let partida: { status?: unknown; resultado?: unknown; dificuldade?: unknown; demonstracao?: unknown }
     try {
@@ -707,36 +717,52 @@ async function receberVitorias(pedido: Request, env: Ambiente) {
       continue
     }
     const venceu = partida.status === 'FINALIZADA' && typeof partida.resultado === 'string' && partida.resultado.startsWith('Você venceu') && !partida.demonstracao
-    const valor = typeof partida.dificuldade === 'string' && Object.hasOwn(PREMIO_DA_VITORIA, partida.dificuldade) ? PREMIO_DA_VITORIA[partida.dificuldade] : 0
-    if (venceu && valor && vagas > 0) {
-      candidatas.push({ id: salva.id, valor })
-      vagas--
-    }
+    const dificuldade = typeof partida.dificuldade === 'string' && Object.hasOwn(PREMIO_DA_VITORIA, partida.dificuldade) ? partida.dificuldade : null
+    if (venceu && dificuldade) candidatas.push({ id: salva.id, dificuldade, valor: PREMIO_DA_VITORIA[dificuldade] })
   }
+  // na ordem em que o aparelho mandou (a mais antiga primeiro): é ela que fica com a vaga da hora
+  candidatas.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
   const pagas: { id: string; oticoins: number }[] = []
+  const semPremio: string[] = []
   if (candidatas.length) {
     const resultados = await env.DB.batch(
-      candidatas.flatMap(({ id, valor }) => [
-        env.DB.prepare('INSERT INTO vitorias_pagas (usuario_id, partida_id, dificuldade, oticoins, paga_em) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT DO NOTHING').bind(
-          usuario.id,
-          id,
-          Object.keys(PREMIO_DA_VITORIA).find((d) => PREMIO_DA_VITORIA[d] === valor),
-          valor,
-          agora,
-        ),
+      candidatas.flatMap(({ id, dificuldade, valor }) => [
+        env.DB.prepare(
+          `INSERT INTO vitorias_pagas (usuario_id, partida_id, dificuldade, oticoins, paga_em)
+           SELECT ?1, ?2, ?3, ?4, ?5
+           WHERE (SELECT COUNT(*) FROM vitorias_pagas WHERE usuario_id = ?1 AND paga_em > ?6 AND oticoins > 0) < ?7
+           ON CONFLICT DO NOTHING`,
+        ).bind(usuario.id, id, dificuldade, valor, agora, agora - UMA_HORA, RECOMPENSAS_POR_HORA),
         // a moeda só entra se o recibo entrou
         env.DB.prepare('UPDATE usuarios SET oticoins = oticoins + ?1 * changes() WHERE id = ?2').bind(valor, usuario.id),
+        // sem vaga na hora: fica o recibo sem prêmio (se a vitória já tinha recibo, pago ou não, nada muda)
+        env.DB.prepare('INSERT INTO vitorias_pagas (usuario_id, partida_id, dificuldade, oticoins, paga_em) VALUES (?1, ?2, ?3, 0, ?4) ON CONFLICT DO NOTHING').bind(usuario.id, id, dificuldade, agora),
       ]),
     )
     candidatas.forEach(({ id, valor }, i) => {
-      if (resultados[i * 2].meta.changes) pagas.push({ id, oticoins: valor })
+      if (resultados[i * 3].meta.changes) pagas.push({ id, oticoins: valor })
+      else if (resultados[i * 3 + 2].meta.changes) semPremio.push(id)
     })
   }
-  const [conta, jaPagas] = await Promise.all([
+  const [conta, jaPagas, recebidas] = await Promise.all([
     env.DB.prepare('SELECT oticoins FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ oticoins: number }>(),
     env.DB.prepare(`SELECT partida_id FROM vitorias_pagas WHERE usuario_id = ?1 AND partida_id IN (${lista})`).bind(usuario.id, ...ids).all<{ partida_id: string }>(),
+    recompensasNaHora(env, usuario.id, agora),
   ])
-  return responder({ oticoins: conta?.oticoins ?? 0, pagas, jaPagas: jaPagas.results.map((p) => p.partida_id) })
+  return responder({
+    oticoins: conta?.oticoins ?? 0,
+    pagas,
+    semPremio,
+    jaPagas: jaPagas.results.map((p) => p.partida_id),
+    recompensas: { limite: RECOMPENSAS_POR_HORA, recebidas, agora },
+  })
+}
+
+/** Quantas recompensas a conta já recebeu na última hora: o aparelho mostra na tela de vitória se a próxima paga. */
+async function lerRecompensas(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const agora = Date.now()
+  return responder({ limite: RECOMPENSAS_POR_HORA, recebidas: await recompensasNaHora(env, usuario.id, agora), agora })
 }
 
 async function lerConquistas(pedido: Request, env: Ambiente) {
@@ -939,6 +965,7 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'POST' && caminho === '/conquistas/receber') return receberConquistas(pedido, env)
   if (metodo === 'POST' && caminho === '/conquistas/progresso') return guardarProgresso(pedido, env)
   if (metodo === 'POST' && caminho === '/vitorias/receber') return receberVitorias(pedido, env)
+  if (metodo === 'GET' && caminho === '/vitorias/recompensas') return lerRecompensas(pedido, env)
   if (metodo === 'POST' && caminho === '/presenca') return marcarPresenca(pedido, env)
   if (metodo === 'POST' && caminho === '/presenca/sair') return sairDaPresenca(pedido, env)
   if (metodo === 'GET' && caminho === '/amigos') return listarAmigos(pedido, env)

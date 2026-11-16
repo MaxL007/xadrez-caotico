@@ -206,7 +206,14 @@ export function PainelPerfil({
 
   const historico = useMemo(() => {
     const itens: ItemDoHistorico[] = [
-      ...partidas.map((p) => ({ id: p.id, quando: p.atualizadaEm, adversario: t('perfil.maquina'), desfecho: resultadoDaPartida(p), abrir: () => onVerPartida(p) })),
+      ...partidas.map((p) => ({
+        id: p.id,
+        quando: p.atualizadaEm,
+        // a blitz aparece com o ritmo
+        adversario: p.relogio ? `${t('perfil.maquina')} · ${t('blitz.titulo', { ritmo: p.relogio.ritmo })}` : t('perfil.maquina'),
+        desfecho: resultadoDaPartida(p),
+        abrir: () => onVerPartida(p),
+      })),
       ...(token ? salas : []).map((s) => ({
         id: s.codigo,
         quando: s.atualizadaEm,

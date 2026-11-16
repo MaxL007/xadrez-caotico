@@ -2,8 +2,9 @@
 
 Xadrez 3D no navegador. As peças lutam de verdade a cada captura. Dá pra jogar contra a máquina, sem conta
 nenhuma, ou criar uma conta gratuita, montar o perfil com foto e moldura, adicionar amigos pelo nome, pelo ID, por um
-link de convite ou pelo QR Code, e chamá-los pra uma partida amistosa. As partidas contra a máquina rendem conquistas e
-óticoins, a moeda do jogo. O site se instala como aplicativo no celular e no computador, e abre sem internet pra jogar
+link de convite ou pelo QR Code, e chamá-los pra uma partida amistosa. Contra a máquina dá pra jogar sem relógio ou na
+blitz (3+2, 5+0 ou 5+3, pelas regras da FIDE). As partidas contra a máquina rendem conquistas e óticoins, a moeda do
+jogo. O site se instala como aplicativo no celular e no computador, e abre sem internet pra jogar
 contra a máquina.
 
 ## Como funciona
@@ -37,6 +38,7 @@ node testes/testar-volta-da-aba.mjs  # a tela volta inteira depois de perder o c
 node testes/testar-convites.mjs    # convite por link e QR Code, com a câmera falsa do Chrome
 node testes/testar-dificuldade.mjs # fácil, intermediário e difícil, e a força da máquina em cada um
 node testes/testar-empate.mjs      # empate com a máquina, taça no centro, aba de lances e peça que volta ao centro
+node testes/testar-blitz.mjs       # blitz: modo e ritmo, o relógio, o fim no tempo e a taça que diz se a vitória paga
 node testes/testar-qualidade.mjs   # média como padrão e a resolução de cada qualidade no computador e no celular
 node testes/testar-armas.mjs       # o ataque e o som de cada arma, o saque, os passos e a promoção com equipamentos
 node testes/medir-som.mjs          # o pico de cada som pela cadeia de saída do jogo: nada estoura

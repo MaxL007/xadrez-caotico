@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js'
-import { guardarProgresso, lerConquistas, receberConquistas, receberVitorias, sessaoAtual } from '../dados/servidor'
+import { guardarProgresso, lerConquistas, lerRecompensas, receberConquistas, receberVitorias, sessaoAtual } from '../dados/servidor'
 import type { Dificuldade } from '../jogo/engine'
 import { resultadoDaPartida, type PartidaXadrez } from '../dados/xadrezRepo'
 import catalogo from '../catalogos/conquistas.json'
@@ -78,15 +78,28 @@ function vitoriasPagasNoAparelho(usuario: string): string[] {
   }
 }
 
+/** No máximo 3 recompensas por vitória a cada 60 minutos, em qualquer modo (o servidor confere e é quem vale). */
+export const RECOMPENSAS_POR_HORA = 3
+const UMA_HORA = 60 * 60 * 1000
+
+/** Vitória contra a máquina que paga óticoins, ganha e ainda não registrada no servidor. */
+const vitoriaAReceber = (p: PartidaXadrez, registradas: Set<string>) =>
+  !!p.dificuldade && !p.demonstracao && p.status === 'FINALIZADA' && resultadoDaPartida(p) === 'venceu' && !registradas.has(p.id)
+
 /**
  * Manda as vitórias contra a máquina que ainda não foram pagas (só as jogadas com dificuldade escolhida). A que ainda
- * não subiu pra nuvem fica pra próxima vez. Devolve quanto entrou agora e o saldo, se o servidor respondeu.
+ * não subiu pra nuvem fica pra próxima vez. Devolve quanto entrou agora, quantas ficaram sem prêmio pelo limite da hora
+ * e o saldo, se o servidor respondeu.
  */
-async function receberAsVitorias(partidas: PartidaXadrez[]): Promise<{ premio: number; oticoins: number } | null> {
+async function receberAsVitorias(partidas: PartidaXadrez[]): Promise<{ premio: number; semPremio: number; oticoins: number } | null> {
   const usuario = sessaoAtual()?.usuario.id
   if (!usuario) return null
   const pagas = new Set(vitoriasPagasNoAparelho(usuario))
-  const aPagar = partidas.filter((p) => p.dificuldade && !p.demonstracao && p.status === 'FINALIZADA' && resultadoDaPartida(p) === 'venceu' && !pagas.has(p.id)).slice(0, 20)
+  // as mais antigas primeiro: elas chegaram antes e ficam com as vagas da hora
+  const aPagar = partidas
+    .filter((p) => vitoriaAReceber(p, pagas))
+    .sort((a, b) => a.atualizadaEm - b.atualizadaEm)
+    .slice(0, 20)
   if (aPagar.length === 0) return null
   const resposta = await receberVitorias(aPagar.map((p) => p.id))
   for (const id of resposta.jaPagas) pagas.add(id)
@@ -95,7 +108,39 @@ async function receberAsVitorias(partidas: PartidaXadrez[]): Promise<{ premio: n
   } catch {
     // sem localStorage: manda de novo da próxima vez, e o servidor não paga duas vezes
   }
-  return { premio: resposta.pagas.reduce((soma, p) => soma + p.oticoins, 0), oticoins: resposta.oticoins }
+  return { premio: resposta.pagas.reduce((soma, p) => soma + p.oticoins, 0), semPremio: resposta.semPremio?.length ?? 0, oticoins: resposta.oticoins }
+}
+
+/** A vitória que acabou de sair paga? Sem vaga na hora, diz a partir de quando (no relógio deste aparelho) volta a pagar. */
+export type RecompensaDaVitoria = { paga: true } | { paga: false; liberaEm: number }
+
+/**
+ * Confere, na tela de vitória, se ela vai pagar: as recompensas que o servidor já pagou na última hora mais as vitórias
+ * deste aparelho que ainda vão chegar lá antes dela. Sem conexão, conta que paga (quem decide é o servidor, depois).
+ */
+export async function recompensaDaVitoria(partidas: PartidaXadrez[], idDaVitoria: string): Promise<RecompensaDaVitoria> {
+  const usuario = sessaoAtual()?.usuario.id
+  if (!usuario) return { paga: true }
+  let recompensas: Awaited<ReturnType<typeof lerRecompensas>>
+  try {
+    recompensas = await lerRecompensas()
+  } catch {
+    return { paga: true }
+  }
+  const registradas = new Set(vitoriasPagasNoAparelho(usuario))
+  // tudo no relógio do servidor; `diferenca` leva pro deste aparelho
+  const { limite, agora } = recompensas
+  const diferenca = Date.now() - agora
+  const naHora = () => pagas.filter((quando) => quando > agora - UMA_HORA)
+  const pagas = [...recompensas.recebidas]
+  // as vitórias daqui que ainda não chegaram vão antes desta: as que acharem vaga, pagam agora
+  for (const _ of partidas.filter((p) => p.id !== idDaVitoria && vitoriaAReceber(p, registradas))) {
+    if (naHora().length < limite) pagas.push(agora)
+  }
+  const ocupadas = naHora().sort((a, b) => a - b)
+  if (ocupadas.length < limite) return { paga: true }
+  // libera quando sobrar menos de `limite` na última hora: quando a que ficou de fora da conta fizer uma hora
+  return { paga: false, liberaEm: ocupadas[ocupadas.length - limite] + UMA_HORA + diferenca }
 }
 
 export interface SituacaoDasConquistas {
@@ -107,6 +152,8 @@ export interface SituacaoDasConquistas {
   novas: Conquista[]
   /** Óticoins das vitórias contra a máquina pagas agora. */
   premioDasVitorias: number
+  /** Vitórias que chegaram agora com as recompensas da hora já usadas: ficam sem prêmio. */
+  vitoriasSemPremio: number
 }
 
 // o último progresso que o servidor guardou, por conta: só manda de novo quando muda
@@ -126,15 +173,16 @@ function enviarProgresso(contagem: Contagem) {
 /** Confere o que foi alcançado e recebe as óticoins do que ainda não foi pago. */
 export async function verificarConquistas(partidas: PartidaXadrez[]): Promise<SituacaoDasConquistas> {
   const contagem = await contarPartidas(partidas)
-  if (!sessaoAtual()) return { contagem, oticoins: null, recebidas: [], novas: [], premioDasVitorias: 0 }
+  if (!sessaoAtual()) return { contagem, oticoins: null, recebidas: [], novas: [], premioDasVitorias: 0, vitoriasSemPremio: 0 }
   enviarProgresso(contagem)
   // as vitórias pagam antes: sem conexão, as conquistas seguem do mesmo jeito
   const vitorias = await receberAsVitorias(partidas).catch(() => null)
   const premioDasVitorias = vitorias?.premio ?? 0
+  const vitoriasSemPremio = vitorias?.semPremio ?? 0
   const conta = await lerConquistas()
   contagem.convites = conta.convites
   const alcancadas = CONQUISTAS.filter((c) => contagem[c.medida] >= c.meta && !conta.recebidas.includes(c.id))
-  if (alcancadas.length === 0) return { contagem, oticoins: conta.oticoins, recebidas: conta.recebidas, novas: [], premioDasVitorias }
+  if (alcancadas.length === 0) return { contagem, oticoins: conta.oticoins, recebidas: conta.recebidas, novas: [], premioDasVitorias, vitoriasSemPremio }
   const pagas = await receberConquistas(alcancadas.map((c) => c.id))
   return {
     contagem,
@@ -142,5 +190,6 @@ export async function verificarConquistas(partidas: PartidaXadrez[]): Promise<Si
     recebidas: pagas.recebidas,
     novas: CONQUISTAS.filter((c) => pagas.novas.includes(c.id)),
     premioDasVitorias,
+    vitoriasSemPremio,
   }
 }

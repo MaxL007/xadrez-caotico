@@ -9,11 +9,6 @@ export const COR_XEQUE = 0xe53935
 /** Meia largura do tabuleiro com a moldura e as coordenadas — o que a câmera precisa enquadrar. */
 export const MEIA_LARGURA_TABULEIRO = 4.6
 
-/** Celular (em pé, ou deitado com a tela baixa): ao começar uma partida o tabuleiro vai pra tela cheia. */
-export function ehCelular(): boolean {
-  return window.matchMedia?.('(max-width: 767px), (pointer: coarse) and (max-height: 500px)').matches ?? false
-}
-
 export function squareToPos(square: string): { x: number; z: number } {
   const file = square.charCodeAt(0) - 97
   const rank = parseInt(square[1], 10) - 1

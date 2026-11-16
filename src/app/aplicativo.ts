@@ -20,8 +20,9 @@ interface Estado {
   versaoNova: boolean
 }
 
+// o manifest pede tela cheia; onde ela não existe (iPhone), o aplicativo abre como "standalone"
 const abertoComoAplicativo = () =>
-  window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
+  window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
 const ehIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
 let estado: Estado = { pedido: null, noIphone: false, instalado: false, versaoNova: false }

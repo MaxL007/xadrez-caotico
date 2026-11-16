@@ -163,8 +163,16 @@ As pastas de `src` são por função:
   ficam de fora. Capturas, xeques, roques e vitórias saem das partidas salvas (`contarPartidas`); convites aceitos, o
   servidor conta.
 - Vitória contra a máquina paga pela dificuldade: 1 no fácil, 2 no intermediário, 3 no difícil (`POST /vitorias/receber`,
-  tabela `vitorias_pagas`). O servidor confere a partida salva na conta (terminada, vencida, com dificuldade), paga cada
-  uma uma vez só e no máximo 20 por hora. O aparelho manda ao abrir o menu; a taça já mostra quanto vai entrar.
+  tabela `vitorias_pagas`). O servidor confere a partida salva na conta (terminada, vencida, com dificuldade) e paga cada
+  uma uma vez só. A blitz paga igual. O aparelho manda ao abrir o menu, as mais antigas primeiro.
+- No máximo 3 recompensas por hora, somando os modos (`RECOMPENSAS_POR_HORA`, nos dois lados; as conquistas ficam fora
+  dessa conta, porque já pagam uma vez só): janela móvel de 60 minutos, contada em `vitorias_pagas` com `oticoins > 0`.
+  A vitória que chega sem vaga fica registrada com valor 0 (sem prêmio) e não paga depois, senão quem vence muito em
+  pouco tempo só receberia mais tarde. Cada vitória é um lote de três comandos (o recibo pago só entra se a contagem da
+  hora, feita dentro do próprio comando, ainda tem vaga; a moeda com `changes()`; o recibo sem prêmio com `ON CONFLICT
+  DO NOTHING`), então pedidos ao mesmo tempo não passam do teto. `GET /vitorias/recompensas` diz as da última hora: a
+  taça (`recompensaDaVitoria`) pergunta antes de prometer e, sem vaga, diz a que horas volta a pagar; o menu avisa as
+  vitórias que ficaram sem prêmio.
 - O servidor não refaz as partidas (não cabe nos 10 ms): confia na contagem do aparelho, mas cada conquista paga uma vez
   só (tabela `conquistas`), então o máximo de uma conta é a soma do catálogo. O recibo e a moeda entram juntos no mesmo
   lote, com `changes()`.
@@ -240,13 +248,31 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
   (`maquinaAceitaEmpate`); fica gravado como "Empate por acordo". Entre amigos, a sala é o árbitro: um pedido por vez e
   um por lance de cada um, jogar recusa o pedido, e aceito termina com `motivo: 'acordo'`.
 
+## Blitz
+
+- Contra a máquina, o "Novo jogo" tem o modo: normal (sem relógio) ou blitz, no ritmo 3+2 (o do Mundial da FIDE), 5+0
+  ou 5+3, lembrados em `config.modo` e `config.ritmo`. A partida grava `relogio: { ritmo, w, b }` (o que resta a cada
+  lado no último lance); sem ele não há relógio. Entre amigos ainda não tem (o relógio teria de ser da sala, no servidor).
+- `src/jogo/relogio.ts` (`RelogioDeXadrez`): corre o tempo de quem tem a vez; quem joga ganha o acréscimo, a partir do
+  primeiro lance. Quem zera perde ("Você venceu (tempo)" / "A máquina venceu (tempo)"), a não ser que o outro lado não
+  consiga dar mate por nenhuma sequência legal, nem com ajuda (FIDE 6.9, `semMaterialParaMate`): aí é empate.
+- Adaptações iguais pros dois lados: o relógio para enquanto a peça anda e golpeia (`lancesEmAndamento`, como quem
+  aperta o relógio ao soltar a peça), com o jogo escondido e fora da partida (no menu o tempo é gravado e volta no
+  "Continuar"). A máquina com menos de 20 s não faz a pausa e pensa no máximo 1/30 do que resta.
+- Quem desconta é o tabuleiro (`andarRelogioDaPartida`, também antes de cada lance: se zerou, o lance não sai); o
+  `RelogioDaPartida.tsx`, no canto de cima, chama a cada 0,1 s e só desenha quando o que aparece muda.
+
 ## Promoção
 
 - A peça nova nasce sem os equipamentos: `sincronizarPecas(false, casa)` monta só ela vestida `porParte` (cada
   equipamento numa malha própria, com `userData.parte`; nas outras peças não, por causa do desenho no celular), e
   `encaixarEquipamentos` (`tabuleiro/animacoes/promocao.ts`) faz cada um surgir em volta, voar até o osso em que se
   prende (`pecasDoEquipamento`, um pedaço por lado nos pares) e aparecer na peça ao chegar (som `encaixe`). O cajado de
-  sempre, que vem no modelo, some da mão até a cópia chegar (`cajadoQueVoa`).
+  sempre, que vem no modelo, sai da mão já no clarão (`esconderPartes` com o tipo) e volta quando a cópia chegar
+  (`cajadoQueVoa`): escondido só no começo do voo, ele aparecia na descida.
+- Pedido do usuário: a peça só fica completa no fim, quando o último equipamento se encaixa. Por isso, quando a luz
+  começa, o que o peão veste (as malhas `vestimenta:*` e a katana) acende e some nela (`desfazerEquipamentos`, com
+  cópias dos materiais), e ele sobe sem nada.
 - No cavalo, o peão continua peão (`peaoCavaleiro`, sem a katana) e recebe o equipamento do cavaleiro; o cavalo da
   casa chega sem ninguém (`esconderCavaleiro`) a galope, de fora do tabuleiro, numa curva até a casa, recebe a
   montaria e o peão monta (`montarNoCavalo`): pé no estribo e mãos na sela, impulso, a perna direita passa por cima da
@@ -255,8 +281,10 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
 
 ## Tela de partida
 
-- Não há tela normal: o jogo ocupa sempre a página inteira, e no celular cada toque pede de novo a tela cheia do
-  navegador, se ela tiver saído. A situação da partida, o convite esperando o amigo, o pedido de empate e a revanche
+- Não há tela normal: o jogo ocupa sempre a página inteira. A tela cheia do navegador não é mais pedida: o Chrome do
+  celular mostra embaixo, cada vez que ela entra, "Para sair da tela cheia, arraste…", e nenhuma página tira esse
+  aviso; o usuário pediu a parte de baixo limpa. Instalado, o jogo abre sem barras (`display: fullscreen` no manifest;
+  no iPhone vale como `standalone`). A situação da partida, o convite esperando o amigo, o pedido de empate e a revanche
   ficam embaixo; o menu no canto de cima. Não há botão de som na partida (fica nas Configurações).
 - O fim da partida aparece no centro (`ResultadoDaPartida.tsx`): na vitória, uma taça 3D com renderizador próprio, na
   resolução da tela e transparente, pra não depender da qualidade do tabuleiro.

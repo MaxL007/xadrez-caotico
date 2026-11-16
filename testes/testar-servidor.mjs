@@ -692,6 +692,36 @@ try {
   }
   conferir('sem sessão não recebe vitórias', (await api('POST', '/vitorias/receber', { corpo: { partidas: ['vitoria-facil'] } })).status === 401)
 
+  // no máximo 3 recompensas por hora, em qualquer modo: a Ana já recebeu 2 (fácil e difícil)
+  await salvarPartidas([
+    partidaSalva('vitoria-blitz', { resultado: 'Você venceu (tempo)', dificuldade: 'intermediario', relogio: { ritmo: '3+2', w: 1200, b: 0 } }),
+    partidaSalva('vitoria-4', { resultado: 'Você venceu (xeque-mate)', dificuldade: 'dificil' }),
+    partidaSalva('vitoria-5', { resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+  ])
+  const antesDoLimite = await saldoDaAna()
+  const noLimite = (await receberVitorias(['vitoria-blitz', 'vitoria-4', 'vitoria-5'])).json
+  conferir(
+    'a terceira recompensa da hora paga (a blitz paga como o modo normal); as outras ficam sem prêmio',
+    noLimite?.pagas?.length === 1 && noLimite.pagas[0].id === 'vitoria-blitz' && noLimite.pagas[0].oticoins === 2 && noLimite.semPremio?.length === 2 && noLimite.oticoins === antesDoLimite + 2,
+    JSON.stringify(noLimite),
+  )
+  conferir('a resposta traz as 3 recompensas da hora', noLimite?.recompensas?.limite === 3 && noLimite.recompensas.recebidas?.length === 3, JSON.stringify(noLimite?.recompensas))
+  const semPremioDeNovo = (await receberVitorias(['vitoria-4', 'vitoria-5'])).json
+  conferir('a vitória que ficou sem prêmio não paga depois', semPremioDeNovo?.pagas?.length === 0 && semPremioDeNovo.jaPagas.length === 2 && semPremioDeNovo.oticoins === antesDoLimite + 2, JSON.stringify(semPremioDeNovo))
+  const daHora = (await api('GET', '/vitorias/recompensas', { token: ana.token })).json
+  conferir('o servidor diz quantas recompensas a conta recebeu na última hora', daHora?.limite === 3 && daHora.recebidas?.length === 3 && typeof daHora.agora === 'number', JSON.stringify(daHora))
+  conferir('sem sessão não lê as recompensas', (await api('GET', '/vitorias/recompensas')).status === 401)
+  // cinco vitórias pedidas ao mesmo tempo, cada uma num pedido: só 3 pagam
+  await api('POST', '/registros', {
+    token: impostor.token,
+    corpo: { registros: [1, 2, 3, 4, 5].map((i) => ({ store: 'xadrezPartidas', dados: partidaSalva(`juntas-${i}`, { resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }) })) },
+  })
+  const juntasVitorias = await Promise.all([1, 2, 3, 4, 5].map((i) => receberVitorias([`juntas-${i}`], impostor.token)))
+  const pagasJuntas = juntasVitorias.reduce((soma, r) => soma + (r.json?.pagas?.length ?? 0), 0)
+  const semPremioJuntas = juntasVitorias.reduce((soma, r) => soma + (r.json?.semPremio?.length ?? 0), 0)
+  conferir('cinco vitórias pedidas ao mesmo tempo: 3 pagam e 2 ficam sem prêmio', pagasJuntas === 3 && semPremioJuntas === 2, `${pagasJuntas} pagas, ${semPremioJuntas} sem prêmio`)
+  conferir('e o saldo tem só as 3', (await api('GET', '/conquistas', { token: impostor.token })).json?.oticoins === 3)
+
   // =================== loja e equipamentos liberados ===================
   const comprar = (item, token = bia.token) => api('POST', '/loja/comprar', { token, corpo: { item } })
   conferir('sem óticoins não compra', (await comprar('p:ombros:placas')).status === 402)

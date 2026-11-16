@@ -8,8 +8,10 @@ import { Button } from '../telas/ui/Basics'
 import { useFecharComEsc } from '../app/teclaEsc'
 import { buscarNoLivro, carregarLivroDeAberturas, type LivroDeAberturas } from '../jogo/pgnBook'
 import { type Dificuldade, DIFICULDADES, escolherJogadaDaMaquina, maquinaAceitaEmpate, usaLivro } from '../jogo/engine'
-import { contarPartidas, PREMIO_DA_VITORIA } from '../conta/conquistas'
+import { contarPartidas, PREMIO_DA_VITORIA, recompensaDaVitoria, RECOMPENSAS_POR_HORA, type RecompensaDaVitoria } from '../conta/conquistas'
 import { type FimDaPartida, ResultadoDaPartida } from './ResultadoDaPartida'
+import { type MostradorDoRelogio, RelogioDaPartida } from './RelogioDaPartida'
+import { RelogioDeXadrez, relogioNovo, type Ritmo, RITMOS, semMaterialParaMate } from '../jogo/relogio'
 import { PainelDeLances } from './PainelDeLances'
 import { afundarPelaGravidade, convocarCristal, cortarAoMeio, despedacar, rachadurasNoTabuleiro, rastroDeCorte, soltarOCavalo, tornadoDaLua, tremerTabuleiro } from './combate/efeitosDasArmas'
 import { atualizarLutas, desfazerPosesDasLutas, distanciaDaLuta, forcarGolpeSemArma, type GolpeSemArma, lutarSemArma, sortearGolpeSemArma } from './combate/lutaSemArma'
@@ -17,19 +19,19 @@ import { ambienteDoTabuleiro, ambienteTocando, configurarSom, destravarSom, somD
 import { type QualidadeXadrez, useConfigXadrez } from '../jogo/configXadrez'
 import { type ChaveTexto, tradutor, type Traduzir } from '../textos/idiomas'
 import { MenuXadrez } from '../telas/MenuXadrez'
-import { listPartidas, novaPartida, type PartidaXadrez, salvarPartida } from '../dados/xadrezRepo'
+import { listPartidas, novaPartida, type PartidaXadrez, resultadoDaPartida, salvarPartida } from '../dados/xadrezRepo'
 import { ouvirDados } from '../dados/db'
 import { entrarEmSala, pedirRevanche, recusarSala, sessaoAtual, useSessao } from '../dados/servidor'
 import { abrirConexaoDaSala, type ConexaoDaSala, type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../dados/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../dados/xadrezAprendizadoRepo'
 import { carregarPersonalizacao, ouvirPersonalizacao, personalizacaoAtual, type Peca } from '../conta/personalizacao'
 import { animarAscensao, animarPetalas } from './animacoes/cerimonias'
-import { cavaloChegaEMontam, daMontaria, doCavaleiro, encaixarEquipamentos, esconderPartes, partesVestidas, peaoCavaleiro } from './animacoes/promocao'
+import { cavaloChegaEMontam, daMontaria, desfazerEquipamentos, doCavaleiro, encaixarEquipamentos, esconderPartes, partesVestidas, peaoCavaleiro } from './animacoes/promocao'
 import { atualizarPosturas, desfazerPosturas } from './animacoes/posturas'
 import { animarComemoracao, animarGestoAmigavel, animarRecusa, atualizarGestoRPG, POOL_GESTOS, voltarAoDescanso } from './animacoes/gestos'
 import { animarPosicao, animarPosicaoRPG, deslocarRPG, diferencaAngular, pararRPG, pecaSaltaRPG, rumoDeDescanso, rumoEntre, virarRPG } from './animacoes/movimento'
 import { animarQuedaEDesaparecimento, arremessarPeca, prepararParaSumir } from './animacoes/queda'
-import { COR_DESTINO, COR_SELECIONADA, COR_XEQUE, criarTexturaMadeira, criarTexturaTexto, definirLadoDaCamera, ehCelular, ladoDaCamera, LETRAS_COLUNAS, materialMadeira, MEIA_LARGURA_TABULEIRO, squareToPos, squareToPosPeca } from './casas'
+import { COR_DESTINO, COR_SELECIONADA, COR_XEQUE, criarTexturaMadeira, criarTexturaTexto, definirLadoDaCamera, ladoDaCamera, LETRAS_COLUNAS, materialMadeira, MEIA_LARGURA_TABULEIRO, squareToPos, squareToPosPeca } from './casas'
 import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, CHANCE_HONRA_SAMURAI, DISTANCIA_REVERENCIA, type EstiloAtaque } from './combate/golpes'
 import { alcanceDaMaca, ARMAS_DA_TORRE, atualizarMarretadas, baterComMarreta, cairDaMaca, esmagarPeca, MACA_ERGUIDA_ATE_MS, MARRETA_PANCADA_MS, marretadas, ondaDaMarretada, pancadaNoPeito, poeiraDaPancada, prenderPeloPeito, soltarDaMaca } from './combate/marreta'
 import { lancarOndaDoRei, lancarPoderDoBispo, lancarRaioDaDama } from './combate/poderes'
@@ -157,6 +159,9 @@ function BotaoEmpate({ t, onPedir, sobreTabuleiro = false }: { t: Traduzir; onPe
 
 /** Como fica gravada a partida contra a máquina que terminou em empate combinado. */
 const EMPATE_POR_ACORDO = 'Empate por acordo'
+/** O fim da blitz no relógio: "Você venceu (tempo)", "A máquina venceu (tempo)" ou este empate. */
+const TEMPO = '(tempo'
+const EMPATE_NO_TEMPO = 'Empate (tempo esgotado, sem peças para dar mate)'
 
 /** O pedido de empate na tela: a máquina pensando, a recusa, o pedido enviado ao amigo ou o pedido dele. */
 type EstadoDoEmpate = { tipo: 'pensando' } | { tipo: 'recusado'; por: 'maquina' | 'adversario' } | { tipo: 'enviado' } | { tipo: 'recebido' } | null
@@ -181,7 +186,13 @@ export function ChessBoard3D() {
     receberEstadoDaSala: (estado: EstadoDaSala) => void
     receberLanceDaSala: (lance: LanceDaSala) => void
     receberFimDaSala: (resultado: ResultadoDaSala, motivo: string) => void
+    /** Partida blitz: desconta o tempo de quem tem a vez e devolve o que o relógio mostra (null sem relógio). */
+    andarRelogio: () => MostradorDoRelogio | null
   } | null>(null)
+  // o relógio da partida blitz contra a máquina; null nas partidas sem relógio
+  const relogioRef = useRef<RelogioDeXadrez | null>(null)
+  const [ritmoNaTela, setRitmoNaTela] = useState<Ritmo | null>(null)
+  const andarRelogio = useCallback(() => acoesRef.current?.andarRelogio() ?? null, [])
 
   const [config, mudarConfig] = useConfigXadrez()
   // o tabuleiro lê as configurações e os textos fora do React, nas animações
@@ -232,6 +243,8 @@ export function ChessBoard3D() {
   const resolverPromocaoRef = useRef<((peca: PecaPromocao | null) => void) | null>(null)
   useFecharComEsc(() => resolverPromocaoRef.current?.(null), promocaoPendente !== null)
   const [resultadoOverlay, setResultadoOverlay] = useState<FimDaPartida | null>(null)
+  // a vitória contra a máquina paga, ou não (3 recompensas por hora): a taça só diz depois de perguntar ao servidor
+  const [recompensa, setRecompensa] = useState<RecompensaDaVitoria | null>(null)
   // partida do jogador em andamento (dá pra desistir) — atualizado a cada lance
   const [podeDesistir, setPodeDesistir] = useState(false)
   // dá pra pedir empate: partida em andamento, um pedido por lance, e contra a máquina só na sua vez
@@ -251,6 +264,21 @@ export function ChessBoard3D() {
   const ocupaATela = true
   // as conquistas contam as partidas contra a máquina, terminadas ou não; as com amigos ficam de fora
   const partidasContraMaquina = useMemo(() => [...partidasEmAndamento, ...partidasFinalizadas], [partidasEmAndamento, partidasFinalizadas])
+  const partidasContraMaquinaRef = useRef(partidasContraMaquina)
+  partidasContraMaquinaRef.current = partidasContraMaquina
+  // a vitória contra a máquina, com conta, paga pela dificuldade, mas só 3 por hora: a taça confere antes de prometer
+  useEffect(() => {
+    setRecompensa(null)
+    const partida = partidaAtualRef.current
+    if (resultadoOverlay !== 'venceu' || sala || !sessao || !partida?.dificuldade) return
+    let cancelado = false
+    void recompensaDaVitoria(partidasContraMaquinaRef.current, partida.id).then((r) => {
+      if (!cancelado) setRecompensa(r)
+    })
+    return () => {
+      cancelado = true
+    }
+  }, [resultadoOverlay, sala, sessao])
   const tabuleiroRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -684,6 +712,7 @@ export function ChessBoard3D() {
       const chess = chessRef.current
       partida.pgn = chess.pgn()
       partida.atualizadaEm = Date.now()
+      if (relogioRef.current) partida.relogio = relogioRef.current.salvo()
       if (chess.isCheckmate()) {
         partida.status = 'FINALIZADA'
         partida.resultado =
@@ -795,6 +824,9 @@ export function ChessBoard3D() {
       } else if (partidaDoJogador?.status === 'FINALIZADA' && partidaDoJogador.resultado === EMPATE_POR_ACORDO) {
         setStatusTexto(t('status.empateAcordo'))
         tocarEmpateUmaVez()
+      } else if (partidaDoJogador?.status === 'FINALIZADA' && partidaDoJogador.resultado?.includes(TEMPO)) {
+        const fim = resultadoDaPartida(partidaDoJogador)
+        setStatusTexto(t(fim === 'venceu' ? 'blitz.tempoDaMaquina' : fim === 'perdeu' ? 'blitz.seuTempo' : 'blitz.tempoSemMate'))
       } else if (!partidaAtualRef.current) {
         setStatusTexto('')
       } else if (chess.isCheckmate()) {
@@ -847,6 +879,15 @@ export function ChessBoard3D() {
 
       const meshMovendo = origem ? pieceMeshBySquare.get(origem) : undefined
 
+      // blitz: o tempo de quem joga corre até este instante; se zerou antes, o lance não sai
+      if (relogioRef.current) {
+        andarRelogioDaPartida()
+        if (partidaAtualRef.current?.status === 'FINALIZADA') {
+          aoTerminar()
+          return
+        }
+      }
+
       // chess.js (v1.x) lança exceção pra um lance que não é mais válido na posição atual (ex: um
       // lance calculado antes de outro já ter sido aplicado nesse meio-tempo) — sem isso, essa
       // exceção ficava sem tratamento dentro do setTimeout assíncrono e travava a tela pra sempre
@@ -867,6 +908,8 @@ export function ChessBoard3D() {
       // servidor na hora, sem esperar a animação (que numa captura leva vários segundos) terminar.
       // Antes só acontecia no fim da animação: fechar a aba nesse meio-tempo perdia o último lance,
       // e a lista de lances ficava visivelmente atrasada em relação ao que já tinha acontecido.
+      // Na blitz, quem jogou aperta o relógio: ganha o acréscimo, e o relógio para enquanto a peça anda
+      relogioRef.current?.lance(resultado.color)
       setHistorico(chess.history())
       salvarProgresso()
 
@@ -933,10 +976,12 @@ export function ChessBoard3D() {
             terminouUma()
             return
           }
-          // promoção: a ascensão — a luz envolve o peão, ele levita e vira a peça nova, que nasce sem os
-          // equipamentos: eles surgem em volta e voam até ela. No cavalo, o peão continua peão, recebe o equipamento
-          // do cavaleiro, e um cavalo chega a galope pra ele montar
+          // promoção: a ascensão — a luz envolve o peão, o que ele veste se desfaz nela, ele levita e vira a peça
+          // nova, que nasce sem os equipamentos: eles surgem em volta e voam até ela, e ela só fica completa quando o
+          // último se encaixa. No cavalo, o peão continua peão, recebe o equipamento do cavaleiro, e um cavalo chega
+          // a galope pra ele montar
           tocarSom('promocao')
+          desfazerEquipamentos(meshMovendo, vigente)
           const tipoNovo = (lance.promotion ?? 'q') as Peca
           const corDoBrilho = materiaisPorFaccao[lance.color].brilho.color
           const escolhas = lance.color === vestimenta.cor ? vestimenta.escolhas : {}
@@ -1003,7 +1048,7 @@ export function ChessBoard3D() {
               if (!vigente()) return undefined
               sincronizarPecas(false, casaDestino)
               pecaNova = pieceMeshBySquare.get(casaDestino)
-              if (pecaNova) esconderPartes(pecaNova, vestidas)
+              if (pecaNova) esconderPartes(pecaNova, vestidas, tipoNovo)
               return pecaNova
             },
             () => {
@@ -1409,9 +1454,75 @@ export function ChessBoard3D() {
       }
     }
 
-    /** Partida do jogador encerrada por desistência (o tabuleiro ainda teria lances legais). */
+    /** Partida do jogador encerrada por desistência, acordo ou tempo (o tabuleiro ainda teria lances legais). */
     function partidaDesistida(): boolean {
       return partidaAtualRef.current?.status === 'FINALIZADA' && !chessRef.current.isGameOver()
+    }
+
+    /** O relógio da blitz corre: partida contra a máquina em andamento, com o jogo à vista e nenhuma peça andando. */
+    function relogioCorre(): boolean {
+      const partida = partidaAtualRef.current
+      return !!partida && partida.status !== 'FINALIZADA' && !salaRef.current && !chessRef.current.isGameOver() && lancesEmAndamento === 0 && document.visibilityState === 'visible'
+    }
+
+    /** Desconta o tempo de quem tem a vez; se zerou, a partida acaba no tempo. */
+    function andarRelogioDaPartida(): MostradorDoRelogio | null {
+      const relogio = relogioRef.current
+      if (!relogio) return null
+      const vez = chessRef.current.turn()
+      const correndo = relogioCorre()
+      relogio.andar(vez, correndo)
+      if (correndo && relogio.restante[vez] <= 0) acabouOTempo(vez)
+      return { w: relogio.restante.w, b: relogio.restante.b, vez, correndo: relogioCorre() }
+    }
+
+    /** Grava o tempo de agora na blitz em andamento (ao sair dela ou esconder o jogo): o relógio para fora da tela. */
+    function guardarRelogio() {
+      const partida = partidaAtualRef.current
+      if (!relogioRef.current || !partida || partida.status === 'FINALIZADA' || salaRef.current) return
+      andarRelogioDaPartida()
+      // o tempo pode ter zerado agora: aí quem salvou foi o fim no tempo
+      if ((partida.status as PartidaXadrez['status']) === 'FINALIZADA' || !relogioRef.current) return
+      partida.relogio = relogioRef.current.salvo()
+      salvarPartida(partida).catch(() => {
+        // sem servidor no momento — fica o tempo do último lance
+      })
+    }
+    function aoMudarVisibilidade() {
+      if (document.visibilityState === 'hidden') guardarRelogio()
+    }
+    document.addEventListener('visibilitychange', aoMudarVisibilidade)
+
+    /**
+     * O tempo de `cor` zerou: perde, a não ser que o outro lado não consiga dar mate de jeito nenhum (aí é empate). O
+     * lance que a máquina estiver pensando não sai mais, e a pergunta da promoção fecha.
+     */
+    function acabouOTempo(cor: 'w' | 'b') {
+      const partida = partidaAtualRef.current
+      const chess = chessRef.current
+      if (!partida || partida.status === 'FINALIZADA') return
+      const outro: 'w' | 'b' = cor === 'w' ? 'b' : 'w'
+      const empatou = semMaterialParaMate(chess, outro)
+      partida.status = 'FINALIZADA'
+      partida.resultado = empatou ? EMPATE_NO_TEMPO : cor === corHumanoRef.current ? 'A máquina venceu (tempo)' : 'Você venceu (tempo)'
+      partida.pgn = chess.pgn()
+      partida.atualizadaEm = Date.now()
+      if (relogioRef.current) partida.relogio = relogioRef.current.salvo()
+      resolverPromocaoRef.current?.(null)
+      selecionadaRef.current = null
+      destinosRef.current = []
+      limparDestaques()
+      salvarPartida(partida)
+        .then(() => {
+          setPartidasEmAndamento((prev) => prev.filter((p) => p.id !== partida.id))
+          setPartidasFinalizadas((prev) => [partida, ...prev.filter((p) => p.id !== partida.id)])
+        })
+        .catch(() => {
+          // sem servidor no momento — fica marcada aqui e vai no próximo salvamento
+        })
+      if (empatou) tocarEmpateUmaVez()
+      else comemorarFimDaSala(outro, 'tempo')
+      atualizarStatusTexto()
     }
 
     function jogarLanceDaMaquina() {
@@ -1426,9 +1537,13 @@ export function ChessBoard3D() {
       const minhaGeracao = geracao
       // as partidas de antes da escolha de dificuldade jogavam como o difícil
       const dificuldade = partidaAtualRef.current?.dificuldade ?? 'dificil'
+      // na blitz a máquina também tem relógio: com pouco tempo, pensa menos e não faz a pausa de sempre
+      const resta = relogioRef.current?.restante[chess.turn()]
+      const limiteMs = resta === undefined ? undefined : Math.max(60, Math.min(900, resta / 30))
+      const pausa = resta !== undefined && resta < 20_000 ? 100 : usaLivro(dificuldade) && buscarNoLivro(chess, livroRef.current) ? PAUSA_MAQUINA_LIVRO_MS : PAUSA_MAQUINA_MS
       window.setTimeout(async () => {
         if (minhaGeracao !== geracao) return
-        const lance = await escolherJogadaDaMaquina(chess, livroRef.current, dificuldade)
+        const lance = await escolherJogadaDaMaquina(chess, livroRef.current, dificuldade, limiteMs)
         // outra partida (ou novo jogo) entrou enquanto a máquina pensava: esse lance era da anterior
         if (minhaGeracao !== geracao) return
         // o jogador desistiu enquanto a máquina pensava — o lance não entra mais
@@ -1441,7 +1556,7 @@ export function ChessBoard3D() {
           vezDaMaquinaRef.current = false
           atualizarStatusTexto()
         })
-      }, usaLivro(dificuldade) && buscarNoLivro(chess, livroRef.current) ? PAUSA_MAQUINA_LIVRO_MS : PAUSA_MAQUINA_MS)
+      }, pausa)
     }
 
     /** Anda com os lances do adversário, um de cada vez e nunca por cima de outra animação. */
@@ -1574,6 +1689,10 @@ export function ChessBoard3D() {
         setTela('jogo')
         comemoracaoDisparada = false
         setResultadoOverlay(null)
+        // a blitz volta com o tempo que restava no último lance (o tempo fora da partida não conta)
+        const relogioSalvo = partidaAtualRef.current?.relogio
+        relogioRef.current = relogioSalvo ? new RelogioDeXadrez(relogioSalvo) : null
+        setRitmoNaTela(relogioSalvo?.ritmo ?? null)
         const chess = chessRef.current
         corHumanoRef.current = corHumano
         setCorDoJogador(corHumano)
@@ -1601,6 +1720,8 @@ export function ChessBoard3D() {
       carregarSala() {
         const estado = salaRef.current?.estado
         if (!estado) return
+        relogioRef.current = null
+        setRitmoNaTela(null)
         setTela('jogo')
         comemoracaoDisparada = false
         setResultadoOverlay(null)
@@ -1657,6 +1778,10 @@ export function ChessBoard3D() {
       // volta pra tela inicial: as peças na posição de início, vistas de lado. A partida que estava
       // aberta continua salva, a cada lance, e volta pelo "Continuar partida"
       mostrarMenu() {
+        // a blitz em andamento guarda o tempo de agora: o relógio para fora da partida e volta daqui no "Continuar"
+        guardarRelogio()
+        relogioRef.current = null
+        setRitmoNaTela(null)
         partidaAtualRef.current = null
         corHumanoRef.current = 'w'
         comemoracaoDisparada = false
@@ -1770,6 +1895,7 @@ export function ChessBoard3D() {
       aplicarQualidade,
       aplicarTelaMovel: liberarCamera,
       revestir: () => sincronizarPecas(),
+      andarRelogio: andarRelogioDaPartida,
     }
 
     sincronizarPecas()
@@ -2101,11 +2227,29 @@ export function ChessBoard3D() {
         lanceDaMaquina: (fen: string, dificuldade: Dificuldade) => escolherJogadaDaMaquina(new Chess(fen), livroRef.current, dificuldade),
         dificuldadeDaPartida: () => partidaAtualRef.current?.dificuldade ?? null,
         /** Começa uma partida de teste a partir de um PGN (não aparece nas partidas do jogador). */
-        carregarTeste: (pgn: string, cor: 'w' | 'b', dificuldade?: PartidaXadrez['dificuldade']) => {
+        carregarTeste: (pgn: string, cor: 'w' | 'b', dificuldade?: PartidaXadrez['dificuldade'], ritmo?: Ritmo) => {
           const agora = Date.now()
-          partidaAtualRef.current = { id: `teste-${agora}`, jogador: '__teste__', corJogador: cor, pgn, status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora, ...(dificuldade ? { dificuldade } : {}) }
+          partidaAtualRef.current = {
+            id: `teste-${agora}`,
+            jogador: '__teste__',
+            corJogador: cor,
+            pgn,
+            status: 'EM_ANDAMENTO',
+            criadaEm: agora,
+            atualizadaEm: agora,
+            ...(dificuldade ? { dificuldade } : {}),
+            ...(ritmo ? { relogio: relogioNovo(ritmo) } : {}),
+          }
           acoesRef.current?.carregarPgn(pgn, cor)
         },
+        /** O relógio da blitz: quanto resta a cada lado agora. */
+        relogio: () => relogioRef.current?.salvo() ?? null,
+        /** Muda o tempo que resta a um lado (pra testar o fim no tempo sem esperar minutos). */
+        ajustarRelogio: (cor: 'w' | 'b', ms: number) => {
+          if (relogioRef.current) relogioRef.current.restante[cor] = ms
+        },
+        /** A partida aberta, como está gravada. */
+        partidaAtual: () => (partidaAtualRef.current ? { ...partidaAtualRef.current } : null),
       }
     }
     // o espaço do tabuleiro também muda sem a janela mudar — recolher/abrir o menu, tela cheia
@@ -2158,6 +2302,7 @@ export function ChessBoard3D() {
       montado = false
       window.clearTimeout(interacaoTimeoutId)
       window.removeEventListener('resize', onResize)
+      document.removeEventListener('visibilitychange', aoMudarVisibilidade)
       observador.disconnect()
       renderer.domElement.removeEventListener('click', onClick)
       renderer.domElement.removeEventListener('webglcontextrestored', gerarReflexoDoAmbiente)
@@ -2283,17 +2428,9 @@ export function ChessBoard3D() {
     if (partida) handleRetomarPartida(partida)
   }
 
-  // não existe mais tela normal: o jogo ocupa sempre a página inteira. No celular, a tela cheia do navegador (que
-  // esconde a barra de endereço) só pode ser pedida num toque: cada toque pede de novo, se ela tiver saído (o voltar do
-  // celular, um gesto). No iPhone não existe pra página, e lá fica só o jogo ocupando a tela
-  useEffect(() => {
-    if (!ehCelular()) return
-    const pedir = () => {
-      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {})
-    }
-    window.addEventListener('pointerup', pedir)
-    return () => window.removeEventListener('pointerup', pedir)
-  }, [])
+  // não existe tela normal: o jogo ocupa sempre a página inteira. A tela cheia do navegador não é pedida: o Chrome do
+  // celular põe embaixo, toda vez que ela entra, o aviso "Para sair da tela cheia, arraste…", e nenhuma página consegue
+  // tirar. Instalado, o jogo já abre sem barras (`display: fullscreen` no manifest), sem esse aviso
 
   // tabuleiro em tela cheia: a página de trás não rola junto
   useEffect(() => {
@@ -2324,7 +2461,7 @@ export function ChessBoard3D() {
     }
     fecharSala()
     setEscolhendoCor(false)
-    const nova = novaPartida(jogador, cor, config.dificuldade)
+    const nova = novaPartida(jogador, cor, config.dificuldade, config.modo === 'blitz' ? config.ritmo : undefined)
     try {
       await salvarPartida(nova)
     } catch {
@@ -2406,6 +2543,8 @@ export function ChessBoard3D() {
               <button type="button" onClick={handleMenu} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
                 {t('menu.menu')}
               </button>
+              {/* a blitz: o relógio no canto de cima, o da máquina em cima e o seu embaixo */}
+              {ritmoNaTela && !sala && <RelogioDaPartida t={t} ritmo={ritmoNaTela} corDoJogador={corDoJogador} andar={andarRelogio} />}
             </div>
             <div className="pointer-events-auto flex flex-wrap items-center gap-2">
               {podeDesistir && <BotaoDesistir t={t} confirmando={confirmandoDesistencia} onPedir={setConfirmandoDesistencia} onConfirmar={handleDesistir} sobreTabuleiro />}
@@ -2486,8 +2625,10 @@ export function ChessBoard3D() {
             t={t}
             fim={resultadoOverlay}
             detalhe={statusTexto}
-            // contra a máquina, com conta, a vitória paga óticoins pela dificuldade (o servidor paga ao voltar ao menu)
-            premio={resultadoOverlay === 'venceu' && !sala && sessao && partidaAtualRef.current?.dificuldade ? PREMIO_DA_VITORIA[partidaAtualRef.current.dificuldade] : 0}
+            // contra a máquina, com conta, a vitória paga óticoins pela dificuldade (o servidor paga ao voltar ao menu), no
+            // máximo 3 por hora: sem vaga, a taça diz a que horas volta a pagar
+            premio={recompensa?.paga && partidaAtualRef.current?.dificuldade ? PREMIO_DA_VITORIA[partidaAtualRef.current.dificuldade] : 0}
+            semPremio={recompensa && !recompensa.paga ? { limite: RECOMPENSAS_POR_HORA, liberaEm: recompensa.liberaEm } : null}
             onNovoJogo={handleNovoJogo}
             onFechar={() => setResultadoOverlay(null)}
           />
@@ -2557,6 +2698,49 @@ export function ChessBoard3D() {
                     ))}
                   </div>
                   <p className="mt-1.5 text-[0.7rem] leading-snug text-ink-400">{t(`dificuldade.${config.dificuldade}Dica`)}</p>
+                </div>
+              )}
+              {!sala && (
+                // o modo: normal, sem relógio, ou blitz, com o relógio de xadrez no ritmo escolhido
+                <div className="mb-4" data-modo>
+                  <p className="mb-1.5 text-xs font-semibold text-ink-700">{t('modo.titulo')}</p>
+                  <div role="radiogroup" aria-label={t('modo.titulo')} className="grid grid-cols-2 gap-1.5">
+                    {(['normal', 'blitz'] as const).map((modo) => (
+                      <button
+                        key={modo}
+                        type="button"
+                        role="radio"
+                        aria-checked={config.modo === modo}
+                        onClick={() => mudarConfig({ modo })}
+                        className={`rounded-lg border px-1 py-1.5 text-xs font-semibold transition ${config.modo === modo ? 'border-ink-800 bg-ink-800 text-white' : 'border-ink-200 text-ink-700 hover:border-ink-400 hover:bg-ink-50'}`}
+                        data-modo-opcao={modo}
+                      >
+                        {t(`modo.${modo}`)}
+                      </button>
+                    ))}
+                  </div>
+                  {config.modo === 'blitz' && (
+                    <div role="radiogroup" aria-label={t('modo.ritmo')} className="mt-1.5 grid grid-cols-3 gap-1.5" data-ritmos>
+                      {RITMOS.map((ritmo) => (
+                        <button
+                          key={ritmo}
+                          type="button"
+                          role="radio"
+                          aria-checked={config.ritmo === ritmo}
+                          onClick={() => mudarConfig({ ritmo })}
+                          className={`rounded-lg border px-1 py-1 font-mono text-xs font-bold transition ${config.ritmo === ritmo ? 'border-[#c9a24a] bg-[#c9a24a] text-[#1c120a]' : 'border-ink-200 text-ink-700 hover:border-ink-400 hover:bg-ink-50'}`}
+                          data-ritmo={ritmo}
+                        >
+                          {ritmo}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-[0.7rem] leading-snug text-ink-400">
+                    {config.modo === 'blitz'
+                      ? t('modo.blitzDica', { minutos: config.ritmo.split('+')[0], segundos: config.ritmo.split('+')[1] })
+                      : t('modo.normalDica')}
+                  </p>
                 </div>
               )}
               <div className="flex gap-3 justify-center">

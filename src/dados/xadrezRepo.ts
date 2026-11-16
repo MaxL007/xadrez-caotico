@@ -1,6 +1,7 @@
 import { dbGetAll, dbPut, dbPutVarios } from './db'
 import { makeId } from '../app/utils'
 import type { Dificuldade } from '../jogo/engine'
+import { relogioNovo, type RelogioSalvo, type Ritmo } from '../jogo/relogio'
 
 const STORE_PARTIDAS = 'xadrezPartidas'
 const STORE_APRENDIZADO = 'xadrezAprendizado'
@@ -23,11 +24,14 @@ export interface PartidaXadrez {
   demonstracao?: boolean
   /** Como a máquina joga nessa partida. As de antes da escolha de dificuldade jogavam como o difícil. */
   dificuldade?: Dificuldade
+  /** Partida blitz: o ritmo e quanto restava a cada lado no último lance. Sem ele, a partida não tem relógio. */
+  relogio?: RelogioSalvo
 }
 
-export function novaPartida(jogador: string, corJogador: 'w' | 'b', dificuldade: Dificuldade): PartidaXadrez {
+/** `ritmo`: partida blitz, com relógio. */
+export function novaPartida(jogador: string, corJogador: 'w' | 'b', dificuldade: Dificuldade, ritmo?: Ritmo): PartidaXadrez {
   const agora = Date.now()
-  return { id: makeId(), jogador, corJogador, pgn: '', status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora, dificuldade }
+  return { id: makeId(), jogador, corJogador, pgn: '', status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora, dificuldade, ...(ritmo ? { relogio: relogioNovo(ritmo) } : {}) }
 }
 
 export function resultadoDaPartida(partida: PartidaXadrez): 'venceu' | 'perdeu' | 'empate' {

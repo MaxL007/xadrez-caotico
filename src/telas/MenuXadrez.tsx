@@ -11,7 +11,7 @@ import { PainelPerfil } from './PainelPerfil'
 import { PainelPersonalizacao } from './PainelPersonalizacao'
 import { nomeDaConquista } from './PainelConquistas'
 import { Avatar, Oticoin } from './ElementosDoJogador'
-import { verificarConquistas, type Conquista, type SituacaoDasConquistas } from '../conta/conquistas'
+import { RECOMPENSAS_POR_HORA, verificarConquistas, type Conquista, type SituacaoDasConquistas } from '../conta/conquistas'
 import { carregarPersonalizacao } from '../conta/personalizacao'
 import { PainelLoja } from './PainelLoja'
 import { instalarAplicativo, useAplicativo } from '../app/aplicativo'
@@ -221,8 +221,9 @@ export function MenuXadrez({
   const [dicaDoIphone, setDicaDoIphone] = useState(false)
   const [conquistas, setConquistas] = useState<SituacaoDasConquistas | null>(null)
   const [conquistasNovas, setConquistasNovas] = useState<Conquista[]>([])
-  // óticoins das vitórias contra a máquina que o servidor acabou de pagar
+  // óticoins das vitórias contra a máquina que o servidor acabou de pagar, e as que chegaram sem vaga na hora
   const [premioDasVitorias, setPremioDasVitorias] = useState(0)
+  const [vitoriasSemPremio, setVitoriasSemPremio] = useState(0)
 
   // ao abrir o menu, confere as conquistas e recebe as óticoins do que foi alcançado desde a última vez
   useEffect(() => {
@@ -231,6 +232,7 @@ export function MenuXadrez({
       .then((situacao) => {
         // o aviso vale mesmo se a lista de partidas mudou no meio: a conquista já foi paga e não volta a aparecer
         if (situacao.premioDasVitorias > 0) setPremioDasVitorias(situacao.premioDasVitorias)
+        if (situacao.vitoriasSemPremio > 0) setVitoriasSemPremio(situacao.vitoriasSemPremio)
         if (situacao.novas.length > 0) {
           setConquistasNovas(situacao.novas)
           // conquista nova pode liberar equipamento na Personalização
@@ -256,6 +258,11 @@ export function MenuXadrez({
     const prazo = window.setTimeout(() => setPremioDasVitorias(0), 7000)
     return () => window.clearTimeout(prazo)
   }, [premioDasVitorias])
+  useEffect(() => {
+    if (vitoriasSemPremio === 0) return
+    const prazo = window.setTimeout(() => setVitoriasSemPremio(0), 9000)
+    return () => window.clearTimeout(prazo)
+  }, [vitoriasSemPremio])
   // pedidos de amizade: a tela inicial avisa cada um uma vez; tocar abre a aba Amigos, onde se confirma ou recusa
   const [avisados, setAvisados] = useState<{ usuario: string; ids: string[] } | null>(null)
   const idsAvisados = sessao ? (avisados?.usuario === sessao.usuario.id ? avisados.ids : pedidosAvisados(sessao.usuario.id)) : []
@@ -336,12 +343,17 @@ export function MenuXadrez({
         </div>
       )}
 
-      {painel === 'inicio' && (conquistasNovas.length > 0 || premioDasVitorias > 0 || pedidoNovo || textoDoLink) && (
+      {painel === 'inicio' && (conquistasNovas.length > 0 || premioDasVitorias > 0 || vitoriasSemPremio > 0 || pedidoNovo || textoDoLink) && (
         <div className="absolute left-1/2 top-14 z-20 flex w-max max-w-[90%] -translate-x-1/2 flex-col items-center gap-2">
           {premioDasVitorias > 0 && (
             <div role="status" className={`${avisoFlutuante} px-4 py-2`} data-aviso-vitoria>
               <Oticoin tamanho={34} girando />
               <span>{t('conquistas.vitoriasPagas', { n: premioDasVitorias })}</span>
+            </div>
+          )}
+          {vitoriasSemPremio > 0 && (
+            <div role="status" className={`${avisoFlutuante} px-4 py-2`} data-aviso-sem-premio>
+              <span>{t(vitoriasSemPremio === 1 ? 'recompensa.semPremioUma' : 'recompensa.semPremioVarias', { n: vitoriasSemPremio, limite: RECOMPENSAS_POR_HORA })}</span>
             </div>
           )}
           {conquistasNovas.length > 0 && (

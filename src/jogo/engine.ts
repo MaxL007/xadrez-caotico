@@ -219,9 +219,11 @@ function escolherLanceAprendido(lances: LanceAprendido[] | undefined): string | 
  *    concluídas, mais essa camada tem pra oferecer;
  * 3. Busca própria com aprofundamento iterativo (material + tabelas de posição + mobilidade,
  *    ~900ms de orçamento por lance) quando nenhuma das anteriores tem uma resposta.
+ * `limiteMs`: o tempo máximo da busca, quando o relógio da blitz pede menos que o do nível.
  */
-export async function escolherJogadaDaMaquina(chess: Chess, livro: LivroDeAberturas, dificuldade: Dificuldade = 'dificil'): Promise<string | null> {
-  const nivel = NIVEIS[dificuldade]
+export async function escolherJogadaDaMaquina(chess: Chess, livro: LivroDeAberturas, dificuldade: Dificuldade = 'dificil', limiteMs?: number): Promise<string | null> {
+  // na blitz, com o relógio apertado, pensa menos
+  const nivel = limiteMs === undefined ? NIVEIS[dificuldade] : { ...NIVEIS[dificuldade], tempoMs: Math.min(NIVEIS[dificuldade].tempoMs, limiteMs) }
   const entradasLivro = nivel.livro ? buscarNoLivro(chess, livro) : null
   if (entradasLivro && entradasLivro.length > 0) {
     return escolherPeso(entradasLivro).move
