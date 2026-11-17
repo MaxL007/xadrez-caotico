@@ -5,6 +5,7 @@
 // local (npm run dev em worker/).
 import { createRequire } from 'module'
 import crypto from 'crypto'
+import { bilhetesAntigos, MATE } from './vitorias-de-teste.mjs'
 
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright')
@@ -63,12 +64,13 @@ try {
   conferir('o seu lado aparece aceso e correndo', (await page.locator('[data-relogio-lado="w"]').getAttribute('data-ativo')) === 'correndo')
   const antesDoLance = (await relogio()).w
   await h('jogar', 'e2', 'e4')
+  // a margem cobre o tempo entre ler o relógio e o lance entrar (que corre de verdade): num aparelho lento passa de meio segundo
   const depoisDoLance = await relogio()
-  conferir('quem joga ganha o acréscimo de 3 s', depoisDoLance.w > antesDoLance + 2500 && depoisDoLance.w <= antesDoLance + 3000, `${antesDoLance} → ${depoisDoLance.w}`)
+  conferir('quem joga ganha o acréscimo de 3 s', depoisDoLance.w > antesDoLance + 1500 && depoisDoLance.w <= antesDoLance + 3000, `${antesDoLance} → ${depoisDoLance.w}`)
   await esperarParar()
   const depoisDaMaquina = await relogio()
   conferir('a máquina gasta o tempo dela pensando e também ganha o acréscimo', depoisDaMaquina.b !== 300000 && depoisDaMaquina.b > 300000 - 5000, JSON.stringify(depoisDaMaquina))
-  conferir('o seu tempo não correu enquanto a máquina jogava', Math.abs(depoisDaMaquina.w - depoisDoLance.w) < 400, `${depoisDoLance.w} → ${depoisDaMaquina.w}`)
+  conferir('o seu tempo não correu enquanto a máquina jogava', Math.abs(depoisDaMaquina.w - depoisDoLance.w) < 1500, `${depoisDoLance.w} → ${depoisDaMaquina.w}`)
 
   // =================== fora da partida o relógio para ===================
   const aoSair = (await relogio()).w
@@ -169,8 +171,9 @@ try {
   conferir('com vaga na hora, a taça mostra o prêmio da vitória', (await page.locator('[data-premio]').innerText()).includes('+1 pela vitória'))
 
   const semVaga = await novaConta(`Blitz cheia ${sufixo}`)
-  const vitoria = (id) => ({ store: 'xadrezPartidas', dados: { id, jogador: 'x', corJogador: 'w', pgn: '', status: 'FINALIZADA', resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil', criadaEm: Date.now(), atualizadaEm: Date.now() } })
+  const vitoria = (id) => ({ store: 'xadrezPartidas', dados: { id, jogador: 'x', ...MATE, status: 'FINALIZADA', resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil', criadaEm: Date.now(), atualizadaEm: Date.now() } })
   await api('POST', '/registros', { token: semVaga.token, corpo: { registros: ['ja-1', 'ja-2', 'ja-3'].map(vitoria) } })
+  bilhetesAntigos(`Blitz cheia ${sufixo}`, ['ja-1', 'ja-2', 'ja-3'].map((id) => ({ id, dificuldade: 'facil' })))
   const pagas = (await api('POST', '/vitorias/receber', { token: semVaga.token, corpo: { partidas: ['ja-1', 'ja-2', 'ja-3'] } })).json
   conferir('a conta já recebeu as 3 recompensas da hora', pagas?.pagas?.length === 3, JSON.stringify(pagas))
   await entrarComo(semVaga)

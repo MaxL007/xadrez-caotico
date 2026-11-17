@@ -26,6 +26,10 @@ export interface PartidaXadrez {
   dificuldade?: Dificuldade
   /** Partida blitz: o ritmo e quanto restava a cada lado no último lance. Sem ele, a partida não tem relógio. */
   relogio?: RelogioSalvo
+  /** A posição de agora (FEN): o servidor confere com ela que a vitória terminou mesmo assim. */
+  fen?: string
+  /** O servidor anotou o começo desta partida contra a máquina: sem bilhete, a vitória não paga óticoins. */
+  bilhete?: boolean
 }
 
 /** `ritmo`: partida blitz, com relógio. */

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ChaveTexto, Idioma, Traduzir } from '../textos/idiomas'
-import { convidarAmigo, criarSala, entrarEmSala, ErroDoServidor, listarSalas, recusarSala, removerAmigo, useSessao, verPerfil, type Amigos, type Jogador, type Perfil, type SalaNaLista } from '../dados/servidor'
+import { convidarAmigo, criarSala, desbloquear, entrarEmSala, ErroDoServidor, listarSalas, recusarSala, removerAmigo, useSessao, verPerfil, type Amigos, type Jogador, type Perfil, type SalaNaLista } from '../dados/servidor'
 import { Avatar, MeuId, Placar } from './ElementosDoJogador'
 import { PainelConta } from './PainelConta'
 import { LeitorDeQrCode, QrCode } from './QrCode'
 import { linkDoConvite, receberConviteLido, type ResultadoDoConvite } from '../conta/conviteDeAmizade'
 import { PainelConquistas } from './PainelConquistas'
 import { PainelPrivacidade } from './PainelPrivacidade'
+import { AdversarioAutomatico } from './AdversarioAutomatico'
+import { RITMOS, type Ritmo } from '../jogo/relogio'
 import { CONQUISTAS, type Contagem } from '../conta/conquistas'
 
 // Amigos: os pedidos de amizade, o ID e o convite por link e QR Code de quem joga, a lista de amigos (com a bolinha de
@@ -301,6 +303,8 @@ export function PainelAmigos({
   const [salas, setSalas] = useState<SalaNaLista[]>([])
   const [perfilDe, setPerfilDe] = useState<Jogador | null>(null)
   const [escolhendoCorPara, setEscolhendoCorPara] = useState<string | null>(null)
+  // a partida amistosa: sem relógio (null) ou blitz num dos ritmos, com o relógio no servidor
+  const [ritmoDaAmistosa, setRitmoDaAmistosa] = useState<Ritmo | null>(null)
   // quem cria a conta aqui precisa ver o código de recuperação antes de seguir
   const [naTelaDaConta, setNaTelaDaConta] = useState(!sessao)
   const logado = !!sessao && !naTelaDaConta
@@ -407,6 +411,7 @@ export function PainelAmigos({
           ))}
         </div>
       )}
+      <AdversarioAutomatico t={t} onAbrirSala={onAbrirSala} />
       {amigos && <MeuId t={t} id={amigos.meuId} />}
       {amigos && <ConvitePorLink t={t} codigo={amigos.meuConvite} onLido={onAtualizar} />}
       <ConvidarAmigos t={t} onConvidou={onAtualizar} />
@@ -417,7 +422,10 @@ export function PainelAmigos({
           <p className="mb-1 text-sm font-medium">{t('amigos.partidasRecebidas')}</p>
           {amigos.partidasRecebidas.map((p) => (
             <div key={p.codigo} className="flex items-center justify-between gap-2 py-1">
-              <p className="min-w-0 truncate text-sm">{t('amigos.chamou', { nome: p.nome })}</p>
+              <p className="min-w-0 truncate text-sm">
+                {t('amigos.chamou', { nome: p.nome })}
+                {p.ritmo && <span className="ml-1.5 font-mono text-xs font-bold text-[#e6c675]">{t('blitz.titulo', { ritmo: p.ritmo })}</span>}
+              </p>
               <span className="flex shrink-0 gap-1.5">
                 <button type="button" className={botaoPequeno} disabled={enviando} onClick={() => void abrirPartida(() => entrarEmSala(p.codigo))}>
                   {t('amigos.jogar')}
@@ -443,10 +451,26 @@ export function PainelAmigos({
             </p>
             {escolhendoCorPara === amigo.idJogador ? (
               <>
+                <p className="text-xs text-[#c9b48a]">{t('amigos.relogio')}</p>
+                <div role="radiogroup" aria-label={t('amigos.relogio')} className="grid grid-cols-4 gap-1.5" data-ritmo-amistosa>
+                  {([null, ...RITMOS] as const).map((ritmo) => (
+                    <button
+                      key={ritmo ?? 'normal'}
+                      type="button"
+                      role="radio"
+                      aria-checked={ritmoDaAmistosa === ritmo}
+                      onClick={() => setRitmoDaAmistosa(ritmo)}
+                      className={`rounded-lg border px-1 py-1 text-xs font-semibold transition ${ritmoDaAmistosa === ritmo ? 'border-[#e6c675] bg-[#c9a24a] text-[#1c120a]' : 'border-[#c9a24a]/40 text-[#f5e6c8] hover:bg-[#3a2614]'}`}
+                      data-ritmo={ritmo ?? 'normal'}
+                    >
+                      {ritmo ?? t('amigos.semRelogio')}
+                    </button>
+                  ))}
+                </div>
                 <p className="text-xs text-[#c9b48a]">{t('amigos.voceJogaDe')}</p>
                 <div className="grid grid-cols-3 gap-2">
                   {(['w', 'b', 'sorteio'] as const).map((cor) => (
-                    <button key={cor} type="button" className={botaoCor} disabled={enviando} onClick={() => void abrirPartida(() => criarSala(cor, amigo.idJogador))}>
+                    <button key={cor} type="button" className={botaoCor} disabled={enviando} onClick={() => void abrirPartida(() => criarSala(cor, amigo.idJogador, ritmoDaAmistosa))}>
                       {t(cor === 'w' ? 'cor.brancas' : cor === 'b' ? 'cor.pretas' : 'online.sorteio')}
                     </button>
                   ))}
@@ -483,6 +507,23 @@ export function PainelAmigos({
         </div>
       )}
 
+      {!!amigos?.bloqueados?.length && (
+        <div className={secao} data-bloqueados>
+          <p className="mb-1 text-sm font-medium">{t('amigos.bloqueados')}</p>
+          {amigos.bloqueados.map((j) => (
+            <div key={j.idJogador} className="flex items-center justify-between gap-2 py-1">
+              <p className="flex min-w-0 items-center gap-2 truncate text-sm">
+                <Avatar jogador={j} tamanho={26} />
+                <span className="truncate">{j.nome}</span>
+              </p>
+              <button type="button" className={botaoPequeno} disabled={enviando} onClick={() => void mudar(() => desbloquear(j.idJogador))} data-desbloquear={j.idJogador}>
+                {t('amigos.desbloquear')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {abertas.length > 0 && (
         <div className={secao}>
           <p className="mb-1 text-sm font-medium">{t('online.minhas')}</p>
@@ -496,7 +537,10 @@ export function PainelAmigos({
               <span className="truncate">
                 {s.brancas ?? '…'} × {s.pretas ?? '…'}
               </span>
-              <span className="shrink-0 text-[#c9b48a]">{t(s.status === 'aguardando' ? 'online.listaAguardando' : 'online.listaAndamento')}</span>
+              <span className="shrink-0 text-[#c9b48a]">
+                {s.ritmo && <span className="mr-1.5 font-mono font-bold text-[#e6c675]">{s.ritmo}</span>}
+                {t(s.status === 'aguardando' ? 'online.listaAguardando' : 'online.listaAndamento')}
+              </span>
             </button>
           ))}
         </div>

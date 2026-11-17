@@ -20,6 +20,8 @@ import {
   type Usuario,
 } from './conta'
 import type { Sala } from './sala'
+import { Chess } from 'chess.js'
+import { ehRitmo, semMaterialParaMate, temposDoRitmo, type Ritmo } from '../../src/jogo/relogio'
 import aparencia from '../../src/catalogos/aparencia.json'
 import personalizacao from '../../src/catalogos/personalizacao.json'
 import conquistas from '../../src/catalogos/conquistas.json'
@@ -33,6 +35,8 @@ export interface Ambiente {
   ORIGENS: string
   /** Só no simulador (.dev.vars): os testes criam mais contas que uma pessoa criaria. */
   LIMITE_CONTAS?: string
+  /** Só no simulador (.dev.vars): o relógio da blitz entre pessoas anda tantas vezes mais depressa, pros testes. */
+  ACELERAR_RELOGIO?: string
 }
 
 const LIMITE_CORPO = 256 * 1024
@@ -267,7 +271,7 @@ const estaOnline = (vistoEm: number | null) => (vistoEm ?? 0) > Date.now() - ONL
 
 async function listarAmigos(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
-  const [eu, ligacoes, chamadas] = await Promise.all([
+  const [eu, ligacoes, chamadas, bloqueados] = await Promise.all([
     env.DB.prepare('SELECT id_jogador, codigo_convite FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ id_jogador: string; codigo_convite: string | null }>(),
     env.DB.prepare(
       `SELECT u.id, u.id_jogador, u.nome, u.avatar, u.moldura, u.visto_em, a.solicitante_id, a.status FROM amizades a
@@ -277,11 +281,17 @@ async function listarAmigos(pedido: Request, env: Ambiente) {
       .bind(usuario.id, LIGACOES_NA_LISTA)
       .all<LinhaDeJogador & { id: string; visto_em: number | null; solicitante_id: string; status: string }>(),
     env.DB.prepare(
-      `SELECT codigo, criador_id, brancas_id FROM salas
+      `SELECT codigo, criador_id, brancas_id, ritmo FROM salas
        WHERE (brancas_id = ?1 OR pretas_id = ?1) AND status = 'aguardando' AND criador_id <> ?1 ORDER BY criada_em DESC LIMIT ?2`,
     )
       .bind(usuario.id, PARTIDAS_RECEBIDAS_NA_LISTA)
-      .all<{ codigo: string; criador_id: string; brancas_id: string }>(),
+      .all<{ codigo: string; criador_id: string; brancas_id: string; ritmo: string | null }>(),
+    env.DB.prepare(
+      `SELECT u.id_jogador, u.nome, u.avatar, u.moldura FROM bloqueios b JOIN usuarios u ON u.id = b.bloqueado_id
+       WHERE b.usuario_id = ?1 ORDER BY b.criado_em DESC LIMIT ?2`,
+    )
+      .bind(usuario.id, LIGACOES_NA_LISTA)
+      .all<LinhaDeJogador>(),
   ])
   const amigos = ligacoes.results.filter((l) => l.status === 'aceita')
   const pendentes = ligacoes.results.filter((l) => l.status === 'pendente')
@@ -295,8 +305,10 @@ async function listarAmigos(pedido: Request, env: Ambiente) {
     // quem deixou de ser amigo não chama mais: a sala fica lá até expirar
     partidasRecebidas: chamadas.results.flatMap((s) => {
       const amigo = amigos.find((a) => a.id === s.criador_id)
-      return amigo ? [{ ...jogadorPublico(amigo), codigo: s.codigo, minhaCor: s.brancas_id === usuario.id ? 'w' : 'b' }] : []
+      return amigo ? [{ ...jogadorPublico(amigo), codigo: s.codigo, minhaCor: s.brancas_id === usuario.id ? 'w' : 'b', ritmo: s.ritmo }] : []
     }),
+    // quem a pessoa bloqueou: dá pra desbloquear na aba Amigos
+    bloqueados: bloqueados.results.map(jogadorPublico),
   })
 }
 
@@ -312,6 +324,8 @@ async function convidarAmigo(pedido: Request, env: Ambiente) {
     .first<LinhaDeJogador & { id: string }>()
   if (!alvo) throw new Falha(404, 'jogador-nao-encontrado')
   if (alvo.id === usuario.id) throw new Falha(422, 'voce-mesmo')
+  // bloqueado (de qualquer lado): responde como se a pessoa não existisse, pra ninguém saber que foi bloqueado
+  if (await bloqueadosEntreSi(env, usuario.id, alvo.id)) throw new Falha(404, 'jogador-nao-encontrado')
 
   const ligacao = await ligacaoEntre(env, usuario.id, alvo.id)
   if (ligacao?.status === 'aceita') throw new Falha(409, 'ja-amigos')
@@ -372,6 +386,7 @@ async function receberConvite(pedido: Request, env: Ambiente) {
   const dono = await donoDoConvite(env, codigo)
   if (!dono) throw new Falha(404, 'convite-nao-encontrado')
   if (dono.id === usuario.id) throw new Falha(422, 'voce-mesmo')
+  if (await bloqueadosEntreSi(env, usuario.id, dono.id)) throw new Falha(404, 'convite-nao-encontrado')
 
   const ligacao = await ligacaoEntre(env, usuario.id, dono.id)
   if (ligacao?.status === 'aceita') throw new Falha(409, 'ja-amigos')
@@ -704,13 +719,19 @@ async function receberVitorias(pedido: Request, env: Ambiente) {
   }
   const ids = [...new Set(partidas as string[])]
   const lista = ids.map((_, i) => `?${i + 2}`).join(', ')
-  const salvas = await env.DB.prepare(`SELECT id, dados FROM registros WHERE usuario_id = ?1 AND store = 'xadrezPartidas' AND id IN (${lista})`)
+  const salvas = await env.DB.prepare(
+    `SELECT r.id, r.dados, b.criado_em, b.dificuldade AS bilhete_dificuldade, b.ritmo AS bilhete_ritmo FROM registros r
+     LEFT JOIN bilhetes b ON b.usuario_id = r.usuario_id AND b.partida_id = r.id
+     WHERE r.usuario_id = ?1 AND r.store = 'xadrezPartidas' AND r.id IN (${lista})`,
+  )
     .bind(usuario.id, ...ids)
-    .all<{ id: string; dados: string }>()
+    .all<{ id: string; dados: string; criado_em: number | null; bilhete_dificuldade: string | null; bilhete_ritmo: string | null }>()
   const agora = Date.now()
   const candidatas: { id: string; dificuldade: string; valor: number }[] = []
+  // ganhas, mas que não conferem com o bilhete e a posição final: ficam com recibo sem prêmio e não voltam
+  const invalidas: { id: string; dificuldade: string }[] = []
   for (const salva of salvas.results) {
-    let partida: { status?: unknown; resultado?: unknown; dificuldade?: unknown; demonstracao?: unknown }
+    let partida: PartidaGravada
     try {
       partida = JSON.parse(salva.dados)
     } catch {
@@ -718,7 +739,17 @@ async function receberVitorias(pedido: Request, env: Ambiente) {
     }
     const venceu = partida.status === 'FINALIZADA' && typeof partida.resultado === 'string' && partida.resultado.startsWith('Você venceu') && !partida.demonstracao
     const dificuldade = typeof partida.dificuldade === 'string' && Object.hasOwn(PREMIO_DA_VITORIA, partida.dificuldade) ? partida.dificuldade : null
-    if (venceu && dificuldade) candidatas.push({ id: salva.id, dificuldade, valor: PREMIO_DA_VITORIA[dificuldade] })
+    if (!venceu || !dificuldade) continue
+    const bilhete = salva.criado_em !== null && salva.bilhete_dificuldade ? { criado_em: salva.criado_em, dificuldade: salva.bilhete_dificuldade, ritmo: salva.bilhete_ritmo } : null
+    if (vitoriaConfere(partida, bilhete, agora)) candidatas.push({ id: salva.id, dificuldade, valor: PREMIO_DA_VITORIA[dificuldade] })
+    else invalidas.push({ id: salva.id, dificuldade })
+  }
+  if (invalidas.length) {
+    await env.DB.batch(
+      invalidas.map(({ id, dificuldade }) =>
+        env.DB.prepare('INSERT INTO vitorias_pagas (usuario_id, partida_id, dificuldade, oticoins, paga_em) VALUES (?1, ?2, ?3, 0, ?4) ON CONFLICT DO NOTHING').bind(usuario.id, id, dificuldade, agora),
+      ),
+    )
   }
   // na ordem em que o aparelho mandou (a mais antiga primeiro): é ela que fica com a vaga da hora
   candidatas.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
@@ -753,6 +784,7 @@ async function receberVitorias(pedido: Request, env: Ambiente) {
     oticoins: conta?.oticoins ?? 0,
     pagas,
     semPremio,
+    invalidas: invalidas.map((v) => v.id),
     jaPagas: jaPagas.results.map((p) => p.partida_id),
     recompensas: { limite: RECOMPENSAS_POR_HORA, recebidas, agora },
   })
@@ -819,11 +851,13 @@ const corValida = (cor: unknown): cor is CorPedida => cor === 'w' || cor === 'b'
 
 async function criarSala(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
-  const { cor, amigo } = await lerCorpo<{ cor?: unknown; amigo?: unknown }>(pedido)
+  const { cor, amigo, ritmo } = await lerCorpo<{ cor?: unknown; amigo?: unknown; ritmo?: unknown }>(pedido)
   if (!corValida(cor)) throw new Falha(422, 'cor-invalida')
+  // sem ritmo, a partida é sem relógio (7 dias para cada lance); com ritmo, é blitz com o relógio aqui no servidor
+  if (ritmo !== undefined && ritmo !== null && !ehRitmo(ritmo)) throw new Falha(422, 'ritmo-invalido')
   const linhaDoAmigo = typeof amigo === 'string' ? await amigoPeloId(env, usuario.id, amigo) : null
   if (!linhaDoAmigo) throw new Falha(403, 'nao-e-amigo')
-  const sala = await abrirPartidaAmistosa(env, usuario, { id: linhaDoAmigo.id, nome: linhaDoAmigo.nome }, cor)
+  const sala = await abrirPartidaAmistosa(env, usuario, { id: linhaDoAmigo.id, nome: linhaDoAmigo.nome }, cor, ritmo ?? null)
   return responder({ codigo: sala.codigo, cor: sala.cor }, sala.nova ? 201 : 200)
 }
 
@@ -833,31 +867,44 @@ async function pedirRevanche(pedido: Request, env: Ambiente, codigo: string) {
   const { cor } = await lerCorpo<{ cor?: unknown }>(pedido)
   if (!corValida(cor)) throw new Falha(422, 'cor-invalida')
   const sala = codigoDeSalaValido(codigo)
-    ? await env.DB.prepare('SELECT brancas_id, pretas_id FROM salas WHERE codigo = ?1').bind(codigo).first<{ brancas_id: string | null; pretas_id: string | null }>()
+    ? await env.DB.prepare('SELECT brancas_id, pretas_id, ritmo FROM salas WHERE codigo = ?1').bind(codigo).first<{ brancas_id: string | null; pretas_id: string | null; ritmo: string | null }>()
     : null
   const outroId = sala?.brancas_id === usuario.id ? sala.pretas_id : sala?.pretas_id === usuario.id ? sala.brancas_id : null
   const outro = outroId ? await env.DB.prepare('SELECT id_jogador FROM usuarios WHERE id = ?1').bind(outroId).first<{ id_jogador: string }>() : null
+  // a revanche é no mesmo ritmo da partida
+  const ritmo = ehRitmo(sala?.ritmo) ? sala.ritmo : null
   const amigo = outro ? await amigoPeloId(env, usuario.id, outro.id_jogador) : null
   if (!amigo) throw new Falha(403, 'nao-e-amigo')
 
   // os dois pediram ao mesmo tempo: quem chega depois entra na partida que o outro já abriu
-  const doOutro = await env.DB.prepare("SELECT codigo FROM salas WHERE criador_id = ?1 AND status = 'aguardando' AND (brancas_id = ?2 OR pretas_id = ?2)")
-    .bind(amigo.id, usuario.id)
+  // (só a do mesmo ritmo: um convite sem relógio aberto antes não vira a revanche da blitz)
+  const doOutro = await env.DB.prepare(
+    "SELECT codigo FROM salas WHERE criador_id = ?1 AND status = 'aguardando' AND (brancas_id = ?2 OR pretas_id = ?2) AND IFNULL(ritmo, '') = ?3",
+  )
+    .bind(amigo.id, usuario.id, ritmo ?? '')
     .first<{ codigo: string }>()
   if (doOutro) {
     const entrou = await stubDaSala(env, doOutro.codigo).entrar(usuario)
     if (entrou.ok) return responder({ codigo: doOutro.codigo, cor: entrou.cor })
   }
 
-  const nova = await abrirPartidaAmistosa(env, usuario, { id: amigo.id, nome: amigo.nome }, cor)
+  const nova = await abrirPartidaAmistosa(env, usuario, { id: amigo.id, nome: amigo.nome }, cor, ritmo)
   await stubDaSala(env, codigo).avisarRevanche(usuario.id, nova.codigo)
   return responder({ codigo: nova.codigo, cor: nova.cor }, nova.nova ? 201 : 200)
 }
 
-async function abrirPartidaAmistosa(env: Ambiente, usuario: Usuario, convidado: Usuario, cor: CorPedida): Promise<{ codigo: string; cor: 'w' | 'b'; nova: boolean }> {
-  // chamar de novo quem ainda não respondeu volta pra mesma partida
-  const aberta = await env.DB.prepare("SELECT codigo, brancas_id FROM salas WHERE criador_id = ?1 AND status = 'aguardando' AND (brancas_id = ?2 OR pretas_id = ?2)")
-    .bind(usuario.id, convidado.id)
+async function abrirPartidaAmistosa(
+  env: Ambiente,
+  usuario: Usuario,
+  convidado: Usuario,
+  cor: CorPedida,
+  ritmo: Ritmo | null = null,
+): Promise<{ codigo: string; cor: 'w' | 'b'; nova: boolean }> {
+  // chamar de novo quem ainda não respondeu (no mesmo ritmo) volta pra mesma partida
+  const aberta = await env.DB.prepare(
+    "SELECT codigo, brancas_id FROM salas WHERE criador_id = ?1 AND status = 'aguardando' AND (brancas_id = ?2 OR pretas_id = ?2) AND IFNULL(ritmo, '') = ?3",
+  )
+    .bind(usuario.id, convidado.id, ritmo ?? '')
     .first<{ codigo: string; brancas_id: string }>()
   if (aberta) return { codigo: aberta.codigo, cor: aberta.brancas_id === usuario.id ? 'w' : 'b', nova: false }
 
@@ -869,12 +916,12 @@ async function abrirPartidaAmistosa(env: Ambiente, usuario: Usuario, convidado: 
   const codigo = novoCodigo()
   const agora = Date.now()
   await env.DB.prepare(
-    `INSERT INTO salas (codigo, criador_id, brancas_id, pretas_id, brancas_nome, pretas_nome, status, criada_em, atualizada_em)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'aguardando', ?7, ?7)`,
+    `INSERT INTO salas (codigo, criador_id, brancas_id, pretas_id, brancas_nome, pretas_nome, status, ritmo, criada_em, atualizada_em)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'aguardando', ?7, ?8, ?8)`,
   )
-    .bind(codigo, usuario.id, brancas.id, pretas.id, brancas.nome, pretas.nome, agora)
+    .bind(codigo, usuario.id, brancas.id, pretas.id, brancas.nome, pretas.nome, ritmo, agora)
     .run()
-  await stubDaSala(env, codigo).criar(codigo, brancas, pretas, minhaCor)
+  await stubDaSala(env, codigo).criar(codigo, brancas, pretas, minhaCor, { ritmo })
   return { codigo, cor: minhaCor, nova: true }
 }
 
@@ -897,11 +944,11 @@ async function recusarSala(pedido: Request, env: Ambiente, codigo: string) {
 async function listarSalas(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
   const { results } = await env.DB.prepare(
-    `SELECT codigo, brancas_id, brancas_nome, pretas_nome, status, resultado, motivo, atualizada_em FROM salas
+    `SELECT codigo, brancas_id, brancas_nome, pretas_nome, status, resultado, motivo, ritmo, automatica, atualizada_em FROM salas
      WHERE (brancas_id = ?1 OR pretas_id = ?1) AND (status <> 'aguardando' OR criador_id = ?1) ORDER BY atualizada_em DESC LIMIT ?2`,
   )
     .bind(usuario.id, SALAS_NA_LISTA)
-    .all<{ codigo: string; brancas_id: string | null; brancas_nome: string | null; pretas_nome: string | null; status: string; resultado: string | null; motivo: string | null; atualizada_em: number }>()
+    .all<{ codigo: string; brancas_id: string | null; brancas_nome: string | null; pretas_nome: string | null; status: string; resultado: string | null; motivo: string | null; ritmo: string | null; automatica: number; atualizada_em: number }>()
   return responder({
     salas: results.map((s) => ({
       codigo: s.codigo,
@@ -911,6 +958,8 @@ async function listarSalas(pedido: Request, env: Ambiente) {
       status: s.status,
       resultado: s.resultado,
       motivo: s.motivo,
+      ritmo: s.ritmo,
+      automatica: !!s.automatica,
       atualizadaEm: s.atualizada_em,
     })),
   })
@@ -931,6 +980,252 @@ async function conectarNaSala(pedido: Request, env: Ambiente, codigo: string) {
   repasse.headers.set('X-Usuario-Id', usuario.id)
   repasse.headers.delete('Sec-WebSocket-Protocol')
   return stubDaSala(env, codigo).fetch(repasse)
+}
+
+// --- bilhete das partidas contra a máquina --------------------------------------------------
+const BILHETES_POR_HORA = 60
+/** Uma partida de verdade leva pelo menos isso: 10 s mais 1 s por lance (a animação de cada lance já passa disso). */
+const DURACAO_MINIMA_MS = 10_000
+const DURACAO_POR_LANCE_MS = 1000
+/** O bilhete é do começo da partida: até o 2º lance (quem começou sem internet pede de novo no lance seguinte). */
+const LANCES_ATE_O_BILHETE = 2
+
+/** O aparelho avisa que uma partida contra a máquina começou. O primeiro bilhete vale: pedir de novo não muda a hora. */
+async function pedirBilhete(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { partida, dificuldade, ritmo, lances } = await lerCorpo<{ partida?: unknown; dificuldade?: unknown; ritmo?: unknown; lances?: unknown }>(pedido)
+  if (typeof partida !== 'string' || !partida || partida.length > 64) throw new Falha(422, 'partida-invalida')
+  if (typeof dificuldade !== 'string' || !Object.hasOwn(PREMIO_DA_VITORIA, dificuldade)) throw new Falha(422, 'dificuldade-invalida')
+  if (ritmo !== undefined && ritmo !== null && !ehRitmo(ritmo)) throw new Falha(422, 'ritmo-invalido')
+  if (typeof lances !== 'number' || !Number.isInteger(lances) || lances < 0 || lances > LANCES_ATE_O_BILHETE) throw new Falha(422, 'tarde-demais')
+  if ((await somarTentativa(env, `bilhete:${usuario.id}`, UMA_HORA)) > BILHETES_POR_HORA) throw new Falha(429, 'muitas-tentativas')
+  await env.DB.prepare('INSERT INTO bilhetes (usuario_id, partida_id, dificuldade, ritmo, criado_em) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT DO NOTHING')
+    .bind(usuario.id, partida, dificuldade, ritmo ?? null, Date.now())
+    .run()
+  return responder({ ok: true })
+}
+
+/** Quantos lances tem o PGN, sem os cabeçalhos, os comentários, os números dos lances e o resultado. */
+function lancesDoPgn(pgn: string): number {
+  return pgn
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/\d+\.(\.\.)?/g, ' ')
+    .split(/\s+/)
+    .filter((lance) => lance && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(lance)).length
+}
+
+interface PartidaGravada {
+  status?: unknown
+  resultado?: unknown
+  dificuldade?: unknown
+  demonstracao?: unknown
+  pgn?: unknown
+  fen?: unknown
+  corJogador?: unknown
+  relogio?: { ritmo?: unknown; w?: unknown; b?: unknown }
+}
+
+interface Bilhete {
+  criado_em: number
+  dificuldade: string
+  ritmo: string | null
+}
+
+/**
+ * A vitória confere: tem o bilhete do começo (da mesma dificuldade), durou o bastante para os lances dela, e a posição
+ * final é de verdade — a vez é da máquina, o número do lance bate com o PGN, e é mate (ou, na blitz, o tempo da máquina
+ * zerou, a partida durou pelo menos o tempo dela, e quem joga tinha peças para dar mate). Só a posição final é
+ * conferida: refazer a partida inteira passaria do tempo de processamento que o servidor tem.
+ */
+function vitoriaConfere(partida: PartidaGravada, bilhete: Bilhete | null, agora: number): boolean {
+  if (!bilhete || bilhete.dificuldade !== partida.dificuldade) return false
+  if (typeof partida.pgn !== 'string' || typeof partida.fen !== 'string') return false
+  const lances = lancesDoPgn(partida.pgn)
+  const durou = agora - bilhete.criado_em
+  if (durou < DURACAO_MINIMA_MS + lances * DURACAO_POR_LANCE_MS) return false
+  let chess: Chess
+  try {
+    chess = new Chess(partida.fen)
+  } catch {
+    return false
+  }
+  const [, vez, , , , numero] = partida.fen.split(' ')
+  if ((Number(numero) - 1) * 2 + (vez === 'b' ? 1 : 0) !== lances) return false
+  const corDoJogador = partida.corJogador === 'w' || partida.corJogador === 'b' ? partida.corJogador : null
+  if (!corDoJogador || chess.turn() === corDoJogador) return false
+  if (partida.resultado === 'Você venceu (xeque-mate)') return chess.isCheckmate()
+  if (partida.resultado === 'Você venceu (tempo)') {
+    const relogio = partida.relogio
+    const corDaMaquina = chess.turn()
+    if (!bilhete.ritmo || !ehRitmo(bilhete.ritmo) || !relogio || relogio.ritmo !== bilhete.ritmo) return false
+    if (typeof relogio[corDaMaquina] !== 'number' || (relogio[corDaMaquina] as number) > 0) return false
+    return durou >= temposDoRitmo(bilhete.ritmo).baseMs && !semMaterialParaMate(chess, corDoJogador)
+  }
+  return false
+}
+
+// --- adversário automático ----------------------------------------------------------------
+/** Quem não pergunta há 30 s saiu da fila (fechou o jogo, perdeu a conexão). */
+const NA_FILA_MS = 30 * 1000
+/** Grava "ainda estou aqui" no máximo a cada 10 s: cada pergunta custa no máximo uma escrita. */
+const FILA_GRAVA_MS = 10 * 1000
+const ENTRADAS_NA_FILA_POR_HORA = 60
+
+type LinhaDaFila = { ritmo: string; visto_em: number; sala_codigo: string | null; cor: 'w' | 'b' | null }
+
+/** Onde a pessoa está na fila: procurando, ou já com a sala (e a cor) da partida que achou. */
+async function situacaoNaFila(env: Ambiente, usuarioId: string) {
+  return env.DB.prepare(
+    `SELECT f.ritmo, f.visto_em, s.codigo AS sala_codigo, CASE WHEN s.brancas_id = ?1 THEN 'w' WHEN s.pretas_id = ?1 THEN 'b' END AS cor
+     FROM fila f LEFT JOIN salas s ON s.codigo = f.sala_codigo WHERE f.usuario_id = ?1`,
+  )
+    .bind(usuarioId)
+    .first<LinhaDaFila>()
+}
+
+/**
+ * Procura alguém do mesmo ritmo que ainda está na fila (e que nenhum dos dois bloqueou). Os dois lugares são reservados
+ * juntos, numa transação só: se outra pessoa reservou um deles no meio, nada muda e a próxima pergunta tenta de novo.
+ * A sala nasce antes de a reserva aparecer na fila, então quem pergunta só vê a sala quando ela já existe.
+ */
+async function procurarAdversario(env: Ambiente, usuario: Usuario, ritmo: Ritmo): Promise<void> {
+  const agora = Date.now()
+  const outro = await env.DB.prepare(
+    `SELECT u.id, u.nome FROM fila f JOIN usuarios u ON u.id = f.usuario_id
+     WHERE f.ritmo = ?1 AND f.sala_codigo IS NULL AND f.usuario_id <> ?2 AND f.visto_em > ?3
+       AND NOT EXISTS (SELECT 1 FROM bloqueios b WHERE (b.usuario_id = ?2 AND b.bloqueado_id = f.usuario_id) OR (b.usuario_id = f.usuario_id AND b.bloqueado_id = ?2))
+     ORDER BY f.entrou_em LIMIT 1`,
+  )
+    .bind(ritmo, usuario.id, agora - NA_FILA_MS)
+    .first<{ id: string; nome: string }>()
+  if (!outro) return
+  const codigo = novoCodigo()
+  const reserva = `reservando:${codigo}`
+  const [doOutro, meu] = await env.DB.batch([
+    env.DB.prepare('UPDATE fila SET sala_codigo = ?1 WHERE usuario_id = ?2 AND sala_codigo IS NULL AND EXISTS (SELECT 1 FROM fila WHERE usuario_id = ?3 AND sala_codigo IS NULL)').bind(
+      reserva,
+      outro.id,
+      usuario.id,
+    ),
+    env.DB.prepare('UPDATE fila SET sala_codigo = ?1 WHERE usuario_id = ?2 AND sala_codigo IS NULL AND EXISTS (SELECT 1 FROM fila WHERE usuario_id = ?3 AND sala_codigo = ?1)').bind(
+      reserva,
+      usuario.id,
+      outro.id,
+    ),
+  ])
+  if (!doOutro.meta.changes || !meu.meta.changes) return
+  // as cores são sorteadas
+  const [brancas, pretas] = crypto.getRandomValues(new Uint8Array(1))[0] % 2 === 0 ? [usuario, outro] : [outro, usuario]
+  try {
+    await stubDaSala(env, codigo).criar(codigo, brancas, pretas, usuario.id === brancas.id ? 'w' : 'b', { ritmo, automatica: true })
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO salas (codigo, criador_id, brancas_id, pretas_id, brancas_nome, pretas_nome, status, ritmo, automatica, criada_em, atualizada_em)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'andamento', ?7, 1, ?8, ?8)`,
+      ).bind(codigo, usuario.id, brancas.id, pretas.id, brancas.nome, pretas.nome, ritmo, agora),
+      env.DB.prepare('UPDATE fila SET sala_codigo = ?1 WHERE sala_codigo = ?2').bind(codigo, reserva),
+    ])
+  } catch (erro) {
+    // a sala não nasceu: os dois voltam a procurar
+    await env.DB.prepare('UPDATE fila SET sala_codigo = NULL WHERE sala_codigo = ?1').bind(reserva).run()
+    throw erro
+  }
+}
+
+const respostaDaFila = (linha: LinhaDaFila | null) =>
+  linha?.sala_codigo && linha.cor ? { estado: 'achou', codigo: linha.sala_codigo, cor: linha.cor } : { estado: linha ? 'procurando' : 'fora' }
+
+/** Entra na fila do adversário automático no ritmo escolhido (se já estava, recomeça a procura). */
+async function entrarNaFila(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { ritmo } = await lerCorpo<{ ritmo?: unknown }>(pedido)
+  if (!ehRitmo(ritmo)) throw new Falha(422, 'ritmo-invalido')
+  if ((await somarTentativa(env, `fila:${usuario.id}`, UMA_HORA)) > ENTRADAS_NA_FILA_POR_HORA) throw new Falha(429, 'muitas-tentativas')
+  const agora = Date.now()
+  await env.DB.prepare(
+    `INSERT INTO fila (usuario_id, ritmo, entrou_em, visto_em, sala_codigo) VALUES (?1, ?2, ?3, ?3, NULL)
+     ON CONFLICT(usuario_id) DO UPDATE SET ritmo = ?2, entrou_em = ?3, visto_em = ?3, sala_codigo = NULL`,
+  )
+    .bind(usuario.id, ritmo, agora)
+    .run()
+  await procurarAdversario(env, usuario, ritmo)
+  return responder(respostaDaFila(await situacaoNaFila(env, usuario.id)))
+}
+
+/** O aparelho pergunta a cada poucos segundos: continua na fila, procura de novo e diz se achou. */
+async function verFila(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  let linha = await situacaoNaFila(env, usuario.id)
+  if (linha && !linha.sala_codigo && ehRitmo(linha.ritmo)) {
+    const agora = Date.now()
+    if (agora - linha.visto_em > FILA_GRAVA_MS) await env.DB.prepare('UPDATE fila SET visto_em = ?1 WHERE usuario_id = ?2').bind(agora, usuario.id).run()
+    await procurarAdversario(env, usuario, linha.ritmo)
+    linha = await situacaoNaFila(env, usuario.id)
+  }
+  return responder(respostaDaFila(linha))
+}
+
+async function sairDaFila(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  // quem já foi pareado não sai: a partida já existe
+  await env.DB.prepare('DELETE FROM fila WHERE usuario_id = ?1 AND sala_codigo IS NULL').bind(usuario.id).run()
+  return responder({ ok: true })
+}
+
+// --- bloquear e denunciar -------------------------------------------------------------------
+const DENUNCIAS_POR_HORA = 10
+const MOTIVOS_DE_DENUNCIA = ['nome', 'foto', 'trapaca', 'comportamento']
+
+/** O outro jogador de uma sala de que a pessoa participou. O id dele não sai do servidor. */
+async function adversarioDaSala(env: Ambiente, usuarioId: string, codigo: string): Promise<string> {
+  const sala = codigoDeSalaValido(codigo)
+    ? await env.DB.prepare('SELECT brancas_id, pretas_id FROM salas WHERE codigo = ?1').bind(codigo).first<{ brancas_id: string | null; pretas_id: string | null }>()
+    : null
+  const outro = sala?.brancas_id === usuarioId ? sala.pretas_id : sala?.pretas_id === usuarioId ? sala.brancas_id : null
+  if (!outro) throw new Falha(404, 'sala-nao-existe')
+  return outro
+}
+
+/** Bloqueia quem jogou contra a pessoa: não se encontram mais no adversário automático, deixam de ser amigos e não
+ * recebem convites um do outro. */
+async function bloquear(env: Ambiente, usuarioId: string, outroId: string) {
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO bloqueios (usuario_id, bloqueado_id, criado_em) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING').bind(usuarioId, outroId, Date.now()),
+    env.DB.prepare('DELETE FROM amizades WHERE (solicitante_id = ?1 AND destinatario_id = ?2) OR (solicitante_id = ?2 AND destinatario_id = ?1)').bind(usuarioId, outroId),
+  ])
+}
+
+async function bloquearNaSala(pedido: Request, env: Ambiente, codigo: string) {
+  const usuario = await exigirUsuario(pedido, env)
+  await bloquear(env, usuario.id, await adversarioDaSala(env, usuario.id, codigo))
+  return responder({ ok: true })
+}
+
+async function denunciarNaSala(pedido: Request, env: Ambiente, codigo: string) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { motivo } = await lerCorpo<{ motivo?: unknown }>(pedido)
+  if (typeof motivo !== 'string' || !MOTIVOS_DE_DENUNCIA.includes(motivo)) throw new Falha(422, 'motivo-invalido')
+  const outro = await adversarioDaSala(env, usuario.id, codigo)
+  if ((await somarTentativa(env, `denuncia:${usuario.id}`, UMA_HORA)) > DENUNCIAS_POR_HORA) throw new Falha(429, 'muitas-tentativas')
+  await env.DB.prepare('INSERT INTO denuncias (denunciante_id, denunciado_id, sala_codigo, motivo, criada_em) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT DO NOTHING')
+    .bind(usuario.id, outro, codigo, motivo, Date.now())
+    .run()
+  return responder({ ok: true })
+}
+
+async function desbloquear(pedido: Request, env: Ambiente, idJogador: string) {
+  const usuario = await exigirUsuario(pedido, env)
+  await env.DB.prepare('DELETE FROM bloqueios WHERE usuario_id = ?1 AND bloqueado_id = (SELECT id FROM usuarios WHERE id_jogador = ?2)').bind(usuario.id, idJogador).run()
+  return responder({ ok: true })
+}
+
+/** Algum dos dois bloqueou o outro? */
+async function bloqueadosEntreSi(env: Ambiente, um: string, outro: string): Promise<boolean> {
+  const linha = await env.DB.prepare('SELECT 1 AS sim FROM bloqueios WHERE (usuario_id = ?1 AND bloqueado_id = ?2) OR (usuario_id = ?2 AND bloqueado_id = ?1) LIMIT 1')
+    .bind(um, outro)
+    .first<{ sim: number }>()
+  return !!linha
 }
 
 // --- registro de erros ---------------------------------------------------------------------
@@ -978,7 +1273,8 @@ async function receberErro(pedido: Request, env: Ambiente) {
 async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Response> {
   const { pathname: caminho } = url
   const metodo = pedido.method
-  const sala = caminho.match(/^\/salas\/([^/]+)(\/entrar|\/recusar|\/revanche|\/ws)?$/)
+  const sala = caminho.match(/^\/salas\/([^/]+)(\/entrar|\/recusar|\/revanche|\/bloquear|\/denunciar|\/ws)?$/)
+  const desbloqueio = caminho.match(/^\/bloqueios\/([A-Z2-9]{8})\/remover$/)
   const amigo = caminho.match(/^\/amigos\/([A-Z2-9]{8})(\/remover)?$/)
   const foto = caminho.match(/^\/fotos\/([A-Z2-9]{8})$/)
   const convite = caminho.match(/^\/convites\/([A-Z2-9]{12})$/)
@@ -1006,6 +1302,7 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'GET' && caminho === '/conquistas') return lerConquistas(pedido, env)
   if (metodo === 'POST' && caminho === '/conquistas/receber') return receberConquistas(pedido, env)
   if (metodo === 'POST' && caminho === '/conquistas/progresso') return guardarProgresso(pedido, env)
+  if (metodo === 'POST' && caminho === '/partidas/bilhete') return pedirBilhete(pedido, env)
   if (metodo === 'POST' && caminho === '/vitorias/receber') return receberVitorias(pedido, env)
   if (metodo === 'GET' && caminho === '/vitorias/recompensas') return lerRecompensas(pedido, env)
   if (metodo === 'POST' && caminho === '/presenca') return marcarPresenca(pedido, env)
@@ -1016,11 +1313,17 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (convite && metodo === 'GET') return verConvite(pedido, env, convite[1])
   if (amigo && metodo === 'GET' && !amigo[2]) return verPerfil(pedido, env, amigo[1])
   if (amigo && metodo === 'POST' && amigo[2]) return removerAmigo(pedido, env, amigo[1])
+  if (metodo === 'POST' && caminho === '/fila') return entrarNaFila(pedido, env)
+  if (metodo === 'GET' && caminho === '/fila') return verFila(pedido, env)
+  if (metodo === 'POST' && caminho === '/fila/sair') return sairDaFila(pedido, env)
+  if (desbloqueio && metodo === 'POST') return desbloquear(pedido, env, desbloqueio[1])
   if (metodo === 'GET' && caminho === '/salas') return listarSalas(pedido, env)
   if (metodo === 'POST' && caminho === '/salas') return criarSala(pedido, env)
   if (sala && metodo === 'POST' && sala[2] === '/entrar') return entrarNaSala(pedido, env, sala[1])
   if (sala && metodo === 'POST' && sala[2] === '/recusar') return recusarSala(pedido, env, sala[1])
   if (sala && metodo === 'POST' && sala[2] === '/revanche') return pedirRevanche(pedido, env, sala[1])
+  if (sala && metodo === 'POST' && sala[2] === '/bloquear') return bloquearNaSala(pedido, env, sala[1])
+  if (sala && metodo === 'POST' && sala[2] === '/denunciar') return denunciarNaSala(pedido, env, sala[1])
   if (sala && metodo === 'GET' && sala[2] === '/ws') return conectarNaSala(pedido, env, sala[1])
   throw new Falha(404, 'nao-encontrado')
 }

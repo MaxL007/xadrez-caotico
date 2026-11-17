@@ -82,9 +82,10 @@ function vitoriasPagasNoAparelho(usuario: string): string[] {
 export const RECOMPENSAS_POR_HORA = 3
 const UMA_HORA = 60 * 60 * 1000
 
-/** Vitória contra a máquina que paga óticoins, ganha e ainda não registrada no servidor. */
+/** Vitória contra a máquina que paga óticoins, ganha e ainda não registrada no servidor. Sem o bilhete do começo da
+ * partida, o servidor não paga: nem manda. */
 const vitoriaAReceber = (p: PartidaXadrez, registradas: Set<string>) =>
-  !!p.dificuldade && !p.demonstracao && p.status === 'FINALIZADA' && resultadoDaPartida(p) === 'venceu' && !registradas.has(p.id)
+  !!p.dificuldade && !!p.bilhete && !p.demonstracao && p.status === 'FINALIZADA' && resultadoDaPartida(p) === 'venceu' && !registradas.has(p.id)
 
 /**
  * Manda as vitórias contra a máquina que ainda não foram pagas (só as jogadas com dificuldade escolhida). A que ainda
@@ -112,7 +113,7 @@ async function receberAsVitorias(partidas: PartidaXadrez[]): Promise<{ premio: n
 }
 
 /** A vitória que acabou de sair paga? Sem vaga na hora, diz a partir de quando (no relógio deste aparelho) volta a pagar. */
-export type RecompensaDaVitoria = { paga: true } | { paga: false; liberaEm: number }
+export type RecompensaDaVitoria = { paga: true } | { paga: false; liberaEm: number } | { paga: false; semBilhete: true }
 
 /**
  * Confere, na tela de vitória, se ela vai pagar: as recompensas que o servidor já pagou na última hora mais as vitórias
@@ -121,6 +122,9 @@ export type RecompensaDaVitoria = { paga: true } | { paga: false; liberaEm: numb
 export async function recompensaDaVitoria(partidas: PartidaXadrez[], idDaVitoria: string): Promise<RecompensaDaVitoria> {
   const usuario = sessaoAtual()?.usuario.id
   if (!usuario) return { paga: true }
+  // a partida começou sem o servidor saber (sem conexão no começo): não paga
+  const vitoria = partidas.find((p) => p.id === idDaVitoria)
+  if (vitoria && !vitoria.bilhete) return { paga: false, semBilhete: true }
   let recompensas: Awaited<ReturnType<typeof lerRecompensas>>
   try {
     recompensas = await lerRecompensas()

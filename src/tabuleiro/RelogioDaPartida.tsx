@@ -18,7 +18,20 @@ const POUCO_TEMPO_MS = 20_000
  * tabuleiro. `andar` desconta o tempo (é o tabuleiro que sabe se o relógio corre) e devolve o que mostrar; o relógio
  * chama a cada décimo de segundo, e só desenha de novo quando o que aparece muda.
  */
-export function RelogioDaPartida({ t, ritmo, corDoJogador, andar }: { t: Traduzir; ritmo: Ritmo; corDoJogador: 'w' | 'b'; andar: () => MostradorDoRelogio | null }) {
+export function RelogioDaPartida({
+  t,
+  ritmo,
+  corDoJogador,
+  andar,
+  adversario,
+}: {
+  t: Traduzir
+  ritmo: Ritmo
+  corDoJogador: 'w' | 'b'
+  andar: () => MostradorDoRelogio | null
+  /** O nome de quem joga do outro lado; sem nome, é a máquina. */
+  adversario?: string | null
+}) {
   const [mostrador, setMostrador] = useState<MostradorDoRelogio | null>(null)
   useEffect(() => {
     const tique = () => {
@@ -56,7 +69,7 @@ export function RelogioDaPartida({ t, ritmo, corDoJogador, andar }: { t: Traduzi
   return (
     <div className="flex min-w-[8.5rem] flex-col gap-1 rounded-lg bg-[#1c120a]/55 p-1 shadow backdrop-blur" role="timer" aria-label={t('blitz.relogio', { ritmo })} data-relogio={ritmo}>
       <p className="px-1 text-center text-[0.65rem] font-semibold uppercase tracking-wider text-[#e6c675]">{t('blitz.titulo', { ritmo })}</p>
-      {linha(maquina, t('lances.maquina'))}
+      {linha(maquina, adversario || t('lances.maquina'))}
       {linha(corDoJogador, t('lances.voce'))}
     </div>
   )

@@ -159,6 +159,8 @@ export function instalarGanchosDeTeste(dependencias: DependenciasDosTestes) {
         corJogador: cor,
         pgn,
         status: 'EM_ANDAMENTO',
+        // a partida de teste conta como tendo bilhete: a taça mostra o prêmio como numa partida de verdade
+        bilhete: true,
         criadaEm: agora,
         atualizadaEm: agora,
         ...(dificuldade ? { dificuldade } : {}),

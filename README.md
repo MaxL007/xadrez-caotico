@@ -22,8 +22,9 @@ contra a máquina.
 npm install
 cd worker && npm install && cd ..
 
-# segredos locais do simulador (não vão pro git)
-printf 'PIMENTA=qualquer-coisa-longa\nORIGENS=http://127.0.0.1:5184\nLIMITE_CONTAS=100000\n' > worker/.dev.vars
+# segredos locais do simulador (não vão pro git). ACELERAR_RELOGIO: o relógio da blitz entre pessoas anda 30 vezes mais
+# depressa, só aqui (3 min viram 6 s), pros testes não esperarem minutos
+printf 'PIMENTA=qualquer-coisa-longa\nORIGENS=http://127.0.0.1:5184\nLIMITE_CONTAS=100000\nACELERAR_RELOGIO=30\n' > worker/.dev.vars
 cd worker && npx wrangler d1 migrations apply xadrez-caotico --local && npm run dev   # simulador, porta 8787
 npm run dev                                                                            # site, porta 5184
 ```
@@ -39,6 +40,9 @@ node testes/testar-convites.mjs    # convite por link e QR Code, com a câmera f
 node testes/testar-dificuldade.mjs # fácil, intermediário e difícil, e a força da máquina em cada um
 node testes/testar-empate.mjs      # empate com a máquina, taça no centro, aba de lances e peça que volta ao centro
 node testes/testar-blitz.mjs       # blitz: modo e ritmo, o relógio, o fim no tempo e a taça que diz se a vitória paga
+node testes/testar-adversario-automatico.mjs  # adversário automático, relógio do servidor, denunciar/bloquear, blitz entre amigos, bilhete
+node testes/testar-registro-de-erros.mjs      # o relatório de erro: sem dados da pessoa, repetidos somados, limite por endereço
+node testes/testar-passeio-e-configuracoes.mjs  # passeio da primeira vez, privacidade e termos, volume por categoria
 node testes/testar-qualidade.mjs   # média como padrão e a resolução de cada qualidade no computador e no celular
 node testes/testar-armas.mjs       # o ataque e o som de cada arma, o saque, os passos e a promoção com equipamentos
 node testes/medir-som.mjs          # o pico de cada som pela cadeia de saída do jogo: nada estoura

@@ -1,4 +1,5 @@
 import { enderecoDaSala } from './servidor'
+import type { Ritmo } from '../jogo/relogio'
 
 // A conexão ao vivo com uma partida entre duas pessoas. Se a internet cair ela volta sozinha, e ao
 // voltar o servidor manda a partida inteira: nenhum lance se perde.
@@ -8,6 +9,16 @@ const ESPERA_MAXIMA_MS = 15000
 
 export type StatusDaSala = 'aguardando' | 'andamento' | 'fim' | 'expirada' | 'recusada'
 export type ResultadoDaSala = 'brancas' | 'pretas' | 'empate'
+
+/** O relógio da blitz entre pessoas, como o servidor manda: o que resta a cada um no começo da vez de agora, desde
+ * quando ela corre (null nos primeiros lances e com a partida parada) e a hora do servidor. `recebidoEm` é a hora deste
+ * aparelho quando chegou: o que passou desde então se soma sem depender do relógio do aparelho estar certo. */
+export interface RelogioDaSala {
+  restante: { w: number; b: number }
+  desde: number | null
+  agora: number
+  recebidoEm: number
+}
 
 export interface EstadoDaSala {
   codigo: string
@@ -21,6 +32,11 @@ export interface EstadoDaSala {
   adversarioConectado: boolean
   /** Pedido de empate esperando resposta: de quem é. */
   empate?: 'w' | 'b' | null
+  /** Blitz: o ritmo e o relógio, que mora no servidor. */
+  ritmo?: Ritmo | null
+  relogio?: RelogioDaSala | null
+  /** Partida do adversário automático (as duas pessoas não precisam ser amigas). */
+  automatica?: boolean
 }
 
 export interface LanceDaSala {
@@ -29,12 +45,13 @@ export interface LanceDaSala {
   para: string
   promocao?: string
   san: string
+  relogio?: RelogioDaSala | null
 }
 
 export interface AoReceberDaSala {
   estado: (estado: EstadoDaSala) => void
   lance: (lance: LanceDaSala) => void
-  fim: (resultado: ResultadoDaSala, motivo: string) => void
+  fim: (resultado: ResultadoDaSala, motivo: string, relogio: RelogioDaSala | null) => void
   presenca: (conectado: boolean) => void
   conexao: (ligada: boolean) => void
   /** O servidor recusou a entrada (sessão vencida, sem lugar na sala). */
@@ -76,9 +93,10 @@ export function abrirConexaoDaSala(codigo: string, token: string, ao: AoReceberD
     }
     conexao.onmessage = (evento) => {
       const m = JSON.parse(String(evento.data))
+      if (m.relogio) m.relogio.recebidoEm = Date.now()
       if (m.t === 'estado') ao.estado(m as EstadoDaSala)
       else if (m.t === 'lance') ao.lance(m as LanceDaSala)
-      else if (m.t === 'fim') ao.fim(m.resultado, m.motivo)
+      else if (m.t === 'fim') ao.fim(m.resultado, m.motivo, m.relogio ?? null)
       else if (m.t === 'presenca') ao.presenca(m.adversarioConectado)
       else if (m.t === 'revanche') ao.revanche(m.codigo)
       else if (m.t === 'empate') ao.empate(m.de)

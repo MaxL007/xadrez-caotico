@@ -112,6 +112,7 @@ export function criarPartidaContraMaquina(dependencias: DependenciasDaPartida) {
     partida.status = 'FINALIZADA'
     partida.resultado = empatou ? EMPATE_NO_TEMPO : cor === corHumanoRef.current ? 'A máquina venceu (tempo)' : 'Você venceu (tempo)'
     partida.pgn = chess.pgn()
+    partida.fen = chess.fen()
     partida.atualizadaEm = Date.now()
     if (relogioRef.current) partida.relogio = relogioRef.current.salvo()
     resolverPromocaoRef.current?.(null)

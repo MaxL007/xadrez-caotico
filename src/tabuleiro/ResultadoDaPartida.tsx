@@ -155,8 +155,9 @@ export function ResultadoDaPartida({
   detalhe: string
   /** Óticoins da vitória contra a máquina (pela dificuldade); 0 nas outras. */
   premio?: number
-  /** A vitória não paga: as recompensas da hora já foram usadas, e voltam a pagar em `liberaEm` (hora deste aparelho). */
-  semPremio?: { limite: number; liberaEm: number } | null
+  /** A vitória não paga: as recompensas da hora já foram usadas, e voltam a pagar em `liberaEm` (hora deste aparelho);
+   * ou a partida começou sem o servidor saber (`semBilhete`). */
+  semPremio?: { limite: number; liberaEm: number } | { semBilhete: true } | null
   onNovoJogo: () => void
   onFechar: () => void
 }) {
@@ -200,10 +201,12 @@ export function ResultadoDaPartida({
         )}
         {semPremio && (
           <p className="mt-1 max-w-[18rem] rounded-xl bg-[#1c120a]/80 px-3 py-1 text-center text-xs font-semibold text-[#e6c675] shadow" data-sem-premio>
-            {t('resultado.semPremio', {
-              limite: semPremio.limite,
-              hora: new Date(semPremio.liberaEm).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            })}
+            {'semBilhete' in semPremio
+              ? t('resultado.semBilhete')
+              : t('resultado.semPremio', {
+                  limite: semPremio.limite,
+                  hora: new Date(semPremio.liberaEm).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                })}
           </p>
         )}
         <p className="mt-1 max-w-[18rem] text-center text-xs font-medium text-[#f5e6c8] [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]">{detalhe}</p>

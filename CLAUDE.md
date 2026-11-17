@@ -19,10 +19,18 @@ As pastas de `src` são por função:
 - `catalogos/`: o que se edita à mão e o servidor também lê: `personalizacao.json` (partes, armas por peça, habilidades,
   preços da Loja, que conquista libera cada arma), `conquistas.json` (o que cada conquista pede e paga) e
   `aparencia.json` (avatares e molduras). Mudou um deles, publica o servidor junto (`wrangler deploy`).
-- `tabuleiro/`: a partida em 3D. `ChessBoard3D.tsx` é a cena e o fluxo da partida, num `useEffect` grande: `geracao`
-  invalida animações de um tabuleiro antigo; `acoesRef` é a ponte do React pra cena; `window.__xadrez` tem os ganchos
-  dos testes, só em desenvolvimento. `casas.ts` tem as coordenadas, a câmera e as texturas do tabuleiro;
-  `ResultadoDaPartida.tsx` e `PainelDeLances.tsx`, o que aparece por cima dela.
+- `tabuleiro/`: a partida em 3D. `ChessBoard3D.tsx` junta as peças num `useEffect`: monta a cena, cria os módulos abaixo
+  e liga as ações (`acoesRef` é a ponte do React pra cena). `casas.ts` tem as coordenadas e as texturas do tabuleiro;
+  `ResultadoDaPartida.tsx`, `PainelDeLances.tsx`, `RelogioDaPartida.tsx`, `EscolhaDoNovoJogo.tsx` e
+  `MenuDoAdversario.tsx` (bloquear/denunciar), o que aparece por cima dela. `ganchosDeTeste.ts` é o `window.__xadrez`,
+  só em desenvolvimento.
+  - `tabuleiro/cena/`: `montarCena.ts` (desenho, luzes, mesa, casas, coordenadas, grupos e as qualidades) e
+    `vistaDaCamera.ts` (o giro da câmera, as coordenadas que viram junto, o enquadramento e o ajuste de tamanho).
+  - `tabuleiro/fluxo/`: `andamento.ts` (o que muda a cada lance: `geracao` invalida animações de um tabuleiro antigo,
+    `lancesEmAndamento`, a fila da sala), `lanceAnimado.ts` (o lance com a luta, o roque e a promoção),
+    `partidaContraMaquina.ts` (a vez da máquina e o relógio da blitz contra ela), `partidaOnline.ts` (o tabuleiro da
+    partida entre pessoas e o relógio do servidor) e `useSalaOnline.ts` (a conexão ao vivo e a revanche). Cada módulo
+    recebe o que usa num objeto (`dependencias`): o que é `let` compartilhado mora no `andamento`.
   - `tabuleiro/pecas/`: as peças. `modelosRPG.ts` (carregar os .glb, os clipes, a espada do peão), `geometricas.ts` (o
     boneco de madeira, se o modelo não carregar), `materiais.ts`, `montarPeca.ts` (a peça de uma casa), `vestimenta.ts`
     (o que as peças de quem joga vestem), `equipamentos.ts` (armaduras e armas em malha com esqueleto), `ossos.ts` (o
@@ -33,16 +41,18 @@ As pastas de `src` são por função:
   - `tabuleiro/combate/`: `golpes.ts` (a espada do peão, o alcance, o impacto), `poderes.ts` (orbe, raio, onda),
     `marreta.ts` (marreta, machado e maça, com a peça presa), `efeitosDasArmas.ts` (os efeitos de cada arma) e
     `lutaSemArma.ts` (socos e chute).
-- `telas/`: `MenuXadrez.tsx` (tela inicial e painéis), `PainelConta.tsx`, `PainelAmigos.tsx`, `PainelPerfil.tsx`,
+- `telas/`: `MenuXadrez.tsx` (tela inicial e painéis), `PasseioInicial.tsx` (o passeio da primeira vez),
+  `PainelPrivacidade.tsx` (texto em `textos/privacidade.ts`), `AdversarioAutomatico.tsx`, `PainelConta.tsx`, `PainelAmigos.tsx`, `PainelPerfil.tsx`,
   `PainelConquistas.tsx`, `PainelLoja.tsx`, `PainelPersonalizacao.tsx`, `QrCode.tsx` e `ui/`. `ElementosDoJogador.tsx`
   tem o avatar com moldura, o ID e o placar que amigos e perfil dividem.
 - `conta/`: `senha.ts` (PBKDF2 no aparelho; a fórmula do sal não pode mudar sem migrar as contas), `personalizacao.ts`,
-  `conquistas.ts`, `aparencia.ts`, `foto.ts`, `presenca.ts` e `conviteDeAmizade.ts`.
+  `conquistas.ts`, `bilhete.ts`, `aparencia.ts`, `foto.ts`, `presenca.ts` e `conviteDeAmizade.ts`.
 - `dados/`: `db.ts` (salva primeiro no aparelho, IndexedDB com um banco por conta, e depois na nuvem, com fila),
   `servidor.ts` (chamadas ao servidor e sessão), `salaAoVivo.ts` (WebSocket da partida, com reconexão; o token vai como
   subprotocolo) e os repositórios das partidas e do aprendizado.
 - `jogo/` (regras, a máquina, o livro de aberturas e as configurações), `som/sons.ts`, `textos/idiomas.ts` e `app/`
-  (`aplicativo.ts`, o jogo instalado como aplicativo: service worker, instalar, versão nova; e utilidades).
+  (`aplicativo.ts`, o jogo instalado como aplicativo: service worker, instalar, versão nova; `registroDeErros.ts`; e
+  utilidades).
 - `worker/src/index.ts` (rotas), `conta.ts` (senhas e limites), `sala.ts` (Durable Object, o árbitro).
 
 ## Amigos
@@ -173,9 +183,29 @@ As pastas de `src` são por função:
   DO NOTHING`), então pedidos ao mesmo tempo não passam do teto. `GET /vitorias/recompensas` diz as da última hora: a
   taça (`recompensaDaVitoria`) pergunta antes de prometer e, sem vaga, diz a que horas volta a pagar; o menu avisa as
   vitórias que ficaram sem prêmio.
+- Bilhete (`POST /partidas/bilhete`, tabela `bilhetes`, `conta/bilhete.ts`): o aparelho avisa quando a partida contra a
+  máquina começa (até o 2º lance; sem conexão, tenta a cada lance). A vitória só paga se tiver bilhete da mesma
+  dificuldade, se durou pelo menos 10 s + 1 s por lance, e se a posição final (`fen`, gravada na partida) é de verdade:
+  a vez é da máquina, o número do lance bate com o PGN e é mate; na blitz, o tempo da máquina zerou, a partida durou
+  pelo menos o tempo base e quem joga tinha peças para dar mate (`vitoriaConfere`). A que não confere fica com recibo
+  sem prêmio (`invalidas`) e não volta. Só a posição final é conferida: refazer a partida passaria dos 10 ms. Sem
+  bilhete, a taça diz que a partida começou sem conexão. Nos testes, `testes/vitorias-de-teste.mjs` grava bilhetes antigos.
 - O servidor não refaz as partidas (não cabe nos 10 ms): confia na contagem do aparelho, mas cada conquista paga uma vez
   só (tabela `conquistas`), então o máximo de uma conta é a soma do catálogo. O recibo e a moeda entram juntos no mesmo
   lote, com `changes()`.
+
+## Privacidade, erros, backup e testes no GitHub
+
+- Privacidade e termos em `src/textos/privacidade.ts` (os três idiomas; trocar a data ao mudar algo importante). O
+  contato é a página de pedidos (issues) do repositório; idade: menos de 12 anos só com responsável.
+- Registro de erros (`app/registroDeErros.ts`, `POST /erros`, tabela `erros`): mensagem, onde, versão (o nome do
+  index-XXXX.js) e o navegador resumido; sem nome, ID ou IP. Repetidos somam em `vezes`, apagados em 30 dias. Ler com
+  `npx wrangler d1 execute xadrez-caotico --remote --command "SELECT vezes, mensagem, onde, versao, navegador FROM erros ORDER BY visto_em DESC LIMIT 20"`.
+- Backup: `scripts/backup-do-banco.ps1`, agendado no Windows ("Xadrez Caotico - backup do banco", domingo 20h, ou ao
+  ligar se perdeu a hora), exporta o banco de produção para a pasta XYZ da conta do Windows e guarda as 9 últimas
+  cópias. Leva uns 7 minutos neste notebook.
+- `.github/workflows/testes.yml` roda lint, build, o teste do servidor e os de tela a cada envio; o `deploy.yml` chama
+  ele antes de publicar. Mexer em `.github/workflows` pede token com permissão de workflow no push.
 
 ## Limites do plano gratuito da Cloudflare
 
@@ -200,6 +230,10 @@ Ver README. Armadilhas:
   (convite, sincronização). Antes de investigar uma falha dessas, conferir os tempos no log dele e reiniciar
   (parar também o `workerd`).
 - O limite de 5 contas por hora vale no simulador também: `LIMITE_CONTAS` em `worker/.dev.vars` afrouxa.
+- O notebook entra em suspensão (tampa, botão) mesmo com a bateria de testes rodando: o teste que estava no meio falha
+  por tempo. Conferir os eventos de energia do Windows antes de investigar uma falha que demorou horas.
+- O passeio da primeira vez não aparece pro navegador automático (`navigator.webdriver`), a não ser com
+  `window.__comPasseio`: senão cobriria os botões de todos os testes.
 - Entrar em tela cheia leva segundos sem GPU e o canvas fica 12 px menor nesse meio-tempo: medir em laço.
 - O build de produção não tem `__semDesenho`: no teste do aplicativo, uma tela 3D por vez e o iPhone simulado em 1x,
   senão passa do tempo.
@@ -252,7 +286,7 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
 
 - Contra a máquina, o "Novo jogo" tem o modo: normal (sem relógio) ou blitz, no ritmo 3+2 (o do Mundial da FIDE), 5+0
   ou 5+3, lembrados em `config.modo` e `config.ritmo`. A partida grava `relogio: { ritmo, w, b }` (o que resta a cada
-  lado no último lance); sem ele não há relógio. Entre amigos ainda não tem (o relógio teria de ser da sala, no servidor).
+  lado no último lance); sem ele não há relógio.
 - `src/jogo/relogio.ts` (`RelogioDeXadrez`): corre o tempo de quem tem a vez; quem joga ganha o acréscimo, a partir do
   primeiro lance. Quem zera perde ("Você venceu (tempo)" / "A máquina venceu (tempo)"), a não ser que o outro lado não
   consiga dar mate por nenhuma sequência legal, nem com ajuda (FIDE 6.9, `semMaterialParaMate`): aí é empate.
@@ -261,6 +295,17 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
   "Continuar"). A máquina com menos de 20 s não faz a pausa e pensa no máximo 1/30 do que resta.
 - Quem desconta é o tabuleiro (`andarRelogioDaPartida`, também antes de cada lance: se zerou, o lance não sai); o
   `RelogioDaPartida.tsx`, no canto de cima, chama a cada 0,1 s e só desenha quando o que aparece muda.
+- Entre pessoas (partida amistosa com ritmo, revanche no mesmo ritmo, e o adversário automático), o relógio mora na
+  sala (`worker/src/sala.ts`): cada lance desconta o tempo de quem jogou e soma o acréscimo; um alarme do Durable Object
+  acorda a sala quando o tempo de quem tem a vez acaba. O primeiro lance de cada um não gasta tempo, mas tem de sair em
+  1 minuto. O servidor manda `relogio: { restante, desde, agora }` com cada lance e o aparelho soma o que passou desde
+  que chegou (`mostradorDaSala`), sem depender do relógio do aparelho. `ACELERAR_RELOGIO` em `worker/.dev.vars` (só no
+  simulador) faz o relógio andar 30 vezes mais depressa nos testes.
+- Adversário automático (aba Amigos, `POST/GET /fila`, tabela `fila`): só blitz. O aparelho pergunta a cada 2,5 s; o
+  par é reservado numa transação só (os dois lugares juntos) e a sala nasce antes de a fila mostrar o código. Quem
+  bloqueou (ou foi bloqueado) não se encontra (tabela `bloqueios`); bloquear também desfaz a amizade e faz os convites
+  responderem como se a pessoa não existisse. Denúncias (`POST /salas/:codigo/denunciar`, tabela `denuncias`, uma por
+  pessoa em cada sala) se leem pelo wrangler. O id de ninguém sai do servidor: bloquear e denunciar vão pela sala.
 
 ## Promoção
 

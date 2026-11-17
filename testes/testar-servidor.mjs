@@ -5,6 +5,7 @@ import crypto from 'crypto'
 import { execFileSync } from 'child_process'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { bilhetesAntigos, MATE, TEMPO_DA_MAQUINA } from './vitorias-de-teste.mjs'
 
 const API = process.env.API ?? 'http://127.0.0.1:8787'
 const WS = API.replace(/^http/, 'ws')
@@ -103,6 +104,15 @@ function liberarTudo(nome) {
   execFileSync(process.execPath, [path.join(pastaDoServidor, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'd1', 'execute', 'xadrez-caotico', '--local', '--command', comando], { cwd: pastaDoServidor, stdio: 'pipe' })
 }
 const espera = (ms) => new Promise((r) => setTimeout(r, ms))
+/** Uma consulta direto no banco do simulador (pra conferir o que a API não mostra, como as denúncias). */
+function consultarBanco(sql) {
+  const pastaDoServidor = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'worker')
+  const saida = execFileSync(process.execPath, [path.join(pastaDoServidor, 'node_modules', 'wrangler', 'bin', 'wrangler.js'), 'd1', 'execute', 'xadrez-caotico', '--local', '--json', '--command', sql], {
+    cwd: pastaDoServidor,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).toString()
+  return JSON.parse(saida.slice(saida.indexOf('[')))[0].results
+}
 const meusAmigos = async (token) => (await api('GET', '/amigos', { token })).json
 const convidar = (token, busca) => api('POST', '/amigos', { token, corpo: { busca } })
 
@@ -667,11 +677,17 @@ try {
   const partidaSalva = (id, extra) => ({ id, jogador: nomeAna, corJogador: 'w', pgn: '', status: 'FINALIZADA', criadaEm: Date.now(), atualizadaEm: Date.now(), ...extra })
   const salvarPartidas = (partidas) => api('POST', '/registros', { token: ana.token, corpo: { registros: partidas.map((dados) => ({ store: 'xadrezPartidas', dados })) } })
   await salvarPartidas([
-    partidaSalva('vitoria-facil', { resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
-    partidaSalva('vitoria-dificil', { resultado: 'Você venceu (xeque-mate)', dificuldade: 'dificil' }),
+    partidaSalva('vitoria-facil', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+    partidaSalva('vitoria-dificil', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'dificil' }),
     partidaSalva('derrota-media', { resultado: 'A máquina venceu (xeque-mate)', dificuldade: 'intermediario' }),
     partidaSalva('vitoria-antiga', { resultado: 'Você venceu (xeque-mate)' }),
     partidaSalva('vitoria-em-andamento', { status: 'EM_ANDAMENTO', resultado: 'Você venceu (xeque-mate)', dificuldade: 'dificil' }),
+  ])
+  // os bilhetes do começo de cada partida, de 10 minutos atrás
+  bilhetesAntigos(nomeAna, [
+    { id: 'vitoria-facil', dificuldade: 'facil' },
+    { id: 'vitoria-dificil', dificuldade: 'dificil' },
+    { id: 'vitoria-em-andamento', dificuldade: 'dificil' },
   ])
   const receberVitorias = (partidas, token = ana.token) => api('POST', '/vitorias/receber', { token, corpo: { partidas } })
   const saldoDaAna = async () => (await api('GET', '/conquistas', { token: ana.token })).json.oticoins
@@ -694,9 +710,14 @@ try {
 
   // no máximo 3 recompensas por hora, em qualquer modo: a Ana já recebeu 2 (fácil e difícil)
   await salvarPartidas([
-    partidaSalva('vitoria-blitz', { resultado: 'Você venceu (tempo)', dificuldade: 'intermediario', relogio: { ritmo: '3+2', w: 1200, b: 0 } }),
-    partidaSalva('vitoria-4', { resultado: 'Você venceu (xeque-mate)', dificuldade: 'dificil' }),
-    partidaSalva('vitoria-5', { resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+    partidaSalva('vitoria-blitz', { ...TEMPO_DA_MAQUINA, resultado: 'Você venceu (tempo)', dificuldade: 'intermediario', relogio: { ritmo: '3+2', w: 1200, b: 0 } }),
+    partidaSalva('vitoria-4', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'dificil' }),
+    partidaSalva('vitoria-5', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+  ])
+  bilhetesAntigos(nomeAna, [
+    { id: 'vitoria-blitz', dificuldade: 'intermediario', ritmo: '3+2' },
+    { id: 'vitoria-4', dificuldade: 'dificil' },
+    { id: 'vitoria-5', dificuldade: 'facil' },
   ])
   const antesDoLimite = await saldoDaAna()
   const noLimite = (await receberVitorias(['vitoria-blitz', 'vitoria-4', 'vitoria-5'])).json
@@ -714,13 +735,67 @@ try {
   // cinco vitórias pedidas ao mesmo tempo, cada uma num pedido: só 3 pagam
   await api('POST', '/registros', {
     token: impostor.token,
-    corpo: { registros: [1, 2, 3, 4, 5].map((i) => ({ store: 'xadrezPartidas', dados: partidaSalva(`juntas-${i}`, { resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }) })) },
+    corpo: { registros: [1, 2, 3, 4, 5].map((i) => ({ store: 'xadrezPartidas', dados: partidaSalva(`juntas-${i}`, { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }) })) },
   })
+  bilhetesAntigos(idBia, [1, 2, 3, 4, 5].map((i) => ({ id: `juntas-${i}`, dificuldade: 'facil' })))
   const juntasVitorias = await Promise.all([1, 2, 3, 4, 5].map((i) => receberVitorias([`juntas-${i}`], impostor.token)))
   const pagasJuntas = juntasVitorias.reduce((soma, r) => soma + (r.json?.pagas?.length ?? 0), 0)
   const semPremioJuntas = juntasVitorias.reduce((soma, r) => soma + (r.json?.semPremio?.length ?? 0), 0)
   conferir('cinco vitórias pedidas ao mesmo tempo: 3 pagam e 2 ficam sem prêmio', pagasJuntas === 3 && semPremioJuntas === 2, `${pagasJuntas} pagas, ${semPremioJuntas} sem prêmio`)
   conferir('e o saldo tem só as 3', (await api('GET', '/conquistas', { token: impostor.token })).json?.oticoins === 3)
+
+  // =================== o bilhete de cada partida contra a máquina ===================
+  // numa conta só destas conferências: as óticoins dela não mexem nas outras
+  const nomeCleo = `Cleo ${sufixo}`
+  const cleo = await novaConta(nomeCleo)
+  const bilhete = (corpo, token = cleo.token) => api('POST', '/partidas/bilhete', { token, corpo })
+  conferir('sem sessão não pede bilhete', (await api('POST', '/partidas/bilhete', { corpo: { partida: 'x', dificuldade: 'facil', lances: 0 } })).status === 401)
+  for (const [nome, corpo] of [
+    ['sem partida', { dificuldade: 'facil', lances: 0 }],
+    ['dificuldade inventada', { partida: 'b1', dificuldade: 'impossivel', lances: 0 }],
+    ['ritmo inventado', { partida: 'b1', dificuldade: 'facil', ritmo: '1+0', lances: 0 }],
+    ['no meio da partida', { partida: 'b1', dificuldade: 'facil', lances: 3 }],
+  ]) {
+    conferir(`bilhete recusado: ${nome}`, (await bilhete(corpo)).status === 422)
+  }
+  conferir('o bilhete do começo é aceito', (await bilhete({ partida: 'rapida', dificuldade: 'facil', lances: 0 })).status === 200)
+  conferir('e no 2º lance também (quem começou sem internet)', (await bilhete({ partida: 'atrasada', dificuldade: 'facil', ritmo: '3+2', lances: 2 })).status === 200)
+  const salvarDaCleo = (partidas) => api('POST', '/registros', { token: cleo.token, corpo: { registros: partidas.map((dados) => ({ store: 'xadrezPartidas', dados: { ...dados, jogador: nomeCleo } })) } })
+  await salvarDaCleo([
+    partidaSalva('sem-bilhete', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+    partidaSalva('rapida', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+    partidaSalva('dificuldade-trocada', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'dificil' }),
+    partidaSalva('mate-falso', { ...TEMPO_DA_MAQUINA, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+    partidaSalva('lances-a-mais', { ...MATE, pgn: '1. f3 e5 2. g4 Qh4# 3. a3 a6', resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+    partidaSalva('sem-posicao', { pgn: MATE.pgn, corJogador: 'b', resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+    partidaSalva('tempo-curto', { ...TEMPO_DA_MAQUINA, resultado: 'Você venceu (tempo)', dificuldade: 'facil', relogio: { ritmo: '3+2', w: 1200, b: 0 } }),
+    partidaSalva('tempo-sobrando', { ...TEMPO_DA_MAQUINA, resultado: 'Você venceu (tempo)', dificuldade: 'facil', relogio: { ritmo: '3+2', w: 1200, b: 5000 } }),
+    partidaSalva('vitoria-da-cleo', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' }),
+  ])
+  bilhetesAntigos(nomeCleo, [
+    { id: 'dificuldade-trocada', dificuldade: 'facil' },
+    { id: 'mate-falso', dificuldade: 'facil' },
+    { id: 'lances-a-mais', dificuldade: 'facil' },
+    { id: 'sem-posicao', dificuldade: 'facil' },
+    { id: 'tempo-curto', dificuldade: 'facil', ritmo: '3+2', minutos: 2 },
+    { id: 'tempo-sobrando', dificuldade: 'facil', ritmo: '3+2' },
+    { id: 'vitoria-da-cleo', dificuldade: 'facil' },
+  ])
+  const saldoDaCleo = async () => (await api('GET', '/conquistas', { token: cleo.token })).json.oticoins
+  const antesDaCleo = await saldoDaCleo()
+  const falsas = ['sem-bilhete', 'rapida', 'dificuldade-trocada', 'mate-falso', 'lances-a-mais', 'sem-posicao', 'tempo-curto', 'tempo-sobrando']
+  const conferidas = (await receberVitorias([...falsas, 'vitoria-da-cleo'], cleo.token)).json
+  for (const id of falsas) conferir(`vitória que não confere não paga: ${id}`, conferidas?.invalidas?.includes(id) && !conferidas.pagas.some((p) => p.id === id), JSON.stringify(conferidas?.invalidas))
+  conferir('a que confere paga', conferidas?.pagas?.length === 1 && conferidas.pagas[0].id === 'vitoria-da-cleo' && conferidas.oticoins === antesDaCleo + 1, JSON.stringify(conferidas?.pagas))
+  conferir('as que não conferem ficam registradas e não voltam', falsas.every((id) => conferidas?.jaPagas?.includes(id)))
+  const deNovoFalsas = (await receberVitorias(falsas, cleo.token)).json
+  conferir('pedindo de novo, nada paga', deNovoFalsas?.pagas?.length === 0 && (await saldoDaCleo()) === antesDaCleo + 1)
+  // o bilhete pedido de novo não reinicia a hora: a partida antiga continua com o bilhete antigo
+  await bilhete({ partida: 'vitoria-da-cleo', dificuldade: 'facil', lances: 0 })
+  bilhetesAntigos(nomeCleo, [{ id: 'vitoria-da-cleo-2', dificuldade: 'facil' }])
+  await bilhete({ partida: 'vitoria-da-cleo-2', dificuldade: 'facil', lances: 0 })
+  await salvarDaCleo([partidaSalva('vitoria-da-cleo-2', { ...MATE, resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil' })])
+  conferir('pedir o bilhete de novo não reinicia a hora da partida', (await receberVitorias(['vitoria-da-cleo-2'], cleo.token)).json?.pagas?.length === 1)
 
   // =================== loja e equipamentos liberados ===================
   const comprar = (item, token = bia.token) => api('POST', '/loja/comprar', { token, corpo: { item } })
@@ -765,6 +840,110 @@ try {
   let limitouFoto = false
   for (let i = 0; i < 25 && !limitouFoto; i++) limitouFoto = (await mandarFoto(jpeg.toString('base64'), bia.token)).status === 429
   conferir('fotos demais numa hora são barradas', limitouFoto)
+
+  // =================== blitz entre amigos: o relógio mora no servidor ===================
+  // o simulador roda o relógio 30 vezes mais depressa (ACELERAR_RELOGIO=30 em worker/.dev.vars): 3 min viram 6 s
+  const ESCALA = 30
+  const nomeDavi = `Davi ${sufixo}`
+  const nomeEva = `Eva ${sufixo}`
+  const davi = await novaConta(nomeDavi)
+  const eva = await novaConta(nomeEva)
+  const idDavi = (await meusAmigos(davi.token)).meuId
+  const idEva = (await meusAmigos(eva.token)).meuId
+  await convidar(davi.token, idEva)
+  await convidar(eva.token, idDavi)
+  conferir('ritmo inventado recusado', (await api('POST', '/salas', { token: davi.token, corpo: { cor: 'w', amigo: idEva, ritmo: '1+0' } })).status === 422)
+  const blitz = (await api('POST', '/salas', { token: davi.token, corpo: { cor: 'w', amigo: idEva, ritmo: '3+2' } })).json
+  conferir('cria a partida blitz entre amigos', /^[A-Z2-9]{8}$/.test(blitz?.codigo ?? ''), JSON.stringify(blitz))
+  conferir('o amigo vê o ritmo no convite', (await meusAmigos(eva.token)).partidasRecebidas.some((p) => p.codigo === blitz.codigo && p.ritmo === '3+2'))
+  conferir('chamar sem ritmo é outra partida', (await api('POST', '/salas', { token: davi.token, corpo: { cor: 'w', amigo: idEva } })).json?.codigo !== blitz.codigo)
+  await api('POST', `/salas/${blitz.codigo}/entrar`, { token: eva.token })
+  const daviNaBlitz = await conectar(blitz.codigo, davi.token)
+  const evaNaBlitz = await conectar(blitz.codigo, eva.token)
+  const comecoDaBlitz = await daviNaBlitz.esperar((m) => m.t === 'estado' && m.status === 'andamento')
+  const base = 180000 / ESCALA
+  const acrescimo = 2000 / ESCALA
+  conferir('a sala começa com o ritmo e o tempo cheio dos dois', comecoDaBlitz.ritmo === '3+2' && comecoDaBlitz.relogio?.restante.w === base && comecoDaBlitz.relogio.restante.b === base && comecoDaBlitz.relogio.desde === null, JSON.stringify(comecoDaBlitz.relogio))
+  await evaNaBlitz.esperar((m) => m.t === 'estado')
+  daviNaBlitz.enviar(lance('e2', 'e4', 0))
+  const primeiro = await evaNaBlitz.esperar((m) => m.t === 'lance' && m.n === 0)
+  conferir('o primeiro lance não gasta tempo', primeiro.relogio?.restante.w === base && primeiro.relogio.desde === null, JSON.stringify(primeiro.relogio))
+  evaNaBlitz.enviar(lance('e7', 'e5', 1))
+  const segundo = await daviNaBlitz.esperar((m) => m.t === 'lance' && m.n === 1)
+  conferir('depois do primeiro lance de cada um, o relógio das brancas começa', segundo.relogio?.restante.b === base && typeof segundo.relogio.desde === 'number', JSON.stringify(segundo.relogio))
+  await espera(600)
+  daviNaBlitz.enviar(lance('g1', 'f3', 2))
+  const terceiro = await evaNaBlitz.esperar((m) => m.t === 'lance' && m.n === 2)
+  const gasto = base + acrescimo - terceiro.relogio.restante.w
+  conferir('o lance desconta o tempo de quem jogou e soma o acréscimo', gasto >= 550 && gasto < 2500, `gastou ${Math.round(gasto)} ms`)
+  // as pretas não jogam: o tempo delas acaba e o servidor encerra sozinho, pelo alarme
+  const fimNoTempo = await daviNaBlitz.esperar((m) => m.t === 'fim', 20000)
+  conferir('o tempo das pretas acabou: as brancas vencem no tempo', fimNoTempo.resultado === 'brancas' && fimNoTempo.motivo === 'tempo' && fimNoTempo.relogio?.restante.b === 0, JSON.stringify(fimNoTempo))
+  evaNaBlitz.enviar(lance('b8', 'c6', 3))
+  const depoisDoFim = await evaNaBlitz.esperar((m) => m.t === 'estado', 5000)
+  conferir('lance depois do fim não entra', depoisDoFim.lances.length === 3 && depoisDoFim.status === 'fim')
+  daviNaBlitz.fechar()
+  evaNaBlitz.fechar()
+  const revancheBlitz = (await api('POST', `/salas/${blitz.codigo}/revanche`, { token: eva.token, corpo: { cor: 'b' } })).json
+  conferir('a revanche é no mesmo ritmo', (await meusAmigos(davi.token)).partidasRecebidas.some((p) => p.codigo === revancheBlitz?.codigo && p.ritmo === '3+2'))
+  await api('POST', `/salas/${revancheBlitz.codigo}/entrar`, { token: davi.token })
+  const parada = await conectar(revancheBlitz.codigo, davi.token)
+  const fimDoPrimeiro = await parada.esperar((m) => m.t === 'fim', 20000)
+  conferir('as brancas não fazem o primeiro lance a tempo: perdem no tempo', fimDoPrimeiro.resultado === 'pretas' && fimDoPrimeiro.motivo === 'tempo', JSON.stringify(fimDoPrimeiro))
+  parada.fechar()
+
+  // =================== adversário automático ===================
+  const nomeFabi = `Fabi ${sufixo}`
+  const nomeGui = `Gui ${sufixo}`
+  const fabi = await novaConta(nomeFabi)
+  const gui = await novaConta(nomeGui)
+  const fila = (token, corpo) => (corpo === undefined ? api('GET', '/fila', { token }) : api('POST', '/fila', { token, corpo }))
+  conferir('sem sessão não entra na fila', (await api('POST', '/fila', { corpo: { ritmo: '5+0' } })).status === 401)
+  conferir('ritmo inventado não entra na fila', (await fila(fabi.token, { ritmo: '1+0' })).status === 422)
+  const sozinha = (await fila(fabi.token, { ritmo: '5+0' })).json
+  conferir('sozinha na fila, procura', sozinha?.estado === 'procurando', JSON.stringify(sozinha))
+  conferir('outro ritmo não junta', (await fila(davi.token, { ritmo: '3+2' })).json?.estado === 'procurando')
+  const achou = (await fila(gui.token, { ritmo: '5+0' })).json
+  conferir('quem chega no mesmo ritmo acha na hora', achou?.estado === 'achou' && /^[A-Z2-9]{8}$/.test(achou.codigo ?? ''), JSON.stringify(achou))
+  const achouTambem = (await fila(fabi.token)).json
+  conferir('e quem esperava acha a mesma partida, com a outra cor', achouTambem?.estado === 'achou' && achouTambem.codigo === achou?.codigo && achouTambem.cor !== achou?.cor, JSON.stringify(achouTambem))
+  const salaAutomatica = await conectar(achou.codigo, gui.token)
+  const estadoAutomatico = await salaAutomatica.esperar((m) => m.t === 'estado')
+  conferir(
+    'a partida já começa, em blitz, sem precisarem ser amigos',
+    estadoAutomatico.status === 'andamento' && estadoAutomatico.automatica === true && estadoAutomatico.ritmo === '5+0',
+    JSON.stringify(estadoAutomatico),
+  )
+  conferir('o nome do outro aparece, o ID não', [estadoAutomatico.brancas, estadoAutomatico.pretas].includes(nomeFabi) && !JSON.stringify(estadoAutomatico).includes(fabi.usuario.id))
+  salaAutomatica.fechar()
+  conferir('a revanche entre desconhecidos precisa de amizade', (await api('POST', `/salas/${achou.codigo}/revanche`, { token: gui.token, corpo: { cor: 'w' } })).status === 403)
+  conferir('sair da fila depois de achar não desfaz a partida', (await api('POST', '/fila/sair', { token: fabi.token })).status === 200 && (await fila(fabi.token)).json?.codigo === achou.codigo)
+  await api('POST', '/fila/sair', { token: davi.token })
+  conferir('quem sai da fila procurando fica de fora', (await fila(davi.token)).json?.estado === 'fora')
+
+  // denunciar e bloquear
+  const denunciar = (token, motivo, codigoDaSala = achou.codigo) => api('POST', `/salas/${codigoDaSala}/denunciar`, { token, corpo: { motivo } })
+  conferir('denúncia sem motivo válido é recusada', (await denunciar(gui.token, 'xingou')).status === 422)
+  conferir('quem não jogou a partida não denuncia', (await denunciar(davi.token, 'nome')).status === 404)
+  conferir('denuncia o adversário', (await denunciar(gui.token, 'nome')).status === 200)
+  await denunciar(gui.token, 'foto')
+  const denuncias = consultarBanco(`SELECT motivo, denunciado_id FROM denuncias WHERE sala_codigo = '${achou.codigo}'`)
+  conferir('uma denúncia por pessoa em cada partida, contra quem jogou', denuncias.length === 1 && denuncias[0].motivo === 'nome' && denuncias[0].denunciado_id === fabi.usuario.id, JSON.stringify(denuncias))
+  conferir('bloqueia o adversário', (await api('POST', `/salas/${achou.codigo}/bloquear`, { token: gui.token })).status === 200)
+  conferir('quem foi bloqueado aparece na lista de bloqueados', (await meusAmigos(gui.token)).bloqueados?.some((j) => j.nome === nomeFabi))
+  conferir('a outra pessoa não fica sabendo', !(await meusAmigos(fabi.token)).bloqueados?.length)
+  await fila(fabi.token, { ritmo: '5+3' })
+  conferir('bloqueados não se encontram no adversário automático', (await fila(gui.token, { ritmo: '5+3' })).json?.estado === 'procurando' && (await fila(fabi.token)).json?.estado === 'procurando')
+  conferir('nem pelo convite de amizade (responde como se não existisse)', (await convidar(fabi.token, nomeGui)).status === 404)
+  conferir('e de quem bloqueou também não', (await convidar(gui.token, nomeFabi)).status === 404)
+  const idFabi = (await meusAmigos(fabi.token)).meuId
+  conferir('desbloqueia', (await api('POST', `/bloqueios/${idFabi}/remover`, { token: gui.token })).status === 200)
+  const depoisDeDesbloquear = (await fila(gui.token)).json
+  conferir('desbloqueados, se encontram de novo', depoisDeDesbloquear?.estado === 'achou', JSON.stringify(depoisDeDesbloquear))
+  // bloquear um amigo desfaz a amizade
+  const salaDosAmigos = (await api('POST', '/salas', { token: davi.token, corpo: { cor: 'w', amigo: idEva } })).json
+  await api('POST', `/salas/${salaDosAmigos.codigo}/bloquear`, { token: eva.token })
+  conferir('bloquear um amigo desfaz a amizade', !(await meusAmigos(davi.token)).amigos.some((a) => a.idJogador === idEva))
 
   // limite de convites por hora
   let limitou = false

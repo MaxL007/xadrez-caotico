@@ -75,11 +75,16 @@ export function useSalaOnline({
         if (salaRef.current?.conexao !== conexao) return
         // jogar em vez de responder recusa o empate pedido
         setEmpate((agora) => (agora?.tipo === 'recusado' ? agora : null))
+        // o relógio da blitz vem junto de cada lance
+        const atual = salaRef.current
+        if (lance.relogio && atual?.estado) atual.estado = { ...atual.estado, relogio: lance.relogio }
         acoesRef.current?.receberLanceDaSala(lance)
       },
-      fim(resultado, motivo) {
+      fim(resultado, motivo, relogio) {
         if (salaRef.current?.conexao !== conexao) return
         setEmpate(null)
+        const atual = salaRef.current
+        if (relogio && atual.estado) atual.estado = { ...atual.estado, relogio }
         acoesRef.current?.receberFimDaSala(resultado, motivo)
         setSala((atual) => atual && { ...atual, status: 'fim', resultado, motivo })
       },

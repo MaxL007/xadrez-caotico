@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { derivarChave } from '../conta/senha'
+import type { Ritmo } from '../jogo/relogio'
 
 // Conversa com o servidor público do jogo, na Cloudflare. Quem não entrou numa conta joga contra a
 // máquina do mesmo jeito, salvando só neste aparelho.
@@ -159,7 +160,9 @@ export interface Amigos {
   amigos: Jogador[]
   convitesRecebidos: Jogador[]
   convitesEnviados: Jogador[]
-  partidasRecebidas: (Jogador & { codigo: string; minhaCor: 'w' | 'b' })[]
+  partidasRecebidas: (Jogador & { codigo: string; minhaCor: 'w' | 'b'; ritmo?: Ritmo | null })[]
+  /** Quem a pessoa bloqueou. */
+  bloqueados?: Jogador[]
 }
 
 export interface Retrospecto {
@@ -210,10 +213,13 @@ export interface RecompensasDaHora {
 /** Paga as vitórias contra a máquina; `jaPagas` são as que o servidor já registrou, agora ou antes (pagas ou sem prêmio,
  * por terem chegado com as vagas da hora usadas: essas vêm em `semPremio`). */
 export const receberVitorias = (partidas: string[]) =>
-  pedir<{ oticoins: number; pagas: { id: string; oticoins: number }[]; semPremio?: string[]; jaPagas: string[]; recompensas?: RecompensasDaHora }>('POST', '/vitorias/receber', {
+  pedir<{ oticoins: number; pagas: { id: string; oticoins: number }[]; semPremio?: string[]; invalidas?: string[]; jaPagas: string[]; recompensas?: RecompensasDaHora }>('POST', '/vitorias/receber', {
     partidas,
   })
 export const lerRecompensas = () => pedir<RecompensasDaHora>('GET', '/vitorias/recompensas')
+/** Avisa o servidor que uma partida contra a máquina começou: sem esse bilhete, a vitória dela não paga óticoins. */
+export const pedirBilhete = (partida: string, dificuldade: string, ritmo: Ritmo | null, lances: number) =>
+  pedir('POST', '/partidas/bilhete', { partida, dificuldade, ritmo, lances })
 /** O progresso contado neste aparelho, pros amigos verem no perfil. */
 export const guardarProgresso = (contagem: Record<string, number>) => pedir('POST', '/conquistas/progresso', { contagem })
 /** O jogo está aberto e à vista: os amigos veem a bolinha verde. */
@@ -260,13 +266,31 @@ export interface SalaNaLista {
   status: 'aguardando' | 'andamento' | 'fim' | 'expirada' | 'recusada'
   resultado: 'brancas' | 'pretas' | 'empate' | null
   motivo: string | null
+  /** Blitz: o ritmo, com o relógio no servidor. */
+  ritmo?: Ritmo | null
+  /** Partida do adversário automático. */
+  automatica?: boolean
   atualizadaEm: number
 }
 
-export const criarSala = (cor: 'w' | 'b' | 'sorteio', amigo: string) => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', '/salas', { cor, amigo })
+export const criarSala = (cor: 'w' | 'b' | 'sorteio', amigo: string, ritmo: Ritmo | null = null) => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', '/salas', { cor, amigo, ritmo })
 export const entrarEmSala = (codigo: string) => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', `/salas/${codigo}/entrar`)
 export const recusarSala = (codigo: string) => pedir('POST', `/salas/${codigo}/recusar`)
 /** Outra partida com quem jogou a sala `codigo`. Se ele já tinha chamado, entra nessa. */
 export const pedirRevanche = (codigo: string, cor: 'w' | 'b') => pedir<{ codigo: string; cor: 'w' | 'b' }>('POST', `/salas/${codigo}/revanche`, { cor })
 export const listarSalas = () => pedir<{ salas: SalaNaLista[] }>('GET', '/salas')
 export const enderecoDaSala = (codigo: string) => `${API.replace(/^http/, 'ws')}/salas/${codigo}/ws`
+
+// --- adversário automático, bloquear e denunciar ---------------------------------------------
+export type SituacaoNaFila = { estado: 'procurando' | 'fora' } | { estado: 'achou'; codigo: string; cor: 'w' | 'b' }
+/** Entra na fila do adversário automático (blitz no ritmo escolhido). */
+export const entrarNaFila = (ritmo: Ritmo) => pedir<SituacaoNaFila>('POST', '/fila', { ritmo })
+/** Continua na fila e diz se já achou alguém. */
+export const verFila = () => pedir<SituacaoNaFila>('GET', '/fila')
+export const sairDaFila = () => pedir('POST', '/fila/sair')
+export type MotivoDaDenuncia = 'nome' | 'foto' | 'trapaca' | 'comportamento'
+export const MOTIVOS_DA_DENUNCIA: MotivoDaDenuncia[] = ['nome', 'foto', 'trapaca', 'comportamento']
+/** Bloqueia quem jogou a sala `codigo` com a pessoa. */
+export const bloquearNaSala = (codigo: string) => pedir('POST', `/salas/${codigo}/bloquear`)
+export const denunciarNaSala = (codigo: string, motivo: MotivoDaDenuncia) => pedir('POST', `/salas/${codigo}/denunciar`, { motivo })
+export const desbloquear = (idJogador: string) => pedir('POST', `/bloqueios/${idJogador}/remover`)

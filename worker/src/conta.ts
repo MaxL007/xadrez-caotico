@@ -137,5 +137,8 @@ export async function limpezaDiaria(env: Ambiente) {
     env.DB.prepare('DELETE FROM sessoes WHERE usada_em < ?1').bind(agora - SESSAO_VALE_MS),
     // os relatórios de erro duram 30 dias (é o que diz a página de privacidade)
     env.DB.prepare('DELETE FROM erros WHERE visto_em < ?1').bind(agora - 30 * 24 * 60 * 60 * 1000),
+    // bilhetes de partidas contra a máquina valem 30 dias; quem largou a fila do adversário automático sai dela
+    env.DB.prepare('DELETE FROM bilhetes WHERE criado_em < ?1').bind(agora - 30 * 24 * 60 * 60 * 1000),
+    env.DB.prepare('DELETE FROM fila WHERE visto_em < ?1').bind(agora - 60 * 60 * 1000),
   ])
 }

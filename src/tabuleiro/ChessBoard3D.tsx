@@ -32,10 +32,12 @@ import { montarExpositor, montarVitrine } from './pecas/vitrine'
 import { montarCena, QUALIDADES } from './cena/montarCena'
 import { criarVistaDaCamera } from './cena/vistaDaCamera'
 import { andamentoNovo, type PecaPromocao } from './fluxo/andamento'
+import { garantirBilhete } from '../conta/bilhete'
 import { instalarGanchosDeTeste, vestimentaDeTeste } from './ganchosDeTeste'
 import { criarLanceAnimado } from './fluxo/lanceAnimado'
 import { criarPartidaOnline } from './fluxo/partidaOnline'
 import { EscolhaDoNovoJogo } from './EscolhaDoNovoJogo'
+import { MenuDoAdversario } from './MenuDoAdversario'
 import { type EstadoDoEmpate, useSalaOnline } from './fluxo/useSalaOnline'
 import { criarPartidaContraMaquina, PAUSA_MAQUINA_MS } from './fluxo/partidaContraMaquina'
 
@@ -451,8 +453,11 @@ export function ChessBoard3D() {
       if (!partida || salaRef.current) return
       const chess = chessRef.current
       partida.pgn = chess.pgn()
+      partida.fen = chess.fen()
       partida.atualizadaEm = Date.now()
       if (relogioRef.current) partida.relogio = relogioRef.current.salvo()
+      // começou sem conexão: pede o bilhete de novo (até o 2º lance)
+      garantirBilhete(partida, chess.history().length)
       if (chess.isCheckmate()) {
         partida.status = 'FINALIZADA'
         partida.resultado =
@@ -554,6 +559,11 @@ export function ChessBoard3D() {
         setStatusTexto(t('online.recusou', { nome: adversario }))
       } else if (salaAtual?.motivo === 'desistencia') {
         setStatusTexto(t(venciASala ? 'online.adversarioDesistiu' : 'online.voceDesistiu', { nome: adversario }))
+      } else if (salaAtual?.motivo === 'tempo' && salaAtual.ritmo) {
+        // blitz: o relógio de alguém zerou
+        const empatou = salaAtual.resultado === 'empate'
+        setStatusTexto(t(empatou ? 'online.empateNoRelogio' : venciASala ? 'online.venceuNoRelogio' : 'online.perdeuNoRelogio', { nome: adversario }))
+        if (empatou) tocarEmpateUmaVez()
       } else if (salaAtual?.motivo === 'tempo') {
         setStatusTexto(t(venciASala ? 'online.venceuTempo' : 'online.perdeuTempo', { nome: adversario }))
       } else if (salaAtual?.motivo === 'acordo') {
@@ -916,7 +926,8 @@ export function ChessBoard3D() {
       aplicarQualidade,
       aplicarTelaMovel: vista.liberarCamera,
       revestir: () => sincronizarPecas(),
-      andarRelogio: maquina.andarRelogioDaPartida,
+      // a blitz entre pessoas mostra o relógio do servidor; contra a máquina, o deste aparelho
+      andarRelogio: () => online.mostradorDaSala() ?? maquina.andarRelogioDaPartida(),
     }
 
     sincronizarPecas()
@@ -1131,6 +1142,8 @@ export function ChessBoard3D() {
       // sem servidor — segue mesmo assim, só não fica persistido até a conexão voltar
     }
     partidaAtualRef.current = nova
+    // o servidor anota o começo da partida: é o que deixa a vitória pagar óticoins
+    garantirBilhete(nova, 0)
     setPartidasEmAndamento((prev) => [nova, ...prev])
     acoesRef.current?.carregarPgn('', cor)
   }
@@ -1207,7 +1220,7 @@ export function ChessBoard3D() {
                 {t('menu.menu')}
               </button>
               {/* a blitz: o relógio no canto de cima, o da máquina em cima e o seu embaixo */}
-              {ritmoNaTela && !sala && <RelogioDaPartida t={t} ritmo={ritmoNaTela} corDoJogador={corDoJogador} andar={andarRelogio} />}
+              {ritmoNaTela && <RelogioDaPartida t={t} ritmo={ritmoNaTela} corDoJogador={corDoJogador} andar={andarRelogio} adversario={adversarioDaSala} />}
             </div>
             <div className="pointer-events-auto flex flex-wrap items-center gap-2">
               {podeDesistir && <BotaoDesistir t={t} confirmando={confirmandoDesistencia} onPedir={setConfirmandoDesistencia} onConfirmar={handleDesistir} sobreTabuleiro />}
@@ -1264,10 +1277,16 @@ export function ChessBoard3D() {
               <div className="pointer-events-auto flex max-w-full flex-col items-center gap-1" data-status-partida>
                 {statusTexto && <p className="rounded-lg bg-white/85 px-3 py-1.5 text-center text-sm font-medium text-[#3a2a1a] shadow backdrop-blur">{statusTexto}</p>}
                 {/* na partida com um amigo, contra quem é (ficava na barra da tela normal, que não existe mais) */}
-                {adversarioDaSala && (
-                  <p className="rounded-lg bg-white/70 px-2.5 py-0.5 text-center text-xs font-medium text-[#5a4630] shadow" data-adversario>
-                    {t('online.contra', { nome: adversarioDaSala })}
-                  </p>
+                {adversarioDaSala && sala && (
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="flex items-center gap-1.5">
+                      <p className="rounded-lg bg-white/70 px-2.5 py-0.5 text-center text-xs font-medium text-[#5a4630] shadow" data-adversario>
+                        {t('online.contra', { nome: adversarioDaSala })}
+                      </p>
+                      {/* bloquear e denunciar: some com o convite ainda esperando resposta */}
+                      {sala.status !== 'aguardando' && <MenuDoAdversario key={sala.codigo} t={t} codigo={sala.codigo} nome={adversarioDaSala} />}
+                    </span>
+                  </div>
                 )}
                 {avisoDoEmpate && (
                   <p className="rounded-lg bg-[#1c120a]/85 px-3 py-1 text-center text-xs font-medium text-[#f5e6c8] shadow" data-aviso-empate>
@@ -1291,7 +1310,7 @@ export function ChessBoard3D() {
             // contra a máquina, com conta, a vitória paga óticoins pela dificuldade (o servidor paga ao voltar ao menu), no
             // máximo 3 por hora: sem vaga, a taça diz a que horas volta a pagar
             premio={recompensa?.paga && partidaAtualRef.current?.dificuldade ? PREMIO_DA_VITORIA[partidaAtualRef.current.dificuldade] : 0}
-            semPremio={recompensa && !recompensa.paga ? { limite: RECOMPENSAS_POR_HORA, liberaEm: recompensa.liberaEm } : null}
+            semPremio={recompensa && !recompensa.paga ? ('semBilhete' in recompensa ? { semBilhete: true } : { limite: RECOMPENSAS_POR_HORA, liberaEm: recompensa.liberaEm }) : null}
             onNovoJogo={handleNovoJogo}
             onFechar={() => setResultadoOverlay(null)}
           />

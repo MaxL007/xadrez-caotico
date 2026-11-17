@@ -7,6 +7,7 @@ import type { PartidaXadrez } from '../../dados/xadrezRepo'
 import type { FimDaPartida } from '../ResultadoDaPartida'
 import type { Ritmo, RelogioDeXadrez } from '../../jogo/relogio'
 import type { VistaDaCamera } from '../cena/vistaDaCamera'
+import type { MostradorDoRelogio } from '../RelogioDaPartida'
 import type { Andamento } from './andamento'
 
 type Ref<T> = { current: T }
@@ -79,7 +80,8 @@ export function criarPartidaOnline(dependencias: DependenciasDaPartidaOnline) {
     const estado = salaRef.current?.estado
     if (!estado) return
     relogioRef.current = null
-    setRitmoNaTela(null)
+    // na blitz entre pessoas o relógio mora no servidor (ver mostradorDaSala)
+    setRitmoNaTela(estado.ritmo ?? null)
     setTela('jogo')
     andamento.comemoracaoDisparada = false
     setResultadoOverlay(null)
@@ -134,5 +136,18 @@ export function criarPartidaOnline(dependencias: DependenciasDaPartidaOnline) {
     atualizarStatusTexto()
   }
 
-  return { processarFilaDaSala, carregarSala, receberEstadoDaSala, receberLanceDaSala, receberFimDaSala }
+  /** O que o relógio da blitz entre pessoas mostra agora: o que o servidor mandou, menos o que passou desde então na
+   * vez de quem joga. null fora da blitz. */
+  function mostradorDaSala(): MostradorDoRelogio | null {
+    const estado = salaRef.current?.estado
+    const relogio = estado?.relogio
+    if (!estado?.ritmo || !relogio) return null
+    const vez: 'w' | 'b' = estado.lances.length % 2 === 0 ? 'w' : 'b'
+    const correndo = estado.status === 'andamento' && relogio.desde !== null
+    const passou = correndo && relogio.desde !== null ? relogio.agora - relogio.desde + (Date.now() - relogio.recebidoEm) : 0
+    const restante = { ...relogio.restante, [vez]: Math.max(0, relogio.restante[vez] - passou) }
+    return { w: restante.w, b: restante.b, vez, correndo }
+  }
+
+  return { processarFilaDaSala, carregarSala, receberEstadoDaSala, receberLanceDaSala, receberFimDaSala, mostradorDaSala }
 }
