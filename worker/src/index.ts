@@ -933,6 +933,47 @@ async function conectarNaSala(pedido: Request, env: Ambiente, codigo: string) {
   return stubDaSala(env, codigo).fetch(repasse)
 }
 
+// --- registro de erros ---------------------------------------------------------------------
+const RELATORIOS_DE_ERRO_POR_ENDERECO = 30
+const LIMITES_DO_RELATORIO = { mensagem: 500, pilha: 2000, onde: 120, versao: 40, navegador: 80 } as const
+
+/** Texto curto e sem nada que pareça um código secreto (tokens, chaves): o relatório não pode carregar dado de ninguém. */
+function textoDoRelatorio(valor: unknown, limite: number): string | null {
+  if (typeof valor !== 'string') return null
+  const limpo = valor
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ')
+    .replace(/[A-Za-z0-9+/=_-]{32,}/g, '…')
+    .trim()
+    .slice(0, limite)
+  return limpo || null
+}
+
+/** Um erro que quebrou o jogo no aparelho de alguém. Não pede conta e não guarda quem mandou: nem nome, nem ID, nem IP
+ * (o IP só conta as tentativas por uma hora, como nas outras rotas). O mesmo erro só soma em `vezes`. */
+async function receberErro(pedido: Request, env: Ambiente) {
+  if (!origemPermitida(pedido, env)) throw new Falha(403, 'origem-nao-permitida')
+  if ((await somarTentativa(env, `relatorio:${enderecoDe(pedido)}`, UMA_HORA)) > RELATORIOS_DE_ERRO_POR_ENDERECO) throw new Falha(429, 'muitas-tentativas')
+  const corpo = await lerCorpo<Record<string, unknown>>(pedido)
+  const mensagem = textoDoRelatorio(corpo.mensagem, LIMITES_DO_RELATORIO.mensagem)
+  if (!mensagem) throw new Falha(400, 'sem-mensagem')
+  const pilha = textoDoRelatorio(corpo.pilha, LIMITES_DO_RELATORIO.pilha)
+  const onde = textoDoRelatorio(corpo.onde, LIMITES_DO_RELATORIO.onde)
+  const versao = textoDoRelatorio(corpo.versao, LIMITES_DO_RELATORIO.versao)
+  const navegador = textoDoRelatorio(corpo.navegador, LIMITES_DO_RELATORIO.navegador)
+  const resumo = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${mensagem}\n${onde ?? ''}\n${versao ?? ''}`))
+  const assinatura = Array.from(new Uint8Array(resumo).slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('')
+  const agora = Date.now()
+  await env.DB.prepare(
+    `INSERT INTO erros (assinatura, mensagem, pilha, onde, versao, navegador, vezes, primeiro_em, visto_em)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7)
+     ON CONFLICT(assinatura) DO UPDATE SET vezes = MIN(vezes + 1, ${MAXIMO_NA_CONTAGEM}), visto_em = ?7, navegador = ?6`,
+  )
+    .bind(assinatura, mensagem, pilha, onde, versao, navegador, agora)
+    .run()
+  return responder({ ok: true })
+}
+
 // --- rotas -------------------------------------------------------------------------------
 async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Response> {
   const { pathname: caminho } = url
@@ -943,6 +984,7 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   const convite = caminho.match(/^\/convites\/([A-Z2-9]{12})$/)
 
   if (metodo === 'GET' && caminho === '/saude') return responder({ ok: true, jogo: 'xadrez-caotico' })
+  if (metodo === 'POST' && caminho === '/erros') return receberErro(pedido, env)
   if (metodo === 'POST' && caminho === '/contas') return criarConta(pedido, env)
   if (metodo === 'POST' && caminho === '/contas/recuperar') return recuperarConta(pedido, env)
   if (metodo === 'POST' && caminho === '/contas/excluir') return excluirConta(pedido, env)

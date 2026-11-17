@@ -15,7 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # o site só é publicado se os testes passarem (ver testes.yml)
+  testes:
+    uses: ./.github/workflows/testes.yml
+
   build:
+    needs: testes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

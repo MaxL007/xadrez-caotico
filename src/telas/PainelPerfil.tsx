@@ -155,6 +155,7 @@ export function PainelPerfil({
   onEntrar,
   conquistas,
   children,
+  abaInicial,
 }: {
   t: Traduzir
   idioma: Idioma
@@ -168,6 +169,8 @@ export function PainelPerfil({
   conquistas: SituacaoDasConquistas | null
   /** As configurações do jogo, que moram no fim do perfil. */
   children: ReactNode
+  /** A aba que abre: quem volta da privacidade volta para as Configurações. */
+  abaInicial?: 'perfil' | 'conquistas' | 'configuracoes'
 }) {
   const sessao = useSessao()
   const token = sessao?.token
@@ -176,7 +179,7 @@ export function PainelPerfil({
   const [falhou, setFalhou] = useState(false)
   const [editando, setEditando] = useState(false)
   const [quantos, setQuantos] = useState(HISTORICO_POR_VEZ)
-  const [aba, setAba] = useState<'perfil' | 'conquistas' | 'configuracoes'>('perfil')
+  const [aba, setAba] = useState<'perfil' | 'conquistas' | 'configuracoes'>(abaInicial ?? 'perfil')
 
   useEffect(() => {
     if (!token) return

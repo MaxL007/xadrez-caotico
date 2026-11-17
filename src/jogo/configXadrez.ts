@@ -13,6 +13,10 @@ export interface ConfigXadrez {
   qualidadeEscolhida?: boolean
   som: boolean
   volume: number
+  /** O volume de cada categoria, de 0 a 1, por cima do volume geral. */
+  volumeEfeitos: number
+  volumePassos: number
+  volumeAmbiente: number
   ambiente: boolean
   /** Som e vibração ao tocar nas peças. */
   toque: boolean
@@ -33,6 +37,9 @@ const PADRAO: ConfigXadrez = {
   qualidade: 'media',
   som: true,
   volume: 0.8,
+  volumeEfeitos: 1,
+  volumePassos: 1,
+  volumeAmbiente: 1,
   ambiente: true,
   toque: true,
   registro: true,

@@ -135,5 +135,7 @@ export async function limpezaDiaria(env: Ambiente) {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM tentativas WHERE expira_em < ?1').bind(agora),
     env.DB.prepare('DELETE FROM sessoes WHERE usada_em < ?1').bind(agora - SESSAO_VALE_MS),
+    // os relatórios de erro duram 30 dias (é o que diz a página de privacidade)
+    env.DB.prepare('DELETE FROM erros WHERE visto_em < ?1').bind(agora - 30 * 24 * 60 * 60 * 1000),
   ])
 }

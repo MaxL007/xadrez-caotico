@@ -6,6 +6,7 @@ import { PainelConta } from './PainelConta'
 import { LeitorDeQrCode, QrCode } from './QrCode'
 import { linkDoConvite, receberConviteLido, type ResultadoDoConvite } from '../conta/conviteDeAmizade'
 import { PainelConquistas } from './PainelConquistas'
+import { PainelPrivacidade } from './PainelPrivacidade'
 import { CONQUISTAS, type Contagem } from '../conta/conquistas'
 
 // Amigos: os pedidos de amizade, o ID e o convite por link e QR Code de quem joga, a lista de amigos (com a bolinha de
@@ -348,7 +349,7 @@ export function PainelAmigos({
     return (
       <div className="space-y-3">
         <p className="text-sm font-medium">{t('amigos.precisaConta')}</p>
-        <PainelConta t={t} onConcluir={() => setNaTelaDaConta(false)} onCodigoNaTela={onCodigoNaTela} />
+        <PainelConta t={t} onConcluir={() => setNaTelaDaConta(false)} onCodigoNaTela={onCodigoNaTela} privacidade={<PainelPrivacidade idioma={idioma} />} />
       </div>
     )
   }

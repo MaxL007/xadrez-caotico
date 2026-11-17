@@ -613,10 +613,12 @@ const FOLGA_DE_AGENDA_S = 0.02
 let contexto: AudioContext | null = null
 let geral: GainNode | null = null
 let efeitos: GainNode | null = null
+let passos: GainNode | null = null
 let trilha: GainNode | null = null
 let somLigado = true
 let ambienteLigado = true
 let volumeGeral = 0.6
+let volumes: VolumesPorCategoria = { efeitos: 1, passos: 1, ambiente: 1 }
 let querAmbiente = false
 let pararAmbienteAtual: (() => void) | null = null
 
@@ -630,8 +632,25 @@ const REFORCO_DOS_EFEITOS = 1.5
 const REFORCO_DO_AMBIENTE = 1.6
 const GANHO_DEPOIS_DO_LIMITE = 1.12
 
-/** A cadeia de saída: efeitos e ambiente → volume geral → limitador → reforço → alto-falante. */
-export function cadeiaDeSaida(ctx: BaseAudioContext, volume: number) {
+/** O volume de cada categoria, de 0 (mudo) a 1, por cima do volume geral. */
+export interface VolumesPorCategoria {
+  /** Golpes, armas, avisos e a cerimônia da promoção. */
+  efeitos: number
+  /** Os passos das peças andando. */
+  passos: number
+  /** O vento e as notas de fundo. */
+  ambiente: number
+}
+
+const ganhoDaCategoria = {
+  efeitos: (v: number) => REFORCO_DOS_EFEITOS * v,
+  passos: (v: number) => REFORCO_DOS_EFEITOS * v,
+  ambiente: (v: number) => VOLUME_DO_AMBIENTE * REFORCO_DO_AMBIENTE * v,
+}
+
+/** A cadeia de saída: efeitos, passos e ambiente (cada um com o seu volume) → volume geral → limitador → reforço →
+ * alto-falante. */
+export function cadeiaDeSaida(ctx: BaseAudioContext, volume: number, porCategoria: VolumesPorCategoria = { efeitos: 1, passos: 1, ambiente: 1 }) {
   const geralDaCadeia = ctx.createGain()
   geralDaCadeia.gain.value = volume
   const limite = ctx.createDynamicsCompressor()
@@ -644,12 +663,15 @@ export function cadeiaDeSaida(ctx: BaseAudioContext, volume: number) {
   reforco.gain.value = GANHO_DEPOIS_DO_LIMITE
   geralDaCadeia.connect(limite).connect(reforco).connect(ctx.destination)
   const efeitosDaCadeia = ctx.createGain()
-  efeitosDaCadeia.gain.value = REFORCO_DOS_EFEITOS
+  efeitosDaCadeia.gain.value = ganhoDaCategoria.efeitos(porCategoria.efeitos)
   efeitosDaCadeia.connect(geralDaCadeia)
+  const passosDaCadeia = ctx.createGain()
+  passosDaCadeia.gain.value = ganhoDaCategoria.passos(porCategoria.passos)
+  passosDaCadeia.connect(geralDaCadeia)
   const trilhaDaCadeia = ctx.createGain()
-  trilhaDaCadeia.gain.value = VOLUME_DO_AMBIENTE * REFORCO_DO_AMBIENTE
+  trilhaDaCadeia.gain.value = ganhoDaCategoria.ambiente(porCategoria.ambiente)
   trilhaDaCadeia.connect(geralDaCadeia)
-  return { geral: geralDaCadeia, efeitos: efeitosDaCadeia, trilha: trilhaDaCadeia }
+  return { geral: geralDaCadeia, efeitos: efeitosDaCadeia, passos: passosDaCadeia, trilha: trilhaDaCadeia }
 }
 
 /** Monta o contexto no primeiro gesto da pessoa: antes disso o navegador recusaria o som. Um limitador
@@ -657,9 +679,10 @@ export function cadeiaDeSaida(ctx: BaseAudioContext, volume: number) {
 export function destravarSom() {
   if (!contexto) {
     contexto = new AudioContext()
-    const cadeia = cadeiaDeSaida(contexto, somLigado ? volumeGeral : 0)
+    const cadeia = cadeiaDeSaida(contexto, somLigado ? volumeGeral : 0, volumes)
     geral = cadeia.geral
     efeitos = cadeia.efeitos
+    passos = cadeia.passos
     trilha = cadeia.trilha
   }
   if (contexto.state === 'suspended') void contexto.resume()
@@ -674,17 +697,24 @@ export function ambienteTocando(): boolean {
   return pararAmbienteAtual !== null
 }
 
-export function configurarSom(c: { ligado: boolean; ambiente: boolean; volume: number }) {
+export function configurarSom(c: { ligado: boolean; ambiente: boolean; volume: number; porCategoria?: VolumesPorCategoria }) {
   somLigado = c.ligado
   ambienteLigado = c.ambiente
   volumeGeral = c.volume
-  if (contexto && geral) geral.gain.setTargetAtTime(somLigado ? volumeGeral : 0, contexto.currentTime, 0.03)
+  if (c.porCategoria) volumes = c.porCategoria
+  if (contexto && geral) {
+    const agora = contexto.currentTime
+    geral.gain.setTargetAtTime(somLigado ? volumeGeral : 0, agora, 0.03)
+    efeitos?.gain.setTargetAtTime(ganhoDaCategoria.efeitos(volumes.efeitos), agora, 0.03)
+    passos?.gain.setTargetAtTime(ganhoDaCategoria.passos(volumes.passos), agora, 0.03)
+    trilha?.gain.setTargetAtTime(ganhoDaCategoria.ambiente(volumes.ambiente), agora, 0.03)
+  }
   atualizarAmbiente()
 }
 
-function saidaAoVivo(atraso = 0): Saida | null {
-  if (!contexto || !efeitos || !somLigado || contexto.state !== 'running') return null
-  return { ctx: contexto, destino: efeitos, t: contexto.currentTime + FOLGA_DE_AGENDA_S + atraso, v: 1 + (Math.random() - 0.5) * 0.07 }
+function saidaAoVivo(atraso = 0, destino: GainNode | null = efeitos): Saida | null {
+  if (!contexto || !destino || !somLigado || contexto.state !== 'running') return null
+  return { ctx: contexto, destino, t: contexto.currentTime + FOLGA_DE_AGENDA_S + atraso, v: 1 + (Math.random() - 0.5) * 0.07 }
 }
 
 export function tocarSom(nome: string, atraso = 0) {
@@ -698,7 +728,7 @@ export function tocarSom(nome: string, atraso = 0) {
 /** Os passos de uma caminhada de `duracao` segundos; correndo, o ritmo aperta. */
 export function tocarPassos(tipo: string, duracao: number, correndo = false) {
   const passo = PASSOS[tipo]
-  const s = saidaAoVivo()
+  const s = saidaAoVivo(0, passos)
   if (!passo || !s) return
   if (import.meta.env.DEV) tocados.push(`passos:${tipo}`)
   const ritmo = (RITMO_PASSOS[tipo] ?? 0.32) * (correndo ? 0.72 : 1)
@@ -709,7 +739,7 @@ export function tocarPassos(tipo: string, duracao: number, correndo = false) {
 /** Um passo só, agora: a peça avisa quando o pé encosta no chão, então o som cai junto do passo que se vê. */
 export function tocarUmPasso(tipo: string, correndo = false) {
   const passo = PASSOS[tipo]
-  const s = saidaAoVivo()
+  const s = saidaAoVivo(0, passos)
   if (!passo || !s) return
   if (import.meta.env.DEV) tocados.push(`passo:${tipo}`)
   // correndo, a pisada é mais forte e mais curta

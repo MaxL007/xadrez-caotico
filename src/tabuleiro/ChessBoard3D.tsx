@@ -221,8 +221,13 @@ export function ChessBoard3D() {
   // começar (tanto na primeira vez quanto em "Novo jogo")
   const [escolhendoCor, setEscolhendoCor] = useState(false)
   useEffect(() => {
-    configurarSom({ ligado: config.som, ambiente: config.ambiente, volume: config.volume })
-  }, [config.som, config.ambiente, config.volume])
+    configurarSom({
+      ligado: config.som,
+      ambiente: config.ambiente,
+      volume: config.volume,
+      porCategoria: { efeitos: config.volumeEfeitos, passos: config.volumePassos, ambiente: config.volumeAmbiente },
+    })
+  }, [config.som, config.ambiente, config.volume, config.volumeEfeitos, config.volumePassos, config.volumeAmbiente])
   useEffect(() => acoesRef.current?.atualizarTextos(), [config.idioma])
   useEffect(() => acoesRef.current?.aplicarQualidade(config.qualidade), [config.qualidade])
   useEffect(() => acoesRef.current?.aplicarTelaMovel(), [config.telaMovel])

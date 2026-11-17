@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import type { ChaveTexto, Traduzir } from '../textos/idiomas'
 import { useResumoDaNuvem } from '../dados/db'
 import { criarConta, entrarNaConta, ErroDoServidor, excluirConta, recuperarConta, sairDaConta, useSessao } from '../dados/servidor'
@@ -100,7 +100,18 @@ function Conectado({ t }: { t: Traduzir }) {
   )
 }
 
-export function PainelConta({ t, onConcluir, onCodigoNaTela }: { t: Traduzir; onConcluir?: () => void; onCodigoNaTela?: (naTela: boolean) => void }) {
+export function PainelConta({
+  t,
+  onConcluir,
+  onCodigoNaTela,
+  privacidade,
+}: {
+  t: Traduzir
+  onConcluir?: () => void
+  onCodigoNaTela?: (naTela: boolean) => void
+  /** A privacidade e os termos, que quem cria conta pode ler ali mesmo, sem perder o que já digitou. */
+  privacidade?: ReactNode
+}) {
   const sessao = useSessao()
   const [modo, setModo] = useState<'entrar' | 'criar' | 'recuperar'>('entrar')
   const [nome, setNome] = useState('')
@@ -110,6 +121,7 @@ export function PainelConta({ t, onConcluir, onCodigoNaTela }: { t: Traduzir; on
   const [erro, setErro] = useState<ChaveTexto | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [codigoNovo, setCodigoNovo] = useState<string | null>(null)
+  const [lendoPrivacidade, setLendoPrivacidade] = useState(false)
 
   function mostrarCodigo(codigo: string) {
     setCodigoNovo(codigo)
@@ -130,6 +142,16 @@ export function PainelConta({ t, onConcluir, onCodigoNaTela }: { t: Traduzir; on
     )
   }
   if (sessao) return <Conectado t={t} />
+  if (lendoPrivacidade) {
+    return (
+      <div className="space-y-3">
+        <button type="button" className={botaoLink} onClick={() => setLendoPrivacidade(false)} data-voltar-conta>
+          ← {t('privacidade.voltarConta')}
+        </button>
+        {privacidade}
+      </div>
+    )
+  }
 
   function trocarModo(novo: typeof modo) {
     setModo(novo)
@@ -171,6 +193,16 @@ export function PainelConta({ t, onConcluir, onCodigoNaTela }: { t: Traduzir; on
       {erro && (
         <p role="alert" className="text-xs font-medium text-[#ffb4a8]">
           {t(erro)}
+        </p>
+      )}
+      {modo === 'criar' && (
+        <p className="text-xs text-[#c9b48a]" data-aceite-privacidade>
+          {t('privacidade.aceite')}{' '}
+          {privacidade && (
+            <button type="button" className={`${botaoLink} text-[#e6c675]`} onClick={() => setLendoPrivacidade(true)} data-abrir-privacidade>
+              {t('privacidade.titulo')}
+            </button>
+          )}
         </p>
       )}
       <button type="submit" className={botaoCheio} disabled={enviando || !nome.trim() || !senha}>

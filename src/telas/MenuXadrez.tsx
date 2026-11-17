@@ -14,6 +14,8 @@ import { Avatar, Oticoin } from './ElementosDoJogador'
 import { RECOMPENSAS_POR_HORA, verificarConquistas, type Conquista, type SituacaoDasConquistas } from '../conta/conquistas'
 import { carregarPersonalizacao } from '../conta/personalizacao'
 import { PainelLoja } from './PainelLoja'
+import { PainelPrivacidade } from './PainelPrivacidade'
+import { marcarPasseioVisto, PasseioInicial, passeioJaVisto, passeioNaAutomacao } from './PasseioInicial'
 import { instalarAplicativo, useAplicativo } from '../app/aplicativo'
 import { dispensarAvisoDoConvite, guardarPedidosAvisados, pedidosAvisados, useConviteDeAmizade } from '../conta/conviteDeAmizade'
 import type { VitrineDaPeca } from '../tabuleiro/pecas/equipamentos'
@@ -89,6 +91,23 @@ function Opcoes<T extends string>({
   )
 }
 
+function Volume({ rotulo, valor, minimo = 0, desligado, onMudar }: { rotulo: string; valor: number; minimo?: number; desligado: boolean; onMudar: (v: number) => void }) {
+  return (
+    <input
+      type="range"
+      aria-label={rotulo}
+      aria-valuetext={`${Math.round(valor * 100)}%`}
+      min={minimo}
+      max={1}
+      step={0.05}
+      value={valor}
+      disabled={desligado}
+      onChange={(e) => onMudar(Number(e.target.value))}
+      className="w-32 accent-[#c9a24a] disabled:opacity-40"
+    />
+  )
+}
+
 /** Só aparece abrindo o jogo com ?importar=1: serve pra trazer partidas de um arquivo uma única vez. */
 function ImportarPartidas({ t, onImportou }: { t: Traduzir; onImportou: () => void }) {
   const sessao = useSessao()
@@ -114,7 +133,23 @@ function ImportarPartidas({ t, onImportou }: { t: Traduzir; onImportou: () => vo
   )
 }
 
-function Configuracoes({ t, config, onConfig, onImportou }: { t: Traduzir; config: ConfigXadrez; onConfig: (m: Partial<ConfigXadrez>) => void; onImportou: () => void }) {
+const botaoPequeno = 'rounded-lg border border-[#c9a24a]/50 px-3 py-1 text-xs font-semibold hover:bg-[#3a2614]'
+
+function Configuracoes({
+  t,
+  config,
+  onConfig,
+  onImportou,
+  onPrivacidade,
+  onPasseio,
+}: {
+  t: Traduzir
+  config: ConfigXadrez
+  onConfig: (m: Partial<ConfigXadrez>) => void
+  onImportou: () => void
+  onPrivacidade: () => void
+  onPasseio: () => void
+}) {
   const qualidades: { id: QualidadeXadrez; nome: string }[] = [
     { id: 'baixa', nome: t('config.qualidadeBaixa') },
     { id: 'media', nome: t('config.qualidadeMedia') },
@@ -129,18 +164,28 @@ function Configuracoes({ t, config, onConfig, onImportou }: { t: Traduzir; confi
         <Alternador rotulo={t('config.som')} ligado={config.som} onMudar={(som) => onConfig({ som })} />
       </Linha>
       <Linha titulo={t('config.volume')}>
-        <input
-          type="range"
-          aria-label={t('config.volume')}
-          min={0.05}
-          max={1}
-          step={0.05}
-          value={config.volume}
-          disabled={!config.som}
-          onChange={(e) => onConfig({ volume: Number(e.target.value) })}
-          className="w-32 accent-[#c9a24a] disabled:opacity-40"
-        />
+        <Volume rotulo={t('config.volume')} valor={config.volume} minimo={0.05} desligado={!config.som} onMudar={(volume) => onConfig({ volume })} />
       </Linha>
+      {/* cada categoria por cima do volume geral; no zero, aquela categoria fica muda */}
+      <div data-volumes className="space-y-1.5 border-t border-[#c9a24a]/20 py-2.5 pl-3">
+        {(
+          [
+            ['volumeEfeitos', 'config.volumeEfeitos'],
+            ['volumePassos', 'config.volumePassos'],
+            ['volumeAmbiente', 'config.volumeAmbiente'],
+          ] as const
+        ).map(([campo, chave]) => (
+          <div key={campo} className="flex items-center justify-between gap-4">
+            <p className="text-xs text-[#e9d7b0]">{t(chave)}</p>
+            <Volume
+              rotulo={t(chave)}
+              valor={config[campo]}
+              desligado={!config.som || (campo === 'volumeAmbiente' && !config.ambiente)}
+              onMudar={(v) => onConfig({ [campo]: v } as Partial<ConfigXadrez>)}
+            />
+          </div>
+        ))}
+      </div>
       <Linha titulo={t('config.ambiente')}>
         <Alternador rotulo={t('config.ambiente')} ligado={config.ambiente} onMudar={(ambiente) => onConfig({ ambiente })} />
       </Linha>
@@ -164,12 +209,22 @@ function Configuracoes({ t, config, onConfig, onImportou }: { t: Traduzir; confi
       <Linha titulo={t('config.idioma')}>
         <Opcoes<Idioma> rotulo={t('config.idioma')} valor={config.idioma} opcoes={IDIOMAS} onMudar={(idioma) => onConfig({ idioma })} />
       </Linha>
+      <Linha titulo={t('passeio.rever')}>
+        <button type="button" className={botaoPequeno} onClick={onPasseio} data-rever-passeio>
+          {t('passeio.ver')}
+        </button>
+      </Linha>
+      <Linha titulo={t('privacidade.titulo')}>
+        <button type="button" className={botaoPequeno} onClick={onPrivacidade} data-abrir-privacidade>
+          {t('privacidade.ler')}
+        </button>
+      </Linha>
       {new URLSearchParams(location.search).has('importar') && <ImportarPartidas t={t} onImportou={onImportou} />}
     </>
   )
 }
 
-type Painel = 'inicio' | 'loja' | 'personalizacao' | 'conta' | 'amigos' | 'perfil'
+type Painel = 'inicio' | 'loja' | 'personalizacao' | 'conta' | 'amigos' | 'perfil' | 'privacidade'
 
 const TITULOS: Record<Exclude<Painel, 'inicio'>, ChaveTexto> = {
   loja: 'menu.loja',
@@ -177,6 +232,7 @@ const TITULOS: Record<Exclude<Painel, 'inicio'>, ChaveTexto> = {
   conta: 'conta.titulo',
   amigos: 'menu.amigos',
   perfil: 'menu.perfil',
+  privacidade: 'privacidade.titulo',
 }
 
 export function MenuXadrez({
@@ -305,9 +361,33 @@ export function MenuXadrez({
               ? t('convite.invalido')
               : null
 
+  // o passeio da primeira vez: espera o menu aparecer, e quem já jogou não vê (pode rever nas Configurações)
+  const [passeio, setPasseio] = useState(false)
+  const jaJogou = temPartida || partidasTerminadas.length > 0 || partidasContraMaquina.length > 0
+  useEffect(() => {
+    if (passeioJaVisto() || !passeioNaAutomacao()) return
+    const prazo = window.setTimeout(() => setPasseio(!passeioJaVisto()), 1200)
+    return () => window.clearTimeout(prazo)
+  }, [])
+  useEffect(() => {
+    if (jaJogou && !passeioJaVisto()) {
+      marcarPasseioVisto()
+      setPasseio(false)
+    }
+  }, [jaJogou])
+
   // o código de recuperação só aparece uma vez: nem Esc nem Voltar fecham essa tela sem querer
   const [mostrandoCodigo, setMostrandoCodigo] = useState(false)
-  useFecharComEsc(() => setPainel('inicio'), painel !== 'inicio' && !mostrandoCodigo)
+  // a privacidade volta pra tela de onde foi aberta (o Perfil ou a conta)
+  const [antesDaPrivacidade, setAntesDaPrivacidade] = useState<Painel>('inicio')
+  const [perfilNasConfiguracoes, setPerfilNasConfiguracoes] = useState(false)
+  function abrirPrivacidade() {
+    setAntesDaPrivacidade(painel)
+    setPerfilNasConfiguracoes(painel === 'perfil')
+    setPainel('privacidade')
+  }
+  const voltar = () => setPainel(painel === 'privacidade' ? antesDaPrivacidade : 'inicio')
+  useFecharComEsc(voltar, painel !== 'inicio' && !mostrandoCodigo)
 
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_center,rgba(10,6,3,0.72)_0%,rgba(10,6,3,0.28)_42%,rgba(10,6,3,0)_70%)] p-4">
@@ -325,16 +405,19 @@ export function MenuXadrez({
               {t('menu.continuar')}
             </button>
           )}
-          <button type="button" className={`${botaoMenu} ${temPartida ? '' : 'col-span-2 sm:col-span-1 [@media(max-height:520px)]:!col-span-2'}`} onClick={onNovoJogo}>
+          <button type="button" className={`${botaoMenu} ${temPartida ? '' : 'col-span-2 sm:col-span-1 [@media(max-height:520px)]:!col-span-2'}`} onClick={onNovoJogo} data-passeio="novoJogo">
             {t('menu.novoJogo')}
           </button>
-          <button type="button" className={botaoMenu} onClick={abrirAmigos}>
+          <button type="button" className={botaoMenu} onClick={abrirAmigos} data-passeio="amigos">
             {t('menu.amigos')} {novidades > 0 && <span className="ml-1 rounded-full bg-[#c9a24a] px-1.5 text-xs font-bold text-[#1c120a]">{novidades}</span>}
           </button>
-          <button type="button" className={botaoMenu} onClick={() => setPainel('perfil')}>
+          <button type="button" className={botaoMenu} onClick={() => {
+              setPerfilNasConfiguracoes(false)
+              setPainel('perfil')
+            }} data-passeio="perfil">
             {t('menu.perfil')}
           </button>
-          <button type="button" className={botaoMenu} onClick={() => setPainel('loja')}>
+          <button type="button" className={botaoMenu} onClick={() => setPainel('loja')} data-passeio="loja">
             {t('menu.loja')}
           </button>
           <button type="button" className={botaoMenu} onClick={() => setPainel('personalizacao')}>
@@ -441,12 +524,14 @@ export function MenuXadrez({
         </div>
       )}
 
+      {painel === 'inicio' && passeio && <PasseioInicial t={t} onFim={() => setPasseio(false)} />}
+
       {painel !== 'inicio' && (
         <section role="dialog" aria-label={t(TITULOS[painel])} className={painelMenu}>
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="font-display text-lg font-semibold">{t(TITULOS[painel])}</h3>
             {!mostrandoCodigo && (
-              <button type="button" onClick={() => setPainel('inicio')} className="rounded-lg border border-[#c9a24a]/50 px-3 py-1 text-xs font-semibold hover:bg-[#3a2614]">
+              <button type="button" onClick={voltar} className={botaoPequeno}>
                 {t('menu.voltar')}
               </button>
             )}
@@ -460,7 +545,8 @@ export function MenuXadrez({
             />
           )}
           {painel === 'personalizacao' && <PainelPersonalizacao t={t} montarVitrine={montarVitrine} montarExpositor={montarExpositor} />}
-          {painel === 'conta' && <PainelConta t={t} onConcluir={() => setPainel('inicio')} onCodigoNaTela={setMostrandoCodigo} />}
+          {painel === 'conta' && <PainelConta t={t} onConcluir={() => setPainel('inicio')} onCodigoNaTela={setMostrandoCodigo} privacidade={<PainelPrivacidade idioma={config.idioma} />} />}
+          {painel === 'privacidade' && <PainelPrivacidade idioma={config.idioma} />}
           {painel === 'perfil' && (
             <PainelPerfil
               t={t}
@@ -471,8 +557,12 @@ export function MenuXadrez({
               onAbrirSala={onAbrirSala}
               onEntrar={() => setPainel('conta')}
               conquistas={conquistas}
+              abaInicial={perfilNasConfiguracoes ? 'configuracoes' : 'perfil'}
             >
-              <Configuracoes t={t} config={config} onConfig={onConfig} onImportou={onImportou} />
+              <Configuracoes t={t} config={config} onConfig={onConfig} onImportou={onImportou} onPrivacidade={abrirPrivacidade} onPasseio={() => {
+                setPainel('inicio')
+                setPasseio(true)
+              }} />
             </PainelPerfil>
           )}
           {painel === 'amigos' && <PainelAmigos t={t} idioma={config.idioma} amigos={amigos} onAtualizar={atualizarAmigos} onAbrirSala={onAbrirSala} onCodigoNaTela={setMostrandoCodigo} />}
