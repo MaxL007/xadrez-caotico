@@ -204,8 +204,10 @@ As pastas de `src` são por função:
 - Backup: `scripts/backup-do-banco.ps1`, agendado no Windows ("Xadrez Caotico - backup do banco", domingo 20h, ou ao
   ligar se perdeu a hora), exporta o banco de produção para a pasta XYZ da conta do Windows e guarda as 9 últimas
   cópias. Leva uns 7 minutos neste notebook.
-- `.github/workflows/testes.yml` roda lint, build, o teste do servidor e os de tela a cada envio; o `deploy.yml` chama
-  ele antes de publicar. Mexer em `.github/workflows` pede token com permissão de workflow no push.
+- `.github/workflows/testes.yml` roda lint, build, o teste do servidor e os de tela a cada envio. O `deploy.yml` chama
+  ele sem os de tela (`com_tela: false`) antes de publicar: os de tela dependem de tempo e às vezes falham no GitHub
+  sem o jogo ter problema, e com o servidor já publicado o site não pode ficar esperando. Mexer em `.github/workflows`
+  pede token com permissão de workflow no push (o atual tem).
 
 ## Limites do plano gratuito da Cloudflare
 
