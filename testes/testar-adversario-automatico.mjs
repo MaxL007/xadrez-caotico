@@ -59,9 +59,11 @@ const nomeB = `Auto B ${sufixo}`
 const contaA = await novaConta(nomeA)
 const contaB = await novaConta(nomeB)
 
+let a
+let b
 try {
-  const a = await jogador(contaA)
-  const b = await jogador(contaB)
+  a = await jogador(contaA)
+  b = await jogador(contaB)
 
   // =================== as duas procuram e caem na mesma partida ===================
   await abrirAmigos(a)
@@ -147,6 +149,12 @@ try {
 } catch (e) {
   falhas++
   console.log('FALHOU (parou):', e.message.split('\n')[0])
+  // a tela das duas no momento da falha, pra ver o que faltou
+  for (const [nome, page] of [['a', a], ['b', b]]) {
+    if (!page) continue
+    await page.screenshot({ path: `testes/saidas/adversario-falha-${nome}.png` }).catch(() => undefined)
+    console.log(`  tela ${nome}:`, (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 400))
+  }
 } finally {
   await browser.close()
 }
