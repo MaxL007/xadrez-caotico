@@ -152,8 +152,19 @@ try {
   const derivar = (nome, senha) =>
     crypto.pbkdf2Sync(senha.normalize('NFC'), `xadrez-caotico:v1:${nome.normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase()}`, 1000, 32, 'sha256').toString('base64')
   const novaConta = async (nome) => (await api('POST', '/contas', { corpo: { nome, chave: derivar(nome, 'senha-de-teste') }, endereco: `198.51.100.${Math.floor(Math.random() * 250) + 1}` })).json
+  // o aparelho limpo antes de entrar: as vitórias de teste de antes (de convidado) podiam ir pra conta e ocupar as vagas
+  // da hora, e a taça dizia "sem prêmio" ou não, conforme a velocidade da máquina
   async function entrarComo(conta) {
-    await page.evaluate((sessao) => localStorage.setItem('xadrezCaotico:sessao', JSON.stringify(sessao)), { token: conta.token, usuario: conta.usuario })
+    await page.evaluate(
+      async (sessao) => {
+        for (const banco of await indexedDB.databases()) {
+          if (banco.name) indexedDB.deleteDatabase(banco.name)
+        }
+        for (const chave of Object.keys(localStorage)) if (chave !== 'xadrez:config') localStorage.removeItem(chave)
+        localStorage.setItem('xadrezCaotico:sessao', JSON.stringify(sessao))
+      },
+      { token: conta.token, usuario: conta.usuario },
+    )
     await page.reload({ waitUntil: 'load' })
     await page.waitForFunction(() => !!window.__xadrez?.carregarTeste, null, { timeout: 120000, polling: 300 })
   }
@@ -167,8 +178,10 @@ try {
   const comVaga = await novaConta(`Blitz ${sufixo}`)
   await entrarComo(comVaga)
   await vencerNoTempo()
-  await page.locator('[data-premio]').waitFor({ timeout: 20000 })
-  conferir('com vaga na hora, a taça mostra o prêmio da vitória', (await page.locator('[data-premio]').innerText()).includes('+1 pela vitória'))
+  // o prêmio ou o aviso de sem prêmio: o que vier diz o que aconteceu
+  await page.locator('[data-premio], [data-sem-premio]').first().waitFor({ timeout: 20000 })
+  const naTaca = await page.locator('[data-premio], [data-sem-premio]').first().innerText()
+  conferir('com vaga na hora, a taça mostra o prêmio da vitória', naTaca.includes('+1 pela vitória'), naTaca)
 
   const semVaga = await novaConta(`Blitz cheia ${sufixo}`)
   const vitoria = (id) => ({ store: 'xadrezPartidas', dados: { id, jogador: 'x', ...MATE, status: 'FINALIZADA', resultado: 'Você venceu (xeque-mate)', dificuldade: 'facil', criadaEm: Date.now(), atualizadaEm: Date.now() } })

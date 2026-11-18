@@ -1,13 +1,19 @@
-# Os testes a cada envio. Em `main`, quem chama este arquivo é o deploy.yml: o site só é publicado se tudo passar.
-# Nos outros ramos e nos pedidos de mudança (pull requests), roda sozinho.
+# Os testes a cada envio, em todos os ramos. O deploy.yml também chama este arquivo, sem os testes de tela
+# (`com_tela: false`): o site só é publicado se o lint, os tipos, o build e o teste do servidor passarem. Os testes de
+# tela dependem de tempo (relógio, animações) e às vezes falham no GitHub sem o jogo ter problema: rodam a cada envio,
+# avisam, mas não seguram a publicação.
 name: Testes
 
 on:
   push:
-    branches-ignore: [main]
   pull_request:
-  workflow_call:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      com_tela:
+        description: Rodar também os testes de tela (navegador)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -67,14 +73,19 @@ jobs:
       - name: Testes do servidor
         run: node testes/testar-servidor.mjs
       - name: Navegador para os testes da tela
+        if: format('{0}', inputs.com_tela) != 'false'
         run: npx playwright install --with-deps chromium
       - name: Blitz, relógio e recompensas
+        if: format('{0}', inputs.com_tela) != 'false'
         run: node testes/testar-blitz.mjs
       - name: Registro de erros
+        if: format('{0}', inputs.com_tela) != 'false'
         run: node testes/testar-registro-de-erros.mjs
       - name: Passeio, privacidade e volumes
+        if: format('{0}', inputs.com_tela) != 'false'
         run: node testes/testar-passeio-e-configuracoes.mjs
       - name: Adversário automático, blitz entre amigos e bilhete
+        if: format('{0}', inputs.com_tela) != 'false'
         run: node testes/testar-adversario-automatico.mjs
       - name: Registros do simulador e do site (se algo falhou)
         if: failure()

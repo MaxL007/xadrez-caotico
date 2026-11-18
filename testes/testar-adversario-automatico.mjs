@@ -84,10 +84,16 @@ try {
 
   // ninguém joga: as brancas não fazem o primeiro lance a tempo (1 minuto, 2 s no relógio acelerado) e perdem
   const [brancas, pretas, nomeDasBrancas] = salaA.minhaCor === 'w' ? [a, b, nomeA] : [b, a, nomeB]
-  await Promise.all([brancas.locator('[data-resultado]').waitFor({ timeout: 30000 }), pretas.locator('[data-resultado]').waitFor({ timeout: 30000 })])
-  conferir('quem não jogou perde no relógio', (await brancas.locator('[data-resultado]').getAttribute('data-resultado')) === 'perdeu')
-  conferir('e quem esperou vence', (await pretas.locator('[data-resultado]').getAttribute('data-resultado')) === 'venceu')
-  await pretas.getByRole('button', { name: 'Fechar', exact: true }).first().click()
+  // com o relógio acelerado a partida pode acabar antes de a segunda pessoa conectar: aí ela vê a partida terminada (o
+  // texto, sem a taça). Por isso confere pelo estado da sala e fecha a taça só se ela estiver na tela
+  for (const page of [brancas, pretas]) await page.waitForFunction(() => window.__xadrez.sala()?.status === 'fim', null, { timeout: 30000, polling: 300 })
+  const fimDaSala = await h(pretas, 'sala')
+  conferir('quem não jogou perde no relógio, e quem esperou vence', fimDaSala.motivo === 'tempo' && fimDaSala.resultado === 'pretas', JSON.stringify({ motivo: fimDaSala.motivo, resultado: fimDaSala.resultado }))
+  for (const page of [brancas, pretas]) {
+    const fechar = page.locator('[data-resultado]').getByRole('button', { name: 'Fechar', exact: true })
+    if (await fechar.count()) await fechar.click()
+  }
+  await pretas.locator('[data-status-partida]').waitFor()
   const textoDasPretas = await pretas.locator('[data-status-partida]').innerText()
   conferir('a tela diz que o tempo do outro acabou', textoDasPretas.includes(`O tempo de ${nomeDasBrancas} acabou`), textoDasPretas.replace(/\s+/g, ' '))
   conferir('e contra quem foi a partida', (await pretas.locator('[data-adversario]').innerText()).includes(nomeDasBrancas))

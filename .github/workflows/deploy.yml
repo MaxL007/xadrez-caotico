@@ -15,9 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # o site só é publicado se os testes passarem (ver testes.yml)
+  # o site só é publicado se o lint, os tipos, o build e o teste do servidor passarem (ver testes.yml); os testes de
+  # tela rodam à parte, no envio
   testes:
     uses: ./.github/workflows/testes.yml
+    with:
+      com_tela: false
 
   build:
     needs: testes
