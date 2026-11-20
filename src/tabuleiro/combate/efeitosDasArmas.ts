@@ -264,7 +264,7 @@ export function cortarAoMeio(cena: THREE.Object3D, peca: THREE.Object3D, rumo: {
 
 /** Rachaduras novas a cada pancada: um afundamento no meio, rachas que se afinam e se ramificam, com a borda da
  * madeira clara de um lado, e lascas soltas. */
-function desenharRachaduras(): THREE.CanvasTexture {
+export function desenharRachaduras(): THREE.CanvasTexture {
   const tamanho = 512
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = tamanho
@@ -322,14 +322,15 @@ function desenharRachaduras(): THREE.CanvasTexture {
   return textura
 }
 
-/** As rachaduras ficam um tempo no tabuleiro e somem aos poucos. `tamanho` em casas. */
-export function rachadurasNoTabuleiro(cena: THREE.Object3D, x: number, z: number, tamanho = 1.5, ficaMs = 2200) {
+/** As rachaduras ficam um tempo no tabuleiro e somem aos poucos. `tamanho` em casas; `altura` rente ao tampo quando há
+ * uma cratera embaixo (ver cratera.ts), pra elas não cobrirem o buraco. */
+export function rachadurasNoTabuleiro(cena: THREE.Object3D, x: number, z: number, tamanho = 1.5, ficaMs = 2200, altura = CHAO_DAS_CASAS - 0.008) {
   const textura = desenharRachaduras()
   const material = new THREE.MeshBasicMaterial({ map: textura, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
   const rachadura = new THREE.Mesh(new THREE.PlaneGeometry(tamanho, tamanho), material)
   rachadura.rotation.x = -Math.PI / 2
   rachadura.rotation.z = Math.random() * Math.PI * 2
-  rachadura.position.set(x, CHAO_DAS_CASAS - 0.008, z)
+  rachadura.position.set(x, altura, z)
   rachadura.renderOrder = 1
   cena.add(rachadura)
   // abre rápido, de dentro pra fora

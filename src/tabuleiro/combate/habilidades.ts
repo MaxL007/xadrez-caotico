@@ -8,8 +8,10 @@ import { clipesRPGComPrefixo, guardarEspadaRPG, mostrarEspadaRPG, novaSequenciaR
 import { emblemaDaHabilidade } from '../pecas/emblemas'
 import { depoisDoCongelamento } from '../sensacao/golpeQuePesa'
 import { despedacar, rachadurasNoTabuleiro, rastroDeCorte, tremerTabuleiro } from './efeitosDasArmas'
+import { massaDaPeca } from '../sensacao/realismo'
+import { abrirCratera, afundarNaCratera } from './cratera'
 import { animarImpacto } from './golpes'
-import { esmagarPeca, ondaDaMarretada, poeiraDaPancada } from './marreta'
+import { ondaDaMarretada, poeiraDaPancada } from './marreta'
 import { puxaoUniversal } from './puxaoUniversal'
 
 // A animação de cada habilidade especial na captura. O lance animado acha a habilidade de quem captura (equipada,
@@ -67,8 +69,9 @@ function retalhar(c: CapturaComHabilidade) {
   proximo()
 }
 
-/** O Puxão Universal (rainha): a mão estendida puxa a peça pela gravidade até a cabeça parar na mão, e ela esmaga a peça
- * no chão (ver puxaoUniversal.ts). */
+/** O Puxão Universal (rainha): a mão estendida puxa a peça pela gravidade até a cabeça travar na mão; o corpo segue no
+ * embalo e ela bate a peça no chão de costas. O chão racha e cede numa cratera do tamanho do peso dela, e a peça,
+ * achatada deitada de peito pra cima, afunda até sumir (ver puxaoUniversal.ts e cratera.ts). */
 function puxar(c: CapturaComHabilidade) {
   novaSequenciaRPG(c.vitima)
   mostrarEspadaRPG(c.vitima, false)
@@ -77,18 +80,25 @@ function puxar(c: CapturaComHabilidade) {
   puxaoUniversal(c.atacante, c.vitima, c.cena, cor, c.vigente, {
     aoPuxar: () => tocarSom('puxao:arrasta'),
     aoAgarrar: () => tocarSom('puxao:agarra'),
-    aoEsmagar: (ponto) => {
+    aoEsmagar: ({ meio, rumo, comprimento, meiaGrossura }) => {
+      // a pancada pesa o que a peça pesa: rachaduras, tremor e cratera crescem com a massa dela
+      const massa = massaDaPeca(c.vitima.userData.tipo)
       tocarSom('marreta:impacto')
       tocarSom('esmagado', 0.05)
-      animarImpacto(c.cena, ponto.x, ponto.z)
-      ondaDaMarretada(c.cena, ponto.x, ponto.z, cor)
-      rachadurasNoTabuleiro(c.cena, ponto.x, ponto.z)
-      poeiraDaPancada(c.cena, ponto.x, ponto.z)
-      tremerTabuleiro(c.cena)
+      animarImpacto(c.cena, meio.x, meio.z)
+      ondaDaMarretada(c.cena, meio.x, meio.z, cor)
+      // rentes ao tampo: no buraco aparece o fundo da cratera, não as rachaduras por cima dele
+      rachadurasNoTabuleiro(c.cena, meio.x, meio.z, 1.1 + 0.09 * massa, 2200, 0.001)
+      poeiraDaPancada(c.cena, meio.x, meio.z)
+      tremerTabuleiro(c.cena, 0.1 + 0.013 * massa)
       const ms = c.sentirImpacto(1, false)
       depoisDoCongelamento(ms, () => {
         if (!c.vigente()) return
-        esmagarPeca(c.vitima, c.fim)
+        // o chão cede, a peça achata deitada e afunda; o lance segue quando o chão já voltou (a rainha anda por cima)
+        const cratera = abrirCratera(c.cena, c.vitima, meio, rumo, comprimento, massa)
+        afundarNaCratera(c.vitima, cratera, meio, meiaGrossura, () => {
+          window.setTimeout(() => cratera.fechar(() => c.vigente() && c.fim()), 220)
+        })
       })
       c.comemorarAliadas()
     },
