@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 
 // O símbolo de cada habilidade especial, pro expositor da Personalização e da Loja (no lugar da arma, que não é o que
-// se compra). O do retalhamento vem do desenho do usuário: um átomo de três órbitas cruzadas com dois cortes em
+// se compra). Os dois vêm de desenhos do usuário. O do Puxão Universal, mais embaixo, é um X de traços curvos cercado de
+// arcos. O do retalhamento: um átomo de três órbitas cruzadas com dois cortes em
 // crescente por cima, como garras. Cada órbita é uma faixa achatada, inclinada: de frente ela aparece grossa nas pontas e
 // fina no meio, como o traço de pincel do desenho.
 
@@ -82,7 +83,97 @@ function retalhamento(): THREE.Group {
   return emblema
 }
 
-const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento }
+// --- o Puxão Universal, do desenho do usuário: dois traços curvos que se cruzam em X no meio (grossos no centro,
+// finos nas pontas) e, em volta, quatro pares de arcos (em cima, embaixo, à esquerda e à direita), como ondas sendo
+// puxadas pro centro. Os pontos são do desenho (1920 px de lado), cada traço de pincel com as pontas redondas.
+
+const ESCALA_DO_DESENHO = 1 / 1060
+const CENTRO_DO_DESENHO = new THREE.Vector2(822, 857)
+const doDesenho = ([x, y]: [number, number]) => new THREE.Vector2((x - CENTRO_DO_DESENHO.x) * ESCALA_DO_DESENHO, -(y - CENTRO_DO_DESENHO.y) * ESCALA_DO_DESENHO)
+
+/** Um traço de pincel: a linha suave pelos pontos do desenho, com a grossura (em px do desenho, uma só ou uma por
+ * ponto) e as duas pontas redondas. */
+function traco(pontos: [number, number][], grossura: number | number[]): THREE.Shape {
+  const curva = new THREE.SplineCurve(pontos.map(doDesenho))
+  const larguraEm = (u: number) => {
+    if (typeof grossura === 'number') return grossura * ESCALA_DO_DESENHO
+    const onde = u * (grossura.length - 1)
+    const i = Math.min(grossura.length - 2, Math.floor(onde))
+    const resto = onde - i
+    return (grossura[i] * (1 - resto) + grossura[i + 1] * resto) * ESCALA_DO_DESENHO
+  }
+  const passos = 48
+  const esquerda: THREE.Vector2[] = []
+  const direita: THREE.Vector2[] = []
+  for (let k = 0; k <= passos; k++) {
+    const u = k / passos
+    const ponto = curva.getPointAt(u)
+    const rumo = curva.getTangentAt(u)
+    const lado = new THREE.Vector2(-rumo.y, rumo.x).multiplyScalar(larguraEm(u) / 2)
+    esquerda.push(ponto.clone().add(lado))
+    direita.push(ponto.clone().sub(lado))
+  }
+  const forma = new THREE.Shape(esquerda)
+  // a ponta do fim: meia-volta da borda esquerda pra direita, passando pela frente
+  const fim = curva.getPointAt(1)
+  const rumoNoFim = curva.getTangentAt(1)
+  const anguloNoFim = Math.atan2(rumoNoFim.y, rumoNoFim.x)
+  forma.absarc(fim.x, fim.y, larguraEm(1) / 2, anguloNoFim + Math.PI / 2, anguloNoFim - Math.PI / 2, true)
+  for (let k = direita.length - 1; k >= 0; k--) forma.lineTo(direita[k].x, direita[k].y)
+  // e a do começo, pela parte de trás
+  const comeco = curva.getPointAt(0)
+  const rumoNoComeco = curva.getTangentAt(0)
+  const anguloNoComeco = Math.atan2(rumoNoComeco.y, rumoNoComeco.x)
+  forma.absarc(comeco.x, comeco.y, larguraEm(0) / 2, anguloNoComeco - Math.PI / 2, anguloNoComeco + Math.PI / 2, true)
+  forma.closePath()
+  return forma
+}
+
+/** A grossura dos arcos de fora, em px do desenho. */
+const GROSSURA_DOS_ARCOS = 72
+/** O X do meio é o traço mais pesado do desenho. */
+const GROSSURA_DO_X = 1.25
+
+function puxao(): THREE.Group {
+  const emblema = new THREE.Group()
+  const malha = (forma: THREE.Shape, z = 0) => {
+    const parte = new THREE.Mesh(extrudar(forma, 24), acoEscuro)
+    parte.castShadow = true
+    parte.position.z = z
+    emblema.add(parte)
+    return parte
+  }
+  // o X do meio: do braço de cima à esquerda até o gancho embaixo à direita, e do braço de cima à direita até a ponta
+  // embaixo à esquerda. O segundo fica um fio à frente, pros dois não brigarem onde se cruzam
+  malha(
+    traco(
+      [[497, 625], [560, 605], [650, 598], [730, 620], [800, 680], [845, 760], [860, 830], [880, 900], [930, 975], [1000, 1030], [1080, 1045], [1150, 1025], [1210, 990]],
+      [70, 85, 110, 115, 110, 100, 95, 90, 85, 80, 75, 72, 70].map((g) => g * GROSSURA_DO_X),
+    ),
+  )
+  malha(
+    traco(
+      [[1148, 585], [1090, 600], [1000, 640], [930, 700], [870, 780], [840, 860], [825, 940], [790, 1010], [730, 1070], [650, 1115], [575, 1150]],
+      [68, 80, 95, 105, 100, 95, 100, 105, 100, 85, 70].map((g) => g * GROSSURA_DO_X),
+    ),
+    0.004,
+  )
+  // os pares de arcos em volta: o de fora mais comprido, o de dentro mais curto
+  const arcos: [number, number][][] = [
+    [[535, 335], [700, 295], [900, 265], [1085, 258]],
+    [[697, 415], [800, 415], [895, 408]],
+    [[778, 1283], [900, 1290], [1040, 1260]],
+    [[652, 1455], [850, 1468], [1100, 1440], [1305, 1387]],
+    [[147, 487], [130, 650], [128, 800], [145, 1000], [200, 1210]],
+    [[270, 695], [252, 820], [257, 940]],
+    [[1262, 640], [1320, 720], [1343, 800], [1343, 895]],
+    [[1362, 540], [1450, 640], [1505, 760], [1512, 900], [1490, 1065]],
+  ]
+  for (const arco of arcos) malha(traco(arco, GROSSURA_DOS_ARCOS))
+  return emblema
+}
+
+const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao }
 
 /** O símbolo da habilidade, ou null pra opção sem símbolo. */
 export function emblemaDaHabilidade(opcao: string): THREE.Group | null {

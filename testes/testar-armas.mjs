@@ -127,6 +127,23 @@ try {
   const reiSemArma = await capturar('rei sem arma', { ...COM_REI, vestir: {} })
   conferir('rei sem arma: chute, sem a onda', chutou(reiSemArma) && !reiSemArma.tocados.includes('onda:k') && reiSemArma.problemas.length === 0, `${reiSemArma.tocados.join(' ')} | ${reiSemArma.problemas.join('; ')}`)
   await h('forcarGolpeSemArma', null)
+  // o Puxão Universal: a rainha puxa a peça pela gravidade, segura pela cabeça e esmaga no chão; com ou sem arma
+  const naOrdem = (tocados, sons) => sons.every((som, i) => i === 0 || tocados.indexOf(sons[i - 1]) < tocados.indexOf(som)) && sons.every((som) => tocados.includes(som))
+  const PUXAO = ['puxao:chama', 'puxao:arrasta', 'puxao:agarra', 'marreta:impacto']
+  // só o que tocou até a pancada do puxão: depois vem a resposta da máquina (o rei tomando a rainha, por exemplo)
+  const ateAPancada = (tocados) => tocados.slice(0, tocados.indexOf('marreta:impacto'))
+  const puxao = await capturar('puxão universal', { ...COM_RAINHA, vestir: { q: { golpe: 'puxao' } } })
+  conferir(
+    'puxão universal: chama, arrasta, agarra pela cabeça e esmaga no chão — sem socos',
+    naOrdem(puxao.tocados, PUXAO) && !ateAPancada(puxao.tocados).some((som) => som.startsWith('soco')) && puxao.problemas.length === 0,
+    `${puxao.tocados.join(' ')} | ${puxao.problemas.join('; ')}`,
+  )
+  const puxaoComLua = await capturar('puxão com a lua', { ...COM_RAINHA, vestir: { q: { arma: 'lua', golpe: 'puxao' } } })
+  conferir(
+    'com a lua na outra mão, o puxão continua valendo (sem o tornado)',
+    naOrdem(puxaoComLua.tocados, PUXAO) && !ateAPancada(puxaoComLua.tocados).includes('tornado') && puxaoComLua.problemas.length === 0,
+    `${puxaoComLua.tocados.join(' ')} | ${puxaoComLua.problemas.join('; ')}`,
+  )
   const lua = await capturar('lua', { ...COM_RAINHA, vestir: { q: { arma: 'lua' } } })
   conferir('lua: o tornado que arremessa a peça longe', lua.tocados.includes('tornado') && lua.problemas.length === 0, `${lua.tocados.join(' ')} | ${lua.problemas.join('; ')}`)
   const cetro = await capturar('cetro', { ...COM_REI, vestir: { k: { arma: 'cetro' } } })

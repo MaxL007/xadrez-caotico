@@ -121,11 +121,25 @@ As pastas de `src` são por função:
   `itens` traz a conquista que também libera cada arma: vale a compra ou a conquista. A conta com
   `tudo_liberado` usa tudo. A escolha fica em `usuarios.personalizacao`, só o que foge do padrão; opção que saiu do
   catálogo é ignorada.
-- Habilidade especial é uma parte própria (`golpe`, catálogo `habilidades`, por peça): por enquanto só o peão, com o
+- Habilidade especial é uma parte própria (`golpe`, catálogo `habilidades`, por peça): o peão, com o
   retalhamento. Comprar não basta, tem de equipar na Personalização, e ele só sai com a katana na mão (a tela avisa).
   O expositor mostra o símbolo da habilidade (`src/tabuleiro/pecas/emblemas.ts`), não a arma: o do retalhamento é o desenho do
   usuário, três órbitas cruzadas (faixas achatadas e inclinadas, que de frente ficam grossas nas pontas como pincel) e
   dois cortes em crescente por cima. A compra continua sendo o item `p:golpe:retalhamento`.
+- A rainha tem o Puxão Universal (`q:golpe:puxao`, 1000 óticoins), da descrição e do desenho do usuário, e ele vale com
+  ou sem arma. Na captura ela não anda até a vítima:
+  - estende a mão esquerda aberta, com um brilho na palma;
+  - a peça vem arrastada como por uma gravidade forte, acelerando, de cabeça, com anéis em volta, até a cabeça parar na
+    frente da palma;
+  - a rainha ergue a peça pendurada e a esmaga no chão, com as rachaduras, a poeira e o tremor da marreta.
+
+  Fica em `combate/puxaoUniversal.ts`: a pose por cima do clipe, como a luta sem arma, desfeita e refeita a cada quadro
+  no laço do ChessBoard3D.
+
+  O símbolo (`emblemas.ts`) são os traços de pincel do desenho (`traco`, pontas redondas): o X do meio e os quatro pares
+  de arcos.
+
+  As fotos de cada fase saem de `SO=puxao node testes/fotos-armas.mjs`.
 - Toda peça começa sem arma, inclusive as da máquina e as do adversário: as armas aparecem só em quem liberou e vestiu.
   Peão: katana ou espada. Torre: marreta, machado (lâmina em meia-lua) ou maça. Cavalo: lança. Bispo: cajado ou cristal.
   Rainha: cajado, cristal ou lua. Rei: cajado, cristal ou cetro.

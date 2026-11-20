@@ -627,6 +627,8 @@ try {
   const habilidade = await personalizar({ peca: 'p', parte: 'golpe', opcao: 'retalhamento' })
   conferir('o peão equipa a habilidade especial', habilidade.status === 200 && habilidade.json?.personalizacao?.p?.golpe === 'retalhamento', JSON.stringify(habilidade.json))
   conferir('a torre não tem o retalhamento', (await personalizar({ peca: 'r', parte: 'golpe', opcao: 'retalhamento' })).status === 422)
+  conferir('a rainha equipa o Puxão Universal', (await personalizar({ peca: 'q', parte: 'golpe', opcao: 'puxao' })).json?.personalizacao?.q?.golpe === 'puxao')
+  conferir('o Puxão é só da rainha', (await personalizar({ peca: 'k', parte: 'golpe', opcao: 'puxao' })).status === 422 && (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'puxao' })).status === 422)
   conferir('habilidade inventada não entra', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'voo' })).status === 422)
   const semElmo = (await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'padrao' })).json?.personalizacao
   conferir('voltar ao padrão apaga a escolha e mantém as outras', semElmo?.p?.cabeca === undefined && semElmo?.p?.arma === 'espada', JSON.stringify(semElmo))
@@ -649,6 +651,7 @@ try {
   conferir('a peça começa sem arma: a katana também fica trancada', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'katana' }, bia.token)).status === 403)
   conferir('e o cajado do bispo', (await personalizar({ peca: 'b', parte: 'arma', opcao: 'cajado' }, bia.token)).status === 403)
   conferir('o retalhamento só se equipa comprado', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'retalhamento' }, bia.token)).status === 403)
+  conferir('e o Puxão Universal também', (await personalizar({ peca: 'q', parte: 'golpe', opcao: 'puxao' }, bia.token)).status === 403)
   conferir('tirar a habilidade qualquer um pode', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'nenhuma' }, bia.token)).status === 200)
 
   // =================== conquistas e óticoins ===================
@@ -829,6 +832,8 @@ try {
   conferir('o cabresto de guerra está à venda pelo preço da tabela', (await comprar('n:cabresto:guerra')).status === 402)
   conferir('as armas estão à venda: a lança do cavalo', (await comprar('n:arma:lanca')).status === 402)
   conferir('e o retalhamento da katana', (await comprar('p:golpe:retalhamento')).status === 402)
+  const semSaldoProPuxao = await comprar('q:golpe:puxao')
+  conferir('o Puxão Universal está à venda (sem saldo, não compra)', semSaldoProPuxao.status === 402, JSON.stringify(semSaldoProPuxao.json))
   conferir('a arma que já saiu pela conquista não precisa ser comprada', (await comprar('p:arma:katana')).status === 409)
   const doPerfil = (await api('GET', '/perfil', { token: bia.token })).json
   conferir('o perfil traz os itens comprados e as conquistas', doPerfil.itens?.includes('p:ombros:placas') && doPerfil.conquistas?.includes('torres-30'), JSON.stringify({ itens: doPerfil.itens, conquistas: doPerfil.conquistas }))

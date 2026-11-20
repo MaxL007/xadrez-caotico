@@ -19,6 +19,7 @@ import { squareToPosPeca } from '../casas'
 import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, CHANCE_HONRA_SAMURAI, DISTANCIA_REVERENCIA, type EstiloAtaque } from '../combate/golpes'
 import { alcanceDaMaca, ARMAS_DA_TORRE, baterComMarreta, cairDaMaca, esmagarPeca, MACA_ERGUIDA_ATE_MS, MARRETA_PANCADA_MS, ondaDaMarretada, pancadaNoPeito, poeiraDaPancada, prenderPeloPeito, soltarDaMaca } from '../combate/marreta'
 import { lancarOndaDoRei, lancarPoderDoBispo, lancarRaioDaDama } from '../combate/poderes'
+import { puxaoUniversal } from '../combate/puxaoUniversal'
 import { materiaisDaPeca, materiaisPorFaccao, materialCoroa } from '../pecas/materiais'
 import { clipesRPGComPrefixo, type EspadaRPG, guardarEspadaRPG, modelosRPG, mostrarEspadaRPG, novaSequenciaRPG, sacarEspadaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez, tocarGolpeRPG } from '../pecas/modelosRPG'
 import { armaDoPeaoNoTabuleiro, vestimenta } from '../pecas/vestimenta'
@@ -427,6 +428,41 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
           direcaoGolpe,
         )
         comemorarAliadas()
+      }
+
+      // o Puxão Universal: a rainha de quem equipou essa habilidade especial (o servidor só deixa equipar quem comprou)
+      // não vai até a vítima: estende a mão, puxa a peça pela gravidade até a cabeça dela parar na mão, ergue e esmaga no
+      // chão. Vale com ou sem arma: a arma fica na outra mão
+      const puxa = tipoAtacante === 'q' && ehRPG && corAtacante === vestimenta.cor && vestimenta.escolhas.q?.golpe === 'puxao'
+      if (puxa) {
+        voltarAoDescanso(atacante)
+        virarRPG(atacante, rumoEntre(atacante.position, posVitima), () => {
+          if (!vigente()) return
+          pararRPG(atacante)
+          novaSequenciaRPG(vitima)
+          mostrarEspadaRPG(vitima, false)
+          tocarSom('puxao:chama')
+          const corDoPuxao = materiaisPorFaccao[corAtacante].brilho.color
+          puxaoUniversal(atacante, vitima, scene, corDoPuxao, vigente, {
+            aoPuxar: () => tocarSom('puxao:arrasta'),
+            aoAgarrar: () => tocarSom('puxao:agarra'),
+            aoEsmagar: (ponto) => {
+              tocarSom('marreta:impacto')
+              tocarSom('esmagado', 0.05)
+              animarImpacto(scene, ponto.x, ponto.z)
+              ondaDaMarretada(scene, ponto.x, ponto.z, corDoPuxao)
+              rachadurasNoTabuleiro(scene, ponto.x, ponto.z)
+              poeiraDaPancada(scene, ponto.x, ponto.z)
+              tremerTabuleiro(scene)
+              esmagarPeca(vitima, () => {
+                removerVitima()
+                seguirParaDestino()
+              })
+              comemorarAliadas()
+            },
+          })
+        })
+        return
       }
 
       if (semArma) {

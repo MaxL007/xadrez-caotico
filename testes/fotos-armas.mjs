@@ -55,14 +55,15 @@ async function andarAte(condicao, arg, maximo, oQue) {
 const livre = () => andarAte(() => !window.__xadrez.ocupado(), null, 90000, 'fim do lance')
 
 /** `momentos`: [som, ms depois do som, arquivo]. O som fica registrado quando é pedido, mesmo que toque mais tarde. */
-async function fotografar(nome, { pgn, vestir, golpe = null, de, para, promocao = null, camera, momentos }) {
+/** `alvo`: a casa pra onde a câmera olha (sem ele, a da captura). */
+async function fotografar(nome, { pgn, vestir, golpe = null, de, para, promocao = null, camera, alvo = null, momentos }) {
   if (so && !so.includes(nome)) return
   await h('vestirParaTeste', vestir)
   await h('forcarGolpeSemArma', golpe)
   await h('carregarTeste', pgn, 'w', 'facil')
   await livre()
   await page.clock.runFor(2500)
-  await h('aproximarDaCasa', para, ...camera)
+  await h('aproximarDaCasa', alvo ?? para, ...camera)
   await page.evaluate(() => (window.__sonsTocados.length = 0))
   await h('jogar', de, para)
   if (promocao) {
@@ -107,6 +108,7 @@ try {
   await fotografar('retalhamento', { ...PEAO, vestir: { p: { arma: 'katana', golpe: 'retalhamento' } }, momentos: [['retalho:corte', 40, 'retalho-corte.png'], ['retalho:pedacos', 200, 'retalho-pedacos.png'], ['retalho:pedacos', 900, 'retalho-caindo.png']] })
   await fotografar('cristal', { ...BISPO, vestir: { b: { arma: 'cristal' } }, momentos: [['cristal:convoca', 300, 'cristal-convocado.png'], ['cristal:convoca', 600, 'cristal-descendo.png'], ['cristal:quebra', 60, 'cristal-quebra.png']] })
   await fotografar('cetro', { pgn: '1. e4 d5 2. Ke2 dxe4 3. Ke3 a6', de: 'e3', para: 'e4', camera: [4.6, 30, 55], vestir: { k: { arma: 'cetro' } }, momentos: [['gravidade', 500, 'cetro.png'], ['gravidade', 1500, 'cetro-afundando.png']] })
+  await fotografar('puxao', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', alvo: 'g6', camera: [4.4, -45, 62], vestir: { q: { golpe: 'puxao' } }, momentos: [['puxao:chama', 380, 'puxao-mao.png'], ['puxao:arrasta', 560, 'puxao-arrastando.png'], ['puxao:agarra', 250, 'puxao-segurando.png'], ['marreta:impacto', 60, 'puxao-esmagando.png']] })
   await fotografar('lua', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', camera: [6.5, 40, 62], vestir: { q: { arma: 'lua' } }, momentos: [['tornado', 700, 'lua.png'], ['tornado', 1600, 'lua-arremesso.png']] })
   await fotografar('lanca', { pgn: '1. Nc3 d5', de: 'c3', para: 'd5', camera: [4.6, 35, 50], vestir: { n: { arma: 'lanca' } }, momentos: [['salto:n', 0, 'lanca.png']] })
   // sem arma: os socos e o chute

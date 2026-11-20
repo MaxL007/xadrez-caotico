@@ -11,6 +11,7 @@ import { type MostradorDoRelogio, RelogioDaPartida } from './RelogioDaPartida'
 import { RelogioDeXadrez, type Ritmo } from '../jogo/relogio'
 import { PainelDeLances } from './PainelDeLances'
 import { atualizarLutas, desfazerPosesDasLutas } from './combate/lutaSemArma'
+import { atualizarPuxoes, desfazerPosesDosPuxoes } from './combate/puxaoUniversal'
 import { ambienteDoTabuleiro, configurarSom, destravarSom, tocarSom } from '../som/sons'
 import { type QualidadeXadrez, useConfigXadrez } from '../jogo/configXadrez'
 import { type ChaveTexto, tradutor, type Traduzir } from '../textos/idiomas'
@@ -970,6 +971,7 @@ export function ChessBoard3D() {
       const delta = relogio.getDelta()
       const agora = performance.now()
       desfazerPosesDasLutas()
+      desfazerPosesDosPuxoes()
       desfazerPosturas()
       for (const peca of piecesGroup.children) {
         ;(peca.userData.mixer as THREE.AnimationMixer | undefined)?.update(delta)
@@ -977,6 +979,7 @@ export function ChessBoard3D() {
       }
       atualizarMarretadas(agora)
       atualizarLutas(agora)
+      atualizarPuxoes(agora)
       atualizarPosturas(agora)
       vista.atualizarGiroCamera(agora)
       if (xequeMesh.visible) xequeMat.opacity = 0.45 + 0.25 * ((Math.sin(agora / 260) + 1) / 2)

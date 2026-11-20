@@ -437,6 +437,26 @@ export const SONS: Record<string, (s: Saida) => number> = {
     pancada(s, 80, 30, 0.5, 0.4, 1.45)
     return 2.1
   },
+  // Puxão Universal (habilidade da rainha): a energia acendendo na palma, um zumbido que sobe
+  'puxao:chama': (s) => {
+    tom(s, { freq: 110, ate: 220, ataque: 0.25, dur: 0.45, vol: 0.12 })
+    tom(s, { tipo: 'triangle', freq: 660, ate: 1320, ataque: 0.2, dur: 0.4, vol: 0.025 })
+    sopro(s, { ataque: 0.25, dur: 0.35, vol: 0.06, freq: 1600, ate: 3800, q: 3 })
+    return 0.7
+  },
+  // a peça vindo: a gravidade puxando num grave que cresce e o ar rasgando cada vez mais rápido
+  'puxao:arrasta': (s) => {
+    tom(s, { freq: 46, ate: 92, ataque: 0.15, dur: 0.75, vol: 0.3 })
+    tom(s, { tipo: 'sawtooth', freq: 55, ate: 110, ataque: 0.2, dur: 0.7, vol: 0.05, corte: 260 })
+    sopro(s, { ataque: 0.6, dur: 0.28, vol: 0.24, freq: 300, ate: 2600, q: 1.3 })
+    return 0.95
+  },
+  // a cabeça batendo na mão: um tranco seco
+  'puxao:agarra': (s) => {
+    pancada(s, 150, 70, 0.18, 0.42)
+    sopro(s, { dur: 0.06, vol: 0.12, freq: 900, q: 2 })
+    return 0.3
+  },
   // lua: o vento do tornado subindo, uivando, e o assobio da peça arremessada
   tornado: (s) => {
     sopro(s, { ataque: 0.35, dur: 1.4, vol: 0.26, freq: 280, ate: 900, q: 2.5 })

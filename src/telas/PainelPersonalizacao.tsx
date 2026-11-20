@@ -386,9 +386,9 @@ export function PainelPersonalizacao({
           })}
         </div>
         {parte.parte === 'golpe' && (
-          // o retalhamento é da katana: sem ela na mão, a habilidade fica guardada
+          // o que a habilidade da peça faz. O retalhamento é da katana: sem ela na mão, a habilidade fica guardada
           <p className="text-[0.65rem] leading-snug text-[#c9b48a]" data-dica-habilidade>
-            {t('personalizacao.habilidade.retalhamento')}
+            {t(peca === 'q' ? 'personalizacao.habilidade.puxao' : 'personalizacao.habilidade.retalhamento')}
             {retalhamentoSemKatana && (
               <span className="mt-0.5 block font-semibold text-[#ffcf8a]">⚠ {t('personalizacao.habilidade.semKatana')}</span>
             )}
