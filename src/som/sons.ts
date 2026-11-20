@@ -513,6 +513,24 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { ataque: 0.6, dur: 0.28, vol: 0.24, freq: 300, ate: 2600, q: 1.3 })
     return 0.95
   },
+  // o brilho de anime na palma: um "tiin" agudo e limpo
+  'puxao:brilho': (s) => {
+    sino(s, 2960, 0.55, 0.05)
+    sino(s, 4440, 0.4, 0.025, 0.01)
+    tom(s, { tipo: 'triangle', freq: 1480, ate: 2960, ataque: 0.005, dur: 0.12, vol: 0.02 })
+    return 0.6
+  },
+  // o impulso (e a pancada, mais grave): o ar estalando com a mão saindo de uma vez
+  'puxao:estala': (s) => {
+    sopro(s, { ataque: 0.01, dur: 0.16, vol: 0.2, freq: 900, ate: 3600, q: 1.2 })
+    sopro(s, { inicio: 0.03, dur: 0.03, vol: 0.12, freq: 2600, q: 3 })
+    return 0.3
+  },
+  // a hélice: o vento de cada meia volta, zunindo
+  'puxao:gira': (s) => {
+    sopro(s, { ataque: 0.04, dur: 0.14, vol: 0.16, freq: 520, ate: 1500, q: 2.2 })
+    return 0.25
+  },
   // a cabeça batendo na mão: um tranco seco
   'puxao:agarra': (s) => {
     pancada(s, 150, 70, 0.18, 0.42)

@@ -492,6 +492,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         },
         comemorarAliadas,
         sentirImpacto: impacto,
+        sensacao,
       })
       if (habilidade && HABILIDADES[habilidade].alcance === 'aDistancia') {
         voltarAoDescanso(atacante)

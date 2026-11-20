@@ -323,6 +323,62 @@ export function ChessBoard3D() {
         definirTomDosGolpes(1)
         setVinhetaDaLuta(null)
       },
+      linhasDeFoco: (ponto, ms) => {
+        const naTela = ponto.clone().project(camera)
+        foco = { x: (naTela.x + 1) / 2, y: (1 - naTela.y) / 2, inicio: performance.now(), ms, desenho: -1 }
+      },
+      quadroDeImpacto: (ms) => {
+        if (menosMovimento()) return
+        renderer.domElement.style.filter = 'invert(1) grayscale(1) contrast(2.2)'
+        window.setTimeout(() => (renderer.domElement.style.filter = ''), ms)
+      },
+      socoNaCamera: (graus, ms) => vista.socoNaCamera(graus, ms),
+    }
+    // as linhas de foco do anime: riscos escuros vindo das bordas da tela pro ponto do golpe, redesenhados em dois (a cada
+    // 83 ms, outros riscos), sumindo no fim
+    const telaDeFoco = document.createElement('canvas')
+    Object.assign(telaDeFoco.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' })
+    container.appendChild(telaDeFoco)
+    let foco: { x: number; y: number; inicio: number; ms: number; desenho: number } | null = null
+    function desenharFoco(agora: number) {
+      if (!foco) return
+      const u = (agora - foco.inicio) / foco.ms
+      const ctx = telaDeFoco.getContext('2d')
+      if (!ctx) return
+      if (u >= 1) {
+        ctx.clearRect(0, 0, telaDeFoco.width, telaDeFoco.height)
+        foco = null
+        return
+      }
+      const desenho = Math.floor((agora - foco.inicio) / (1000 / 12))
+      if (desenho === foco.desenho) return
+      foco.desenho = desenho
+      const densidade = Math.min(2, window.devicePixelRatio || 1)
+      const largura = Math.round(telaDeFoco.clientWidth * densidade)
+      const altura = Math.round(telaDeFoco.clientHeight * densidade)
+      if (telaDeFoco.width !== largura || telaDeFoco.height !== altura) {
+        telaDeFoco.width = largura
+        telaDeFoco.height = altura
+      }
+      ctx.clearRect(0, 0, largura, altura)
+      const cx = foco.x * largura
+      const cy = foco.y * altura
+      const longe = Math.hypot(largura, altura)
+      const livre = Math.min(largura, altura) * 0.2
+      ctx.fillStyle = `rgba(18, 10, 6, ${0.5 * (1 - u * u)})`
+      for (let i = 0; i < 90; i++) {
+        const angulo = Math.random() * Math.PI * 2
+        const grossura = (2 + Math.random() * 9) * densidade
+        const ponta = livre * (1 + Math.random() * 0.9)
+        const dx = Math.cos(angulo)
+        const dy = Math.sin(angulo)
+        ctx.beginPath()
+        ctx.moveTo(cx + dx * longe - dy * grossura, cy + dy * longe + dx * grossura)
+        ctx.lineTo(cx + dx * ponta, cy + dy * ponta)
+        ctx.lineTo(cx + dx * longe + dy * grossura, cy + dy * longe - dx * grossura)
+        ctx.closePath()
+        ctx.fill()
+      }
     }
     function marcarXeque() {
       const chess = chessRef.current
@@ -1029,6 +1085,7 @@ export function ChessBoard3D() {
       aplicarInercia(piecesGroup.children, congelado ? 0 : delta)
       vista.atualizarGiroCamera(agora)
       vista.atualizarAproximacao(agora)
+      desenharFoco(agora)
       if (xequeMesh.visible) xequeMat.opacity = 0.45 + 0.25 * ((Math.sin(agora / 260) + 1) / 2)
       controls.update()
       // nos testes com dois jogadores ao mesmo tempo, sem placa de vídeo, é o desenho que trava. O clique
@@ -1121,6 +1178,7 @@ export function ChessBoard3D() {
       cena.descartarReflexo()
       renderer.dispose()
       container.removeChild(renderer.domElement)
+      container.removeChild(telaDeFoco)
     }
     // a ref da sala vem do useSalaOnline: é a mesma em todas as renderizações, então o efeito roda uma vez só
   }, [salaRef])
@@ -1238,7 +1296,7 @@ export function ChessBoard3D() {
       >
         <div
           ref={containerRef}
-          className={ocupaATela ? 'h-full w-full touch-none' : 'w-full aspect-[4/3] sm:aspect-video rounded-xl overflow-hidden border border-ink-100 touch-none'}
+          className={ocupaATela ? 'relative h-full w-full touch-none' : 'relative w-full aspect-[4/3] sm:aspect-video rounded-xl overflow-hidden border border-ink-100 touch-none'}
         />
 
         {tela === 'menu' && (

@@ -6,10 +6,11 @@ import { existeTexto } from '../../textos/idiomas'
 import { materiaisPorFaccao } from '../pecas/materiais'
 import { clipesRPGComPrefixo, guardarEspadaRPG, mostrarEspadaRPG, novaSequenciaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez } from '../pecas/modelosRPG'
 import { emblemaDaHabilidade } from '../pecas/emblemas'
-import { depoisDoCongelamento } from '../sensacao/golpeQuePesa'
+import { depoisDoCongelamento, type SensacaoDaPartida } from '../sensacao/golpeQuePesa'
 import { despedacar, rachadurasNoTabuleiro, rastroDeCorte, tremerTabuleiro } from './efeitosDasArmas'
 import { massaDaPeca } from '../sensacao/realismo'
 import { abrirCratera, afundarNaCratera } from './cratera'
+import { faisca } from './efeitosDeAnime'
 import { animarImpacto } from './golpes'
 import { ondaDaMarretada, poeiraDaPancada } from './marreta'
 import { puxaoUniversal } from './puxaoUniversal'
@@ -36,6 +37,8 @@ export interface CapturaComHabilidade {
   /** O golpe acertou ("o golpe que pesa"): congela um instante, treme e solta as vozes; `fator` multiplica o peso da
    * captura, `tremer` falso quando a habilidade tem o tremor dela. Devolve os ms do congelamento. */
   sentirImpacto: (fator?: number, tremer?: boolean) => number
+  /** A câmera, o som e os efeitos de tela da partida (as linhas de foco, o quadro de impacto, o soco da câmera). */
+  sensacao: SensacaoDaPartida
 }
 
 /** O retalhamento (peão de katana): uma série de cortes rápidos, cada um com o rastro, e a peça se desfaz em pedaços. */
@@ -69,22 +72,42 @@ function retalhar(c: CapturaComHabilidade) {
   proximo()
 }
 
-/** O Puxão Universal (rainha): a mão estendida puxa a peça pela gravidade até a cabeça travar na mão; o corpo segue no
- * embalo e ela bate a peça no chão de costas. O chão racha e cede numa cratera do tamanho do peso dela, e a peça,
- * achatada deitada de peito pra cima, afunda até sumir (ver puxaoUniversal.ts e cratera.ts). */
+/** O Puxão Universal (rainha), na mecânica do anime: a base de luta, o brilho e o impulso da mão; a peça vem voando até a
+ * cabeça travar na mão, gira na hélice, para no alto e é batida no chão de costas. O chão racha e cede numa cratera do
+ * tamanho do peso dela, e a peça, achatada deitada de peito pra cima, afunda até sumir (ver puxaoUniversal.ts,
+ * cratera.ts e efeitosDeAnime.ts). */
 function puxar(c: CapturaComHabilidade) {
   novaSequenciaRPG(c.vitima)
   mostrarEspadaRPG(c.vitima, false)
   tocarSom('puxao:chama')
   const cor = materiaisPorFaccao[c.corAtacante].brilho.color
+  const tamanho = c.atacante.scale.x
   puxaoUniversal(c.atacante, c.vitima, c.cena, cor, c.vigente, {
+    aoBrilhar: (mao) => {
+      tocarSom('puxao:brilho')
+      faisca(c.cena, mao, cor, 0.32 * tamanho, 300)
+    },
+    aoEmpurrar: (mao) => {
+      tocarSom('puxao:estala')
+      c.sensacao.linhasDeFoco(mao, 220)
+      c.sensacao.socoNaCamera(-4, 300)
+    },
     aoPuxar: () => tocarSom('puxao:arrasta'),
-    aoAgarrar: () => tocarSom('puxao:agarra'),
+    aoAgarrar: (mao) => {
+      tocarSom('puxao:agarra')
+      faisca(c.cena, mao, cor, 0.6 * tamanho)
+    },
+    aoGirar: () => tocarSom('puxao:gira'),
+    aoBaixar: () => tocarSom('puxao:estala', 0, 0.75),
     aoEsmagar: ({ meio, rumo, comprimento, meiaGrossura }) => {
       // a pancada pesa o que a peça pesa: rachaduras, tremor e cratera crescem com a massa dela
       const massa = massaDaPeca(c.vitima.userData.tipo)
       tocarSom('marreta:impacto')
       tocarSom('esmagado', 0.05)
+      // o golpe mais forte do anime: a tela em negativo por um instante, as linhas de foco e a câmera abrindo
+      c.sensacao.quadroDeImpacto(90)
+      c.sensacao.linhasDeFoco(meio, 320)
+      c.sensacao.socoNaCamera(5, 420)
       animarImpacto(c.cena, meio.x, meio.z)
       ondaDaMarretada(c.cena, meio.x, meio.z, cor)
       // rentes ao tampo: no buraco aparece o fundo da cratera, não as rachaduras por cima dele

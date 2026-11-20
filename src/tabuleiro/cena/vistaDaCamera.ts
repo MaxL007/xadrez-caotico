@@ -207,7 +207,25 @@ export function criarVistaDaCamera(
     aproximacao = null
   }
 
+  // o soco da câmera (efeitos de anime): o campo de visão fecha ou abre de uma vez e volta devagar
+  const campoDeVisao = camera.fov
+  let soco: { graus: number; inicio: number; ms: number } | null = null
+  function socoNaCamera(graus: number, ms: number) {
+    if (emMenu || menosMovimento()) return
+    soco = { graus, inicio: performance.now(), ms }
+  }
+  function atualizarSoco(agora: number) {
+    if (!soco) return
+    const u = (agora - soco.inicio) / soco.ms
+    if (u >= 1) {
+      soco = null
+      camera.fov = campoDeVisao
+    } else camera.fov = campoDeVisao + soco.graus * (u < 0.12 ? u / 0.12 : (1 - (u - 0.12) / 0.88) ** 2)
+    camera.updateProjectionMatrix()
+  }
+
   function atualizarAproximacao(agora: number) {
+    atualizarSoco(agora)
     if (!aproximacao) return
     if (giroCamera || emMenu) {
       aproximacao = null
@@ -284,6 +302,7 @@ export function criarVistaDaCamera(
     atualizarAproximacao,
     aproximarDaLuta,
     voltarDaLuta,
+    socoNaCamera,
     encostarNoRei,
     virarCameraPara,
     irParaVistaDoMenu,

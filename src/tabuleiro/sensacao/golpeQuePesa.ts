@@ -29,6 +29,12 @@ export interface SensacaoDaPartida {
   comecarLuta: (ponto: THREE.Vector3, peso: number, tom: number) => void
   /** A vítima saiu: tudo volta ao normal. */
   terminarLuta: () => void
+  /** Os efeitos de tela do anime (efeitosDeAnime.ts): as linhas de foco apontando pra `ponto` por `ms`. */
+  linhasDeFoco: (ponto: THREE.Vector3, ms: number) => void
+  /** O quadro de impacto: a tela em negativo por `ms` (só sem "menos movimento"). */
+  quadroDeImpacto: (ms: number) => void
+  /** O soco da câmera: o campo de visão abre (`graus` positivo) ou fecha e volta em `ms`. */
+  socoNaCamera: (graus: number, ms: number) => void
 }
 
 // --- o peso -------------------------------------------------------------------------------------------------------

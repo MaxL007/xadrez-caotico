@@ -127,22 +127,34 @@ As pastas de `src` são por função:
   usuário, três órbitas cruzadas (faixas achatadas e inclinadas, que de frente ficam grossas nas pontas como pincel) e
   dois cortes em crescente por cima. A compra continua sendo o item `p:golpe:retalhamento`.
 - A rainha tem o Puxão Universal (`q:golpe:puxao`, 500 óticoins), da descrição e do desenho do usuário, e ele vale com
-  ou sem arma. Na captura ela não anda até a vítima:
-  - estende a mão esquerda aberta, com um brilho na palma;
-  - a peça vem pelo ar como puxada por uma gravidade forte, acelerando, com anéis em volta, voando como quem levou uma
-    pancada enorme: o peito na frente, os braços e as pernas jogados pra trás, tremulando;
-  - só a cabeça trava na frente da palma: o corpo continua vindo no embalo, passa por baixo dela pro lado da rainha e
-    gira de costas pra ela, e no mesmo instante começa a pancada (o braço sobe levado pelo embalo, sem pausa);
-  - o braço desce de uma vez e a peça tomba pra trás em volta da cabeça, até bater no chão deitada de peito pra cima
-    (a cabeça na mão da rainha, os pés pra longe), esparramada, com a poeira e a onda da marreta;
+  ou sem arma. Na captura ela não anda até a vítima, e a execução segue a mecânica de movimento do anime (pedido do
+  usuário): o corpo inteiro das duas peças, de pose em pose, as poses paradas tremendo "em dois" (12 desenhos por
+  segundo), o movimento rápido entre elas e um golpe fora do comum no meio:
+  - base de luta: a rainha firma os pés (o esquerdo à frente), desce o corpo, recolhe a mão e torce o tronco,
+    carregando; a palma acende com o brilho de anime ("tiin");
+  - impulso: a mão aberta sai de uma vez (estalo, linhas de foco, a câmera fecha um pouco) e fica; a outra mão segura o
+    antebraço pra firmar (com arma na mão, fica aberta pro lado);
+  - a peça vem pelo ar acelerando, com anéis e linhas de velocidade, como quem levou uma pancada enorme: o peito na
+    frente, os braços e as pernas jogados pra trás; a rainha é arrastada um pouco pra trás;
+  - só a cabeça trava na mão: faísca, tranco e o tempo para 70 ms;
+  - a hélice (o golpe fora do comum): o corpo segue no embalo e gira uma volta e meia preso pela cabeça, na frente da
+    rainha, com o borrão atrás e o vento de cada meia volta, e para de pernas pro ar lá no alto;
+  - o "ma": um instante parado no alto, tremendo, a rainha arqueada na ponta dos pés;
+  - a pancada: em três, quatro desenhos a peça tomba pra longe da rainha e bate no chão deitada de peito pra cima (a
+    cabeça na mão, os pés pra longe), esparramada; o quadro de impacto (a tela em negativo por 90 ms), as linhas de
+    foco, a câmera abrindo, a poeira e a onda da marreta;
+  - a rainha fica agachada na pose do golpe (o zanshin) e só depois se levanta, devagar;
   - o chão racha e cede numa cratera com o feitio do corpo, mais funda e mais larga quanto mais pesada a peça (peão 1,
     cavalo e bispo 3, torre 5, rainha 9); rachaduras e tremor crescem do mesmo jeito;
   - a peça é achatada deitada (pedido do usuário: nada de achatar de cima pra baixo em pé), fica um instante e a
     gravidade a puxa pra dentro do chão até sumir; o chão volta (o buraco fecha da borda pro meio) e só então a rainha
     anda até a casa.
 
-  Fica em `combate/puxaoUniversal.ts` (a rainha e o voo) e `combate/cratera.ts` (o buraco e o afundar): a pose por
-  cima do clipe, como a luta sem arma, desfeita e refeita a cada quadro no laço do ChessBoard3D. A cratera não mexe no
+  Fica em `combate/puxaoUniversal.ts` (as duas peças) e `combate/cratera.ts` (o buraco e o afundar): a pose por cima
+  do clipe, como a luta sem arma, desfeita e refeita a cada quadro no laço do ChessBoard3D. A rainha anda por poses-chave
+  (`posesDaRainha`: as duas mãos, o tronco, o quanto agacha, os pés na base de luta), cada uma com a curva de chegada
+  (`saida` é o estalo do anime, `entrada` a pancada) e, nas paradas, o tremor em dois; os pés ficam presos no chão
+  (`levarPernaAte`) enquanto o corpo desce, e o lugar dela volta ao de antes no fim. A cratera não mexe no
   tabuleiro: é uma tigela embaixo do tampo e uma tampa que só escreve profundidade, desenhada antes das casas
   (`renderOrder` negativo), e a vítima é desenhada antes da tampa pra continuar à vista dentro do buraco. As rachaduras
   vão rentes ao tampo (`altura` 0,001), senão aparecem por cima do buraco.
@@ -150,13 +162,18 @@ As pastas de `src` são por função:
   O símbolo (`emblemas.ts`) são os traços de pincel do desenho (`traco`, pontas redondas): o X do meio e os quatro pares
   de arcos.
 
-  As fotos de cada fase saem de `SO=puxao,puxao-de-lado,puxao-de-cima,puxao-rainha node testes/fotos-armas.mjs` (a
-  última compara a cratera da rainha com a do peão).
+  As fotos de cada pose-chave saem de `SO=puxao,puxao-de-lado,puxao-de-cima,puxao-rainha node testes/fotos-armas.mjs`
+  (a última compara a cratera da rainha com a do peão).
+- Os efeitos de anime ficam em `src/tabuleiro/combate/efeitosDeAnime.ts` (`emDois`, `acaso` pro tremor desenho a
+  desenho, `linhasDeVelocidade`, `faisca`, `criarLeque`, o borrão atrás do que gira) e, os de tela, na
+  `SensacaoDaPartida` que o lance entrega a cada habilidade: `linhasDeFoco` (um canvas por cima do 3D, redesenhado em
+  dois), `quadroDeImpacto` (filtro de negativo no canvas; nada com "menos movimento") e `socoNaCamera` (o campo de visão
+  fecha ou abre e volta). Qualquer habilidade nova usa os mesmos.
 - O realismo das ações (`src/tabuleiro/sensacao/realismo.ts`): `REALISMO` é a porcentagem de física de verdade (hoje
   70%; 100% seria um boneco de pano solto, 0% a peça dura de desenho animado), e menos movimento a reduz. `corpoLargado`
   põe a pose do corpo arrancado por cima do clipe (costas arqueadas, membros pra trás ou pra frente, abertos, tremulando)
   e `massaDaPeca` dá o peso de cada peça. Por enquanto só o Puxão segue; uma ação nova usa os mesmos dois. A peça com
-  `userData.corpoLargado` fica fora da inércia de quem anda.
+  `userData.poseDeHabilidade` (as duas do Puxão) fica fora da inércia de quem anda.
 - As habilidades têm cadastro único: `src/conta/habilidades.ts` (`HABILIDADES`) diz de que peça é cada uma, se vai até
   a vítima (`corpoACorpo`) ou não (`aDistancia`), e se pede uma arma na mão. A animação de cada uma fica em
   `src/tabuleiro/combate/habilidades.ts` (`CAPTURAS`): ela recebe a cena, as duas peças, `sentirImpacto` e `fim`. O lance

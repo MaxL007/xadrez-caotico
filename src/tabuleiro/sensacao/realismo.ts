@@ -46,6 +46,8 @@ export interface PoseLargada {
   abertura: number
   /** O peito pra frente, as costas arqueadas (0 a 1). */
   arco: number
+  /** Os quatro membros jogados pro mesmo lado (-1 a 1, positivo pra esquerda da peça): girando, ficam pra trás do giro. */
+  deLado?: number
 }
 
 const LADO = new THREE.Vector3(1, 0, 0)
@@ -70,6 +72,7 @@ export function corpoLargado(peca: THREE.Object3D, pose: PoseLargada, agora: num
   const frente = FRENTE.clone().transformDirection(peca.matrixWorld)
   const pratras = pose.pratras * r
   const abertura = pose.abertura * r
+  const deLado = (pose.deLado ?? 0) * r
   // o vento: os membros tremulam mais quanto mais pra trás estão
   const vento = (i: number) => Math.sin(agora / 37 + fase + i * 1.7) * 0.16 * Math.abs(pratras)
   // as costas arqueiam pra trás (o peito vai na frente); o pescoço compensa, a cabeça puxada pra frente
@@ -80,10 +83,10 @@ export function corpoLargado(peca: THREE.Object3D, pose: PoseLargada, agora: num
     const pra = ladoDoCorpo === 'Left' ? 1 : -1
     // girar em volta do lado leva o membro pendurado pra trás (positivo) ou pra frente (negativo)
     girar(peca, `${ladoDoCorpo}Arm`, lado, 1.35 * pratras + vento(i))
-    girar(peca, `${ladoDoCorpo}Arm`, frente, pra * (0.25 * Math.abs(pratras) + 0.9 * abertura))
+    girar(peca, `${ladoDoCorpo}Arm`, frente, pra * (0.25 * Math.abs(pratras) + 0.9 * abertura) + 0.8 * deLado)
     girar(peca, `${ladoDoCorpo}ForeArm`, lado, 0.45 * pratras + vento(i + 2))
     girar(peca, `${ladoDoCorpo}UpLeg`, lado, 0.7 * pratras + vento(i + 4) * 0.7)
-    girar(peca, `${ladoDoCorpo}UpLeg`, frente, pra * (0.1 * Math.abs(pratras) + 0.35 * abertura))
+    girar(peca, `${ladoDoCorpo}UpLeg`, frente, pra * (0.1 * Math.abs(pratras) + 0.35 * abertura) + 0.45 * deLado)
     // o joelho só dobra pra trás
     girar(peca, `${ladoDoCorpo}Leg`, lado, Math.max(0, 0.95 * pratras) + Math.abs(vento(i + 6)) * 0.6)
   }

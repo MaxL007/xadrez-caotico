@@ -42,8 +42,8 @@ export function desfazerInercia() {
 export function aplicarInercia(pecas: THREE.Object3D[], dt: number) {
   if (dt <= 0 || menosMovimento()) return
   for (const peca of pecas) {
-    // a peça largada por uma força (o Puxão) tem o corpo cuidado por quem a largou
-    if (!peca.userData.acoesRPG || peca.userData.corpoLargado) continue
+    // a peça no meio de uma habilidade (o Puxão: quem puxa e quem é puxada) tem o corpo cuidado por ela
+    if (!peca.userData.acoesRPG || peca.userData.poseDeHabilidade) continue
     let estado = estados.get(peca)
     if (!estado) {
       estado = { x: peca.position.x, z: peca.position.z, inclinacao: 0, giro: 0, ossos: [] }
