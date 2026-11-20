@@ -7,6 +7,7 @@ import type { VitrineDaPeca } from '../tabuleiro/pecas/equipamentos'
 import { CONQUISTAS } from '../conta/conquistas'
 import { acessoDaOpcao, escolhaDaParte, escolherOpcao, opcaoLiberada, partesDaPeca, PECAS, usePersonalizacao, type ParteDaPeca, type Peca } from '../conta/personalizacao'
 import { nomeDaConquista } from './PainelConquistas'
+import { HABILIDADES, textoDoQueFaz } from '../conta/habilidades'
 import { criarExpositor, desenharNoExpositor, noSuporte } from '../tabuleiro/pecas/expositor'
 
 // Personalização, como no desenho do peão: a peça no meio e, dos lados, um quadrado por parte, ligado a ela por um
@@ -310,7 +311,10 @@ export function PainelPersonalizacao({
   const parte = partesDaPeca(peca).find((p) => p.parte === selecionada) ?? partesDaPeca(peca)[0]
   const atual = escolhaDaParte(personalizacao.escolhas, peca, parte)
   const parteDaArma = partesDaPeca(peca).find((p) => p.parte === 'arma')
-  const retalhamentoSemKatana = atual === 'retalhamento' && (!parteDaArma || escolhaDaParte(personalizacao.escolhas, peca, parteDaArma) !== 'katana')
+  // a habilidade da peça (a equipada, ou a primeira à venda) e, se ela pede uma arma, se essa arma está na mão
+  const habilidadeMostrada = parte.parte === 'golpe' ? (atual !== 'nenhuma' ? atual : parte.opcoes.find((opcao) => opcao !== 'nenhuma')) : undefined
+  const armaDaHabilidade = habilidadeMostrada ? HABILIDADES[habilidadeMostrada]?.arma : undefined
+  const faltaAArma = atual !== 'nenhuma' && !!armaDaHabilidade && (!parteDaArma || escolhaDaParte(personalizacao.escolhas, peca, parteDaArma) !== armaDaHabilidade.opcao)
 
   return (
     <div className="space-y-3">
@@ -388,9 +392,9 @@ export function PainelPersonalizacao({
         {parte.parte === 'golpe' && (
           // o que a habilidade da peça faz. O retalhamento é da katana: sem ela na mão, a habilidade fica guardada
           <p className="text-[0.65rem] leading-snug text-[#c9b48a]" data-dica-habilidade>
-            {t(peca === 'q' ? 'personalizacao.habilidade.puxao' : 'personalizacao.habilidade.retalhamento')}
-            {retalhamentoSemKatana && (
-              <span className="mt-0.5 block font-semibold text-[#ffcf8a]">⚠ {t('personalizacao.habilidade.semKatana')}</span>
+            {habilidadeMostrada && t(textoDoQueFaz(habilidadeMostrada))}
+            {faltaAArma && armaDaHabilidade && (
+              <span className="mt-0.5 block font-semibold text-[#ffcf8a]">⚠ {t(armaDaHabilidade.aviso)}</span>
             )}
           </p>
         )}

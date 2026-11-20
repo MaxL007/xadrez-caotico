@@ -190,7 +190,7 @@
       "arma:cajado": 35,
       "arma:cristal": 35,
       "arma:lua": 35,
-      "golpe:puxao": 1000
+      "golpe:puxao": 500
     },
     "k": {
       "cabeca:elmo": 50,

@@ -192,6 +192,9 @@ function Configuracoes({
       <Linha titulo={t('config.toque')} dica={t('config.toqueDica')}>
         <Alternador rotulo={t('config.toque')} ligado={config.toque} onMudar={(toque) => onConfig({ toque })} />
       </Linha>
+      <Linha titulo={t('config.menosMovimento')} dica={t('config.menosMovimentoDica')}>
+        <Alternador rotulo={t('config.menosMovimento')} ligado={config.menosMovimento} onMudar={(menosMovimento) => onConfig({ menosMovimento })} />
+      </Linha>
       <Linha titulo={t('config.registro')} dica={t('config.registroDica')}>
         <Alternador rotulo={t('config.registro')} ligado={config.registro} onMudar={(registro) => onConfig({ registro })} />
       </Linha>

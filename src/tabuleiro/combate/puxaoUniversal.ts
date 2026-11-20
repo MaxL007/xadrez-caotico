@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { girarOssoNoMundo, levarBracoAte, ossoRPG, restaurarOssos, salvarOssos, type OssoSalvo } from '../pecas/ossos'
 import { spriteDeBrilho } from './poderes'
+import { agoraDoJogo } from '../sensacao/relogioDoJogo'
 
 // O Puxão Universal, habilidade especial da rainha (desenho e descrição do usuário): ela estende a mão aberta à frente do
 // corpo e a peça a ser capturada vem até ela como puxada por uma gravidade forte — acelerando, a cabeça na frente — até
@@ -92,7 +93,7 @@ export function puxaoUniversal(rainha: THREE.Object3D, vitima: THREE.Object3D, c
     rainha,
     vitima,
     cena,
-    inicio: performance.now(),
+    inicio: agoraDoJogo(),
     ossos: salvarOssos(rainha, OSSOS),
     de: vitima.position.clone(),
     giroDaVitima,

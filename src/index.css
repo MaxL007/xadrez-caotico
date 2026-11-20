@@ -115,3 +115,14 @@
     background-position: calc(var(--tamanho) * -32) 0;
   }
 }
+
+/* a borda da tela pulsando com o rei em xeque (Vinheta.tsx, "o golpe que pesa") */
+@keyframes pulsoDaVinheta {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}

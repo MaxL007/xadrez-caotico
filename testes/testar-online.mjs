@@ -176,9 +176,9 @@ try {
   await ana.locator('[data-habilidades-da-peca="p"]').waitFor()
   const habilidadesNaLoja = await ana.locator('[data-loja] [data-item]').evaluateAll((cartoes) => cartoes.map((c) => c.dataset.item))
   conferir(
-    'a aba Habilidades vende o retalhamento do peão, com o preço e o aviso da katana, e o Puxão Universal da rainha por 1000',
+    'a aba Habilidades vende o retalhamento do peão, com o preço e o aviso da katana, e o Puxão Universal da rainha por 500',
     habilidadesNaLoja.join(',') === 'p:golpe:retalhamento,q:golpe:puxao' &&
-      (await ana.locator('[data-item="q:golpe:puxao"]').innerText()).includes('1000') &&
+      (await ana.locator('[data-item="q:golpe:puxao"]').innerText()).includes('500') &&
       (await ana.locator('[data-item="q:golpe:puxao"] [data-peca-da-arma]').innerText()) === 'Rainha' &&
       (await ana.locator('[data-item="p:golpe:retalhamento"]').innerText()).includes('80') &&
       (await ana.locator('[data-item="p:golpe:retalhamento"] [data-peca-da-arma]').innerText()) === 'Peão · com a katana',

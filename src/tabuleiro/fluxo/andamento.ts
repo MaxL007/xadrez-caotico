@@ -14,6 +14,8 @@ export interface Andamento {
   comemoracaoDisparada: boolean
   /** Em que lance quem joga pediu empate pela última vez: um pedido por lance. */
   ultimoPedidoDeEmpate: number
+  /** Capturas seguidas, dos dois lados (a troca): cada uma soa um semitom acima. Um lance sem captura zera. */
+  capturasSeguidas: number
 }
 
 export const andamentoNovo = (): Andamento => ({
@@ -23,6 +25,7 @@ export const andamentoNovo = (): Andamento => ({
   animandoDaSala: false,
   comemoracaoDisparada: false,
   ultimoPedidoDeEmpate: -1,
+  capturasSeguidas: 0,
 })
 
 /** A peça que o peão vira na promoção. */

@@ -8,6 +8,7 @@ import { comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Pec
 import { ErroDoServidor } from '../dados/servidor'
 import { Oticoin } from './ElementosDoJogador'
 import { criarExpositor, desenharNoExpositor, noSuporte } from '../tabuleiro/pecas/expositor'
+import { HABILIDADES } from '../conta/habilidades'
 
 // A Loja tem três abas: Armaduras, peça por peça; Armas e Habilidades especiais, cada uma numa lista só, separada pela
 // peça que usa. A compra vale só pra aquela peça (o item é 'peça:parte:opção'): por isso o cajado e o cristal aparecem
@@ -228,7 +229,7 @@ export function PainelLoja({
     setRolarAte(`[data-${destino}-da-peca="${p}"]`)
   }
 
-  /** Nas armas e habilidades, de quem é: o retrato e o nome da peça (e, no retalhamento, que ele pede a katana). */
+  /** Nas armas e habilidades, de quem é: o retrato e o nome da peça (e, na habilidade que pede uma arma, qual). */
   function etiquetaDaPeca(item: string, grande = false) {
     const { peca: p, opcao } = partesDoItem(item)
     return (
@@ -236,7 +237,7 @@ export function PainelLoja({
         <img src={urlDoAvatar(AVATAR_DA_PECA[p])} alt="" className={`${grande ? 'h-5 w-5' : 'h-4 w-4'} shrink-0 rounded-full bg-[#1c120a] object-cover ring-1 ring-[#c9a24a]/60`} />
         <span className="truncate">
           {nomeDaPeca(p)}
-          {opcao === 'retalhamento' && ` · ${t('loja.comAKatana')}`}
+          {HABILIDADES[opcao]?.arma && ` · ${t(HABILIDADES[opcao].arma.naLoja)}`}
         </span>
       </span>
     )

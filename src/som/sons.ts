@@ -103,6 +103,56 @@ function sopro(s: Saida, o: OpcoesSopro) {
   fonte.stop(t + ataque + o.dur + 0.02)
 }
 
+/** Uma voz curta, sintetizada: a corda vocal (uma onda dente de serra deslizando de `f0` a `ate`) passando pelos
+ * formantes da boca (filtros em faixa, cada um [frequência, Q]), com um pouco de ar por cima. É o grunhido de esforço de
+ * quem golpeia e o gemido de quem apanha. */
+function voz(s: Saida, o: { f0: number; ate: number; dur: number; vol: number; formantes: [number, number][]; inicio?: number; ataque?: number }) {
+  const t = s.t + (o.inicio ?? 0)
+  const ataque = o.ataque ?? 0.02
+  const osc = s.ctx.createOscillator()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(o.f0 * s.v, t)
+  osc.frequency.exponentialRampToValueAtTime(o.ate * s.v, t + ataque + o.dur)
+  const g = envelope(s.ctx, t, ataque, o.dur, o.vol)
+  for (const [freq, q] of o.formantes) {
+    const filtro = s.ctx.createBiquadFilter()
+    filtro.type = 'bandpass'
+    filtro.frequency.value = freq
+    filtro.Q.value = q
+    osc.connect(filtro).connect(g)
+  }
+  g.connect(s.destino)
+  osc.start(t)
+  osc.stop(t + ataque + o.dur + 0.02)
+  sopro(s, { inicio: o.inicio, ataque, dur: o.dur * 0.8, vol: o.vol * 0.12, freq: o.formantes[o.formantes.length - 1][0], q: 2 })
+}
+
+/** A voz de cada peça: a altura (Hz) e a boca (formantes). A rainha mais aguda, a torre e o rei graves. */
+const VOZES: Record<string, { f0: number; formantes: [number, number][] }> = {
+  p: { f0: 205, formantes: [[720, 6], [1180, 8]] },
+  r: { f0: 92, formantes: [[560, 5], [980, 7]] },
+  n: { f0: 135, formantes: [[650, 6], [1100, 8]] },
+  b: { f0: 150, formantes: [[600, 6], [1050, 8]] },
+  q: { f0: 255, formantes: [[860, 6], [1350, 8]] },
+  k: { f0: 112, formantes: [[600, 5], [1000, 7]] },
+}
+
+/** Os grunhidos de esforço (`voz:<peça>`) e os gemidos (`dor:<peça>`) de cada peça. */
+function sonsDasVozes(): Record<string, (s: Saida) => number> {
+  const sons: Record<string, (s: Saida) => number> = {}
+  for (const [peca, { f0, formantes }] of Object.entries(VOZES)) {
+    sons[`voz:${peca}`] = (s) => {
+      voz(s, { f0: f0 * 1.12, ate: f0 * 0.82, dur: 0.15, vol: 0.62, formantes, ataque: 0.012 })
+      return 0.2
+    }
+    sons[`dor:${peca}`] = (s) => {
+      voz(s, { f0: f0 * 1.3, ate: f0 * 0.62, dur: 0.34, vol: 0.5, formantes: formantes.map(([freq, q]): [number, number] => [freq * 0.88, q]), ataque: 0.025 })
+      return 0.4
+    }
+  }
+  return sons
+}
+
 /** Batida grave que afunda rápido: pé no chão, tambor, pancada. */
 function pancada(s: Saida, freq: number, ate: number, dur: number, vol: number, inicio = 0) {
   tom(s, { freq, ate, dur, vol, inicio, ataque: 0.002 })
@@ -437,6 +487,18 @@ export const SONS: Record<string, (s: Saida) => number> = {
     pancada(s, 80, 30, 0.5, 0.4, 1.45)
     return 2.1
   },
+  // blitz: o coração de quem está ficando sem tempo (tum-tum) e o tique do relógio nos últimos segundos
+  coracao: (s) => {
+    pancada(s, 58, 38, 0.13, 0.5)
+    pancada(s, 52, 36, 0.15, 0.36, 0.17)
+    return 0.35
+  },
+  tique: (s) => {
+    tom(s, { tipo: 'square', freq: 1750, dur: 0.018, vol: 0.05, corte: 4200 })
+    return 0.05
+  },
+  // as vozes das peças: o grunhido de quem golpeia e o gemido de quem apanha
+  ...sonsDasVozes(),
   // Puxão Universal (habilidade da rainha): a energia acendendo na palma, um zumbido que sobe
   'puxao:chama': (s) => {
     tom(s, { freq: 110, ate: 220, ataque: 0.25, dur: 0.45, vol: 0.12 })
@@ -727,18 +789,48 @@ export function configurarSom(c: { ligado: boolean; ambiente: boolean; volume: n
     geral.gain.setTargetAtTime(somLigado ? volumeGeral : 0, agora, 0.03)
     efeitos?.gain.setTargetAtTime(ganhoDaCategoria.efeitos(volumes.efeitos), agora, 0.03)
     passos?.gain.setTargetAtTime(ganhoDaCategoria.passos(volumes.passos), agora, 0.03)
-    trilha?.gain.setTargetAtTime(ganhoDaCategoria.ambiente(volumes.ambiente), agora, 0.03)
+    trilha?.gain.setTargetAtTime(ganhoDoAmbienteAgora(), agora, 0.03)
   }
   atualizarAmbiente()
 }
 
-function saidaAoVivo(atraso = 0, destino: GainNode | null = efeitos): Saida | null {
-  if (!contexto || !destino || !somLigado || contexto.state !== 'running') return null
-  return { ctx: contexto, destino, t: contexto.currentTime + FOLGA_DE_AGENDA_S + atraso, v: 1 + (Math.random() - 0.5) * 0.07 }
+// --- o som acompanhando o momento ("o golpe que pesa") -------------------------------------------------------------
+/** Abafado, o ambiente cai pra isto do volume dele: a luta e o xeque ficam em primeiro plano. */
+const AMBIENTE_ABAFADO = 0.3
+const abafamentos = new Set<string>()
+/** O tom dos efeitos durante a captura: nas trocas seguidas, cada uma soa um semitom acima da anterior. */
+let tomDosGolpes = 1
+
+function ganhoDoAmbienteAgora(): number {
+  return ganhoDaCategoria.ambiente(volumes.ambiente) * (abafamentos.size > 0 ? AMBIENTE_ABAFADO : 1)
 }
 
-export function tocarSom(nome: string, atraso = 0) {
-  const s = saidaAoVivo(atraso)
+/** Abaixa (ou devolve) o vento e a música por um motivo ('luta', 'xeque'); com qualquer motivo de pé, fica abafado. */
+export function abafarAmbiente(motivo: string, abafar: boolean) {
+  const antes = abafamentos.size > 0
+  if (abafar) abafamentos.add(motivo)
+  else abafamentos.delete(motivo)
+  if (antes === abafamentos.size > 0 || !contexto || !trilha) return
+  // abafa rápido e volta devagar
+  trilha.gain.setTargetAtTime(ganhoDoAmbienteAgora(), contexto.currentTime, abafar ? 0.12 : 0.6)
+}
+
+/** O tom dos efeitos da captura em andamento (1 = o normal). */
+export function definirTomDosGolpes(tom: number) {
+  tomDosGolpes = tom
+}
+
+/** Só nos testes: o ambiente está abafado, e em que tom estão os golpes. */
+export const estadoDoClimaDoSom = () => ({ abafado: abafamentos.size > 0, tomDosGolpes })
+
+function saidaAoVivo(atraso = 0, destino: GainNode | null = efeitos, tom = 1): Saida | null {
+  if (!contexto || !destino || !somLigado || contexto.state !== 'running') return null
+  return { ctx: contexto, destino, t: contexto.currentTime + FOLGA_DE_AGENDA_S + atraso, v: (1 + (Math.random() - 0.5) * 0.07) * tom }
+}
+
+/** Toca um som; `tom` muda a altura (1 = a de sempre). Durante uma captura, os efeitos saem no tom das trocas. */
+export function tocarSom(nome: string, atraso = 0, tom = 1) {
+  const s = saidaAoVivo(atraso, efeitos, tom * tomDosGolpes)
   const som = SONS[nome]
   if (!s || !som) return
   if (import.meta.env.DEV) tocados.push(nome)

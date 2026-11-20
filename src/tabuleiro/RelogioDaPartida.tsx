@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatarTempo, type Ritmo } from '../jogo/relogio'
+import { tocarSom } from '../som/sons'
 import type { Traduzir } from '../textos/idiomas'
 
 /** O que o relógio mostra: quanto resta a cada lado, de quem é a vez e se o tempo está correndo agora. */
@@ -34,8 +35,25 @@ export function RelogioDaPartida({
 }) {
   const [mostrador, setMostrador] = useState<MostradorDoRelogio | null>(null)
   useEffect(() => {
+    // "o golpe que pesa": com o seu tempo correndo abaixo de 20 s, o coração bate (mais rápido abaixo de 10 s); nos
+    // últimos 10 s, o tique de cada segundo vai ficando mais agudo
+    let ultimoBatimento = 0
+    let ultimoSegundo = -1
     const tique = () => {
       const novo = andar()
+      const meu = novo && novo.vez === corDoJogador && novo.correndo ? novo[corDoJogador] : null
+      if (meu !== null && meu > 0 && meu < POUCO_TEMPO_MS) {
+        const agora = performance.now()
+        if (agora - ultimoBatimento >= (meu < 10_000 ? 600 : 850)) {
+          ultimoBatimento = agora
+          tocarSom('coracao')
+        }
+        const segundo = Math.ceil(meu / 1000)
+        if (meu < 10_000 && segundo !== ultimoSegundo) {
+          if (ultimoSegundo !== -1) tocarSom('tique', 0, 1 + ((10 - segundo) / 10) * 0.6)
+          ultimoSegundo = segundo
+        }
+      } else ultimoSegundo = -1
       setMostrador((velho) =>
         velho && novo && velho.vez === novo.vez && velho.correndo === novo.correndo && formatarTempo(velho.w) === formatarTempo(novo.w) && formatarTempo(velho.b) === formatarTempo(novo.b)
           ? velho
@@ -45,7 +63,7 @@ export function RelogioDaPartida({
     tique()
     const id = window.setInterval(tique, 100)
     return () => window.clearInterval(id)
-  }, [andar])
+  }, [andar, corDoJogador])
   if (!mostrador) return null
   const maquina = corDoJogador === 'w' ? 'b' : 'w'
   const linha = (cor: 'w' | 'b', nome: string) => {

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { girarOssoNoMundo, levarBracoAte, levarPernaAte, ossoRPG, restaurarOssos, salvarOssos, type OssoSalvo } from '../pecas/ossos'
+import { agoraDoJogo } from '../sensacao/relogioDoJogo'
 
 // A luta de quem não tem arma. Toda peça começa assim (as armas saem pela Loja e pelas conquistas): em vez de brandir
 // uma espada que não está na mão ou de lançar um poder, ela vai até a vítima e bate com o corpo, num jab seguido de um
@@ -86,7 +87,7 @@ export function lutarSemArma(peca: THREE.Object3D, vitima: THREE.Object3D, golpe
   lutas.add({
     peca,
     golpe,
-    inicio: performance.now(),
+    inicio: agoraDoJogo(),
     ossos: salvarOssos(peca, OSSOS),
     jab: new THREE.Vector3(0.03, altura + 0.02, frente),
     direto: new THREE.Vector3(-0.02, altura, frente),

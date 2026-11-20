@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import { Chess, type Square } from 'chess.js'
 import { RelogioDeXadrez } from '../../jogo/relogio'
-import { afundarPelaGravidade, convocarCristal, cortarAoMeio, despedacar, rachadurasNoTabuleiro, rastroDeCorte, soltarOCavalo, tornadoDaLua, tremerTabuleiro } from '../combate/efeitosDasArmas'
+import { afundarPelaGravidade, convocarCristal, cortarAoMeio, rachadurasNoTabuleiro, soltarOCavalo, tornadoDaLua, tremerTabuleiro } from '../combate/efeitosDasArmas'
 import { distanciaDaLuta, type GolpeSemArma, lutarSemArma, sortearGolpeSemArma } from '../combate/lutaSemArma'
 import { tocarSom } from '../../som/sons'
 import { type PartidaXadrez } from '../../dados/xadrezRepo'
@@ -19,9 +19,11 @@ import { squareToPosPeca } from '../casas'
 import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, CHANCE_HONRA_SAMURAI, DISTANCIA_REVERENCIA, type EstiloAtaque } from '../combate/golpes'
 import { alcanceDaMaca, ARMAS_DA_TORRE, baterComMarreta, cairDaMaca, esmagarPeca, MACA_ERGUIDA_ATE_MS, MARRETA_PANCADA_MS, ondaDaMarretada, pancadaNoPeito, poeiraDaPancada, prenderPeloPeito, soltarDaMaca } from '../combate/marreta'
 import { lancarOndaDoRei, lancarPoderDoBispo, lancarRaioDaDama } from '../combate/poderes'
-import { puxaoUniversal } from '../combate/puxaoUniversal'
+import { CAPTURAS, type CapturaComHabilidade } from '../combate/habilidades'
+import { HABILIDADES } from '../../conta/habilidades'
+import { antecipar, continuarDoGolpe, depoisDoCongelamento, pesoDoGolpe, sentirImpacto, type SensacaoDaPartida, tomDaTroca } from '../sensacao/golpeQuePesa'
 import { materiaisDaPeca, materiaisPorFaccao, materialCoroa } from '../pecas/materiais'
-import { clipesRPGComPrefixo, type EspadaRPG, guardarEspadaRPG, modelosRPG, mostrarEspadaRPG, novaSequenciaRPG, sacarEspadaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez, tocarGolpeRPG } from '../pecas/modelosRPG'
+import { type EspadaRPG, guardarEspadaRPG, modelosRPG, mostrarEspadaRPG, novaSequenciaRPG, sacarEspadaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez, tocarGolpeRPG } from '../pecas/modelosRPG'
 import { armaDoPeaoNoTabuleiro, vestimenta } from '../pecas/vestimenta'
 import type { Andamento } from './andamento'
 import type { CenaDoTabuleiro } from '../cena/montarCena'
@@ -39,10 +41,24 @@ export interface DependenciasDoLance {
   /** Desconta o tempo de quem tem a vez (e acaba a partida se zerou). */
   andarRelogioDaPartida: () => unknown
   setHistorico: (lances: string[]) => void
+  /** A câmera, a borda e o ambiente acompanhando a captura ("o golpe que pesa"). */
+  sensacao: SensacaoDaPartida
+}
+
+/** A habilidade especial com que a peça captura, ou null: equipada por quem joga, desta peça, e com a arma que ela pede
+ * na mão (o servidor só deixa equipar quem comprou). */
+function habilidadeDaCaptura(atacante: THREE.Object3D, tipo: string, cor: 'w' | 'b', ehRPG: boolean, arma: string): string | null {
+  if (!ehRPG || cor !== vestimenta.cor) return null
+  const id = vestimenta.escolhas[tipo]?.golpe
+  const dados = id ? HABILIDADES[id] : undefined
+  if (!id || !dados || dados.peca !== tipo) return null
+  const naMao = tipo === 'p' ? (armaDoPeaoNoTabuleiro(atacante) ?? 'nenhuma') : arma
+  if (dados.arma && naMao !== dados.arma.opcao) return null
+  return id
 }
 
 export function criarLanceAnimado(dependencias: DependenciasDoLance) {
-  const { cena, pieceMeshBySquare, chessRef, partidaAtualRef, relogioRef, andamento, sincronizarPecas, salvarProgresso, pecasAliadasProximas, andarRelogioDaPartida, setHistorico } = dependencias
+  const { cena, pieceMeshBySquare, chessRef, partidaAtualRef, relogioRef, andamento, sincronizarPecas, salvarProgresso, pecasAliadasProximas, andarRelogioDaPartida, setHistorico, sensacao } = dependencias
   const { scene, piecesGroup } = cena
 
   /**
@@ -103,6 +119,8 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
     // e a lista de lances ficava visivelmente atrasada em relação ao que já tinha acontecido.
     // Na blitz, quem jogou aperta o relógio: ganha o acréscimo, e o relógio para enquanto a peça anda
     relogioRef.current?.lance(resultado.color)
+    // a troca: capturas seguidas, dos dois lados, sobem o tom; um lance sem captura zera
+    andamento.capturasSeguidas = resultado.captured ? andamento.capturasSeguidas + 1 : 0
     setHistorico(chess.history())
     salvarProgresso()
 
@@ -280,8 +298,28 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       const corAtacante = resultado.color
       const posVitima = { x: vitima.position.x, z: vitima.position.z }
 
+      // "o golpe que pesa": a câmera chega perto, a borda escurece e o ambiente abaixa enquanto dura a luta, mais quanto
+      // mais pesa (a peça capturada e a arma); nas trocas seguidas, os golpes soam mais agudos
+      const armaDoAtacante = (atacante.userData.arma as string | undefined) ?? 'nenhuma'
+      const habilidade = habilidadeDaCaptura(atacante, tipoAtacante, corAtacante, ehRPG, armaDoAtacante)
+      const tipoVitima = (vitima.userData.tipo as string | undefined) ?? 'p'
+      const peso = pesoDoGolpe(tipoVitima, habilidade ?? armaDoAtacante)
+      sensacao.comecarLuta(
+        new THREE.Vector3((atacante.position.x + posVitima.x) / 2, 0, (atacante.position.z + posVitima.z) / 2),
+        peso,
+        tomDaTroca(andamento.capturasSeguidas),
+      )
+      let lutaAcabou = false
+      /** O golpe acertou: congela um instante, treme e solta as vozes (`fator` multiplica o peso). Devolve os ms do
+       * congelamento, que a queda da vítima espera. */
+      const impacto = (fator = 1, tremer = true) => sentirImpacto(scene, tipoAtacante, tipoVitima, peso * fator, tremer)
+
       const removerVitima = () => {
         if (!vigente()) return
+        if (!lutaAcabou) {
+          lutaAcabou = true
+          sensacao.terminarLuta()
+        }
         vitima.removeFromParent()
         if (casaDaVitima && pieceMeshBySquare.get(casaDaVitima) === vitima) pieceMeshBySquare.delete(casaDaVitima)
       }
@@ -324,9 +362,12 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             if (atacante.userData.arma === 'lanca') tocarSom('golpe:lanca')
             tocarSom('voo:vitima')
             animarImpacto(scene, posVitima.x, posVitima.z)
-            arremessarPeca(vitima, { x: posVitima.x - de.x, z: posVitima.z - de.z }, () => {
-              removerVitima()
-              umaParte()
+            depoisDoCongelamento(impacto(), () => {
+              if (!vigente()) return
+              arremessarPeca(vitima, { x: posVitima.x - de.x, z: posVitima.z - de.z }, () => {
+                removerVitima()
+                umaParte()
+              })
             })
             comemorarAliadas()
           },
@@ -391,9 +432,9 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       // sorteia o estilo do golpe a cada captura, pra não ser sempre a mesma animação
       const estilo: EstiloAtaque = Math.random() < 0.5 ? 'corte' : 'derrubada'
       const senha = novaSequenciaRPG(atacante)
-      // sem arma (toda peça começa assim), luta com o corpo: socos ou chute. O cavalo continua com as patas
-      const armaDoAtacante = (atacante.userData.arma as string | undefined) ?? 'nenhuma'
-      const semArma = ehRPG && tipoAtacante !== 'n' && armaDoAtacante === 'nenhuma'
+      // sem arma (toda peça começa assim), luta com o corpo: socos ou chute. O cavalo continua com as patas. Uma
+      // habilidade equipada vem antes
+      const semArma = ehRPG && tipoAtacante !== 'n' && armaDoAtacante === 'nenhuma' && !habilidade
       // com arma, rei, dama e bispo atacam à distância (cada arma com o seu poder); peão e torre vão até a
       // vítima e golpeiam com a arma
       const aDistancia = ehRPG && !semArma && (tipoAtacante === 'b' || tipoAtacante === 'q' || tipoAtacante === 'k')
@@ -418,49 +459,46 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         tocarSom(`queda:${vitima.userData.tipo as string}`)
         animarImpacto(scene, posVitima.x, posVitima.z)
         const nocaute = derruba ? direcaoGolpe : undefined
-        animarQuedaEDesaparecimento(
-          vitima,
-          () => {
-            removerVitima()
-            seguirParaDestino()
-          },
-          nocaute,
-          direcaoGolpe,
-        )
+        // o corpo congela no instante do acerto; depois a vítima cai e quem bateu de perto dá um passo pra trás
+        depoisDoCongelamento(impacto(), () => {
+          if (!vigente()) return
+          animarQuedaEDesaparecimento(
+            vitima,
+            () => {
+              removerVitima()
+              seguirParaDestino()
+            },
+            nocaute,
+            direcaoGolpe,
+          )
+          if (!aDistancia) continuarDoGolpe(atacante, direcaoGolpe)
+        })
         comemorarAliadas()
       }
 
-      // o Puxão Universal: a rainha de quem equipou essa habilidade especial (o servidor só deixa equipar quem comprou)
-      // não vai até a vítima: estende a mão, puxa a peça pela gravidade até a cabeça dela parar na mão, ergue e esmaga no
-      // chão. Vale com ou sem arma: a arma fica na outra mão
-      const puxa = tipoAtacante === 'q' && ehRPG && corAtacante === vestimenta.cor && vestimenta.escolhas.q?.golpe === 'puxao'
-      if (puxa) {
+      // a habilidade especial de quem equipou (o servidor só deixa equipar quem comprou; ver src/conta/habilidades.ts e
+      // combate/habilidades.ts): a de longe não vai até a vítima, só vira pra ela; a de perto vai, como o golpe de sempre
+      const comHabilidade = (): CapturaComHabilidade => ({
+        cena: scene,
+        atacante,
+        vitima,
+        corAtacante,
+        posVitima,
+        senha,
+        vigente,
+        fim: () => {
+          removerVitima()
+          seguirParaDestino()
+        },
+        comemorarAliadas,
+        sentirImpacto: impacto,
+      })
+      if (habilidade && HABILIDADES[habilidade].alcance === 'aDistancia') {
         voltarAoDescanso(atacante)
         virarRPG(atacante, rumoEntre(atacante.position, posVitima), () => {
           if (!vigente()) return
           pararRPG(atacante)
-          novaSequenciaRPG(vitima)
-          mostrarEspadaRPG(vitima, false)
-          tocarSom('puxao:chama')
-          const corDoPuxao = materiaisPorFaccao[corAtacante].brilho.color
-          puxaoUniversal(atacante, vitima, scene, corDoPuxao, vigente, {
-            aoPuxar: () => tocarSom('puxao:arrasta'),
-            aoAgarrar: () => tocarSom('puxao:agarra'),
-            aoEsmagar: (ponto) => {
-              tocarSom('marreta:impacto')
-              tocarSom('esmagado', 0.05)
-              animarImpacto(scene, ponto.x, ponto.z)
-              ondaDaMarretada(scene, ponto.x, ponto.z, corDoPuxao)
-              rachadurasNoTabuleiro(scene, ponto.x, ponto.z)
-              poeiraDaPancada(scene, ponto.x, ponto.z)
-              tremerTabuleiro(scene)
-              esmagarPeca(vitima, () => {
-                removerVitima()
-                seguirParaDestino()
-              })
-              comemorarAliadas()
-            },
-          })
+          CAPTURAS[habilidade](comHabilidade())
         })
         return
       }
@@ -473,57 +511,23 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
           if (!vigente()) return
           pararRPG(atacante)
           const direcaoGolpe = { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }
-          lutarSemArma(atacante, vitima, golpe, vigente, {
+          // o corpo recua um palmo antes do golpe
+          antecipar(atacante, direcaoGolpe, () => lutarSemArma(atacante, vitima, golpe, vigente, {
             antes: () => tocarSom(golpe === 'socos' ? 'soco:jab' : 'chute:ar'),
             aoAcertar: () => {
               tocarSom(golpe === 'socos' ? 'soco' : 'chute')
               // o chute sempre joga a vítima longe; o direto, às vezes
               acertar(direcaoGolpe, golpe === 'chute' || estilo === 'derrubada')
             },
-          })
+          }))
         })
         return
       }
 
-      // o retalhamento: o peão de katana de quem equipou essa habilidade especial (o servidor só deixa equipar quem
-      // comprou) dá uma série de cortes rápidos e a peça se desfaz em pedaços
-      const retalha =
-        tipoAtacante === 'p' &&
-        ehRPG &&
-        armaDoPeaoNoTabuleiro(atacante) === 'katana' &&
-        corAtacante === vestimenta.cor &&
-        vestimenta.escolhas.p?.golpe === 'retalhamento'
-      const retalhar = () => {
-        const cortes = 4
-        let feitos = 0
-        const corDoCorte = materiaisPorFaccao[corAtacante].brilho.color
-        const proximo = () => {
-          if (!vigente() || !sequenciaRPGValida(atacante, senha)) return
-          if (feitos === cortes) {
-            tocarSom('retalho:pedacos')
-            despedacar(scene, vitima, () => {
-              removerVitima()
-              seguirParaDestino()
-            })
-            comemorarAliadas()
-            guardarEspadaRPG(atacante, senha)
-            return
-          }
-          feitos++
-          const golpes = clipesRPGComPrefixo(atacante, 'Attack')
-          const tocou = golpes.length > 0 && tocarClipeRPGUmaVez(atacante, golpes[(feitos - 1) % golpes.length], { entrada: 0.06, voltarAoParado: false, velocidade: 2.3, aoTerminar: proximo })
-          window.setTimeout(() => {
-            if (!vigente()) return
-            tocarSom('retalho:corte')
-            rastroDeCorte(scene, vitima, corDoCorte)
-          }, 170)
-          if (!tocou) window.setTimeout(proximo, 300)
-        }
-        proximo()
-      }
       const golpear = () => {
-        if (retalha) {
-          retalhar()
+        // a habilidade de perto: o atacante já chegou na vítima com a arma na mão
+        if (habilidade) {
+          CAPTURAS[habilidade](comHabilidade())
           return
         }
         // a torre só bate de marreta (ou machado, ou maça) se tiver uma na mão; sem arma, golpeia como as outras
@@ -543,7 +547,10 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
               animarImpacto(scene, posVitima.x, posVitima.z)
               rachadurasNoTabuleiro(scene, posVitima.x, posVitima.z, 0.9, 1300)
               tremerTabuleiro(scene, 0.06, 300)
-              cortarAoMeio(scene, vitima, { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }, fim)
+              const direcaoDoCorte = { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }
+              depoisDoCongelamento(impacto(1, false), () => {
+                if (vigente()) cortarAoMeio(scene, vitima, direcaoDoCorte, fim)
+              })
               comemorarAliadas()
             })
             return
@@ -573,6 +580,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
                 }
                 // presa nos espinhos: vai junto com a cabeça da maça
                 prenderPeloPeito(maca, vitima, atacante)
+                impacto(1, false)
                 comemorarAliadas()
               },
               () => {
@@ -593,7 +601,9 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             rachadurasNoTabuleiro(scene, posVitima.x, posVitima.z)
             poeiraDaPancada(scene, posVitima.x, posVitima.z)
             tremerTabuleiro(scene)
-            esmagarPeca(vitima, fim)
+            depoisDoCongelamento(impacto(1, false), () => {
+              if (vigente()) esmagarPeca(vitima, fim)
+            })
             comemorarAliadas()
           })
           return
@@ -668,7 +678,10 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         // corpo a corpo: vira, vai até a vítima (para no alcance do golpe) e golpeia. A maça alcança mais longe: o cabo
         // e a bola inteiros ficam entre a torre e a vítima
         const comMaca = tipoAtacante === 'r' && armaDoAtacante === 'maca'
-        chegarPerto(comMaca ? alcanceDaMaca(atacante, vitima) : (ALCANCE_GOLPE[tipoAtacante] ?? 0.55) * atacante.scale.x, golpear)
+        chegarPerto(comMaca ? alcanceDaMaca(atacante, vitima) : (ALCANCE_GOLPE[tipoAtacante] ?? 0.55) * atacante.scale.x, () =>
+          // o corpo recua um palmo antes do golpe
+          antecipar(atacante, { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }, golpear),
+        )
       })
       return
     }

@@ -16,6 +16,9 @@ import { marretadas } from './combate/marreta'
 import type { Andamento, PecaPromocao } from './fluxo/andamento'
 import type { CenaDoTabuleiro } from './cena/montarCena'
 import type { VistaDaCamera } from './cena/vistaDaCamera'
+import { habilidadesIncompletas } from './combate/habilidades'
+import { quantosCongelamentos } from './sensacao/relogioDoJogo'
+import { estadoDoClimaDoSom } from '../som/sons'
 
 /** Só nos testes: veste as peças de quem joga sem passar pela conta (as habilidades também). */
 export let vestimentaDeTeste: Record<string, Record<string, string>> | null = null
@@ -150,6 +153,10 @@ export function instalarGanchosDeTeste(dependencias: DependenciasDosTestes) {
     /** O lance que a máquina dessa dificuldade escolhe na posição, sem mexer no tabuleiro. */
     lanceDaMaquina: (fen: string, dificuldade: Dificuldade) => escolherJogadaDaMaquina(new Chess(fen), livroRef.current, dificuldade),
     dificuldadeDaPartida: () => partidaAtualRef.current?.dificuldade ?? null,
+    /** O que falta em cada habilidade do catálogo (vazio: tudo certo). */
+    habilidadesIncompletas: () => habilidadesIncompletas(),
+    /** "O golpe que pesa": quantas vezes o impacto congelou, o ambiente abafado e o tom dos golpes. */
+    golpeQuePesa: () => ({ congelamentos: quantosCongelamentos(), ...estadoDoClimaDoSom() }),
     /** Começa uma partida de teste a partir de um PGN (não aparece nas partidas do jogador). */
     carregarTeste: (pgn: string, cor: 'w' | 'b', dificuldade?: PartidaXadrez['dificuldade'], ritmo?: Ritmo) => {
       const agora = Date.now()

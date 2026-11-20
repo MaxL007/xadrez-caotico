@@ -126,7 +126,7 @@ As pastas de `src` são por função:
   O expositor mostra o símbolo da habilidade (`src/tabuleiro/pecas/emblemas.ts`), não a arma: o do retalhamento é o desenho do
   usuário, três órbitas cruzadas (faixas achatadas e inclinadas, que de frente ficam grossas nas pontas como pincel) e
   dois cortes em crescente por cima. A compra continua sendo o item `p:golpe:retalhamento`.
-- A rainha tem o Puxão Universal (`q:golpe:puxao`, 1000 óticoins), da descrição e do desenho do usuário, e ele vale com
+- A rainha tem o Puxão Universal (`q:golpe:puxao`, 500 óticoins), da descrição e do desenho do usuário, e ele vale com
   ou sem arma. Na captura ela não anda até a vítima:
   - estende a mão esquerda aberta, com um brilho na palma;
   - a peça vem arrastada como por uma gravidade forte, acelerando, de cabeça, com anéis em volta, até a cabeça parar na
@@ -140,6 +140,32 @@ As pastas de `src` são por função:
   de arcos.
 
   As fotos de cada fase saem de `SO=puxao node testes/fotos-armas.mjs`.
+- As habilidades têm cadastro único: `src/conta/habilidades.ts` (`HABILIDADES`) diz de que peça é cada uma, se vai até
+  a vítima (`corpoACorpo`) ou não (`aDistancia`), e se pede uma arma na mão. A animação de cada uma fica em
+  `src/tabuleiro/combate/habilidades.ts` (`CAPTURAS`): ela recebe a cena, as duas peças, `sentirImpacto` e `fim`. O lance
+  animado acha a habilidade de quem captura (`habilidadeDaCaptura`) e chama a captura dela. A Personalização e a Loja
+  leem o cadastro: a explicação, o aviso da arma e o complemento "com a katana".
+
+### Como adicionar uma habilidade
+
+1. **Catálogo** (`src/catalogos/personalizacao.json`): o nome em `habilidades.<peça>` e o preço em
+   `loja.<peça>["golpe:<nome>"]`. O servidor lê o catálogo, então publica o servidor junto (`wrangler deploy`).
+2. **Cadastro** em `src/conta/habilidades.ts`: a peça, o alcance e a arma exigida. Uma arma nova exigida pede dois
+   textos: o aviso na Personalização e o complemento na Loja.
+3. **Animação** em `CAPTURAS` (`combate/habilidades.ts`): no acerto, `c.sentirImpacto()` e, depois do congelamento,
+   `c.fim()` quando a vítima já saiu. Uma pose do corpo própria segue o puxão:
+   - um módulo em `combate/`;
+   - o começo marcado em `agoraDoJogo()`;
+   - desfazer e atualizar no laço do ChessBoard3D.
+4. **Símbolo** em `EMBLEMAS` (`pecas/emblemas.ts`). Para um desenho do usuário, `traco` monta cada traço de pincel a
+   partir dos pontos dele.
+5. **Textos** `personalizacao.opcao.<nome>` e `personalizacao.habilidade.<nome>` nos três idiomas, e os sons em
+   `SONS`.
+6. **Testes:**
+   - em `testes/testar-armas.mjs`, a captura com a habilidade vestida (`vestir: { <peça>: { golpe: '<nome>' } }`);
+   - em `fotos-armas.mjs`, as fotos de cada fase;
+   - `testar-golpe-que-pesa` acusa o que faltar do cadastro, da animação, do símbolo, do preço ou dos textos
+     (`habilidadesIncompletas`).
 - Toda peça começa sem arma, inclusive as da máquina e as do adversário: as armas aparecem só em quem liberou e vestiu.
   Peão: katana ou espada. Torre: marreta, machado (lâmina em meia-lua) ou maça. Cavalo: lança. Bispo: cajado ou cristal.
   Rainha: cajado, cristal ou lua. Rei: cajado, cristal ou cetro.
@@ -322,6 +348,33 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
   bloqueou (ou foi bloqueado) não se encontra (tabela `bloqueios`); bloquear também desfaz a amizade e faz os convites
   responderem como se a pessoa não existisse. Denúncias (`POST /salas/:codigo/denunciar`, tabela `denuncias`, uma por
   pessoa em cada sala) se leem pelo wrangler. O id de ninguém sai do servidor: bloquear e denunciar vão pela sala.
+
+## O golpe que pesa
+
+A sensação de cada captura acompanha o peso dela: o valor da peça capturada e o peso da arma (`pesoDoGolpe`, de 0 a 1,
+em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
+
+- **Congelamento no impacto (hitstop):** `sentirImpacto` congela por 40 a 130 ms os clipes das peças, a luta sem arma, a
+  marreta e o puxão. Eles marcam o tempo em `agoraDoJogo()` (`sensacao/relogioDoJogo.ts`), que não anda congelado. A
+  queda da vítima espera o congelamento (`depoisDoCongelamento`).
+- **Tremor e vozes:** o tremor do tabuleiro e as vozes (o grunhido `voz:<peça>` e o gemido `dor:<peça>`, sintetizados
+  em `sons.ts`) também saem de `sentirImpacto`. A marreta, o machado, a maça e o puxão têm o tremor deles.
+- **Câmera, borda e ambiente:** `SensacaoDaPartida` (no ChessBoard3D) cuida disso:
+  - a câmera chega perto da luta e volta (`vistaDaCamera.aproximarDaLuta`/`voltarDaLuta`); se a pessoa mexer, ela
+    manda;
+  - a borda escurece (`Vinheta.tsx`);
+  - o vento e a música abaixam (`abafarAmbiente`);
+  - nas trocas seguidas, cada captura soa um semitom acima (`andamento.capturasSeguidas`, `definirTomDosGolpes`).
+- **Xeque no rei de quem joga:** a borda pulsa em vermelho, o ambiente abaixa e a câmera encosta no rei
+  (`encostarNoRei`).
+- **Blitz:** abaixo de 20 s, o coração bate (`RelogioDaPartida`); nos últimos 10 s, o tique sobe de tom.
+- **Antecipação, continuação e inércia:** antes do golpe de perto, a peça recua um palmo e volta (`antecipar`); depois,
+  dá um passo para trás (`continuarDoGolpe`). Andando, o tronco inclina e os braços ficam para trás, e ao parar o corpo
+  passa do ponto e volta (`sensacao/inercia.ts`, uma mola). É a última pose do quadro, então é a primeira a ser
+  desfeita: as poses saem na ordem contrária à que entraram.
+- **Menos movimento** (Configurações, ou o sistema com movimento reduzido): sem câmera, sem tremor forte, sem borda
+  pulsando, sem antecipação e sem inércia. O congelamento e as vozes ficam.
+- **O que não foi feito:** o desfoque de fundo (precisaria de pós-processamento, pesado no celular).
 
 ## Promoção
 

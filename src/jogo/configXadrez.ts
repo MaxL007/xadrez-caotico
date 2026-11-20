@@ -20,6 +20,8 @@ export interface ConfigXadrez {
   ambiente: boolean
   /** Som e vibração ao tocar nas peças. */
   toque: boolean
+  /** Menos movimento ("o golpe que pesa"): sem a câmera chegando perto, o tremor, a borda pulsando e as peças balançando. */
+  menosMovimento: boolean
   /** Mostra a lista de lances e as partidas embaixo do tabuleiro. */
   registro: boolean
   /** Dá pra girar e aproximar o tabuleiro arrastando; desligado, a câmera fica parada. */
@@ -42,6 +44,7 @@ const PADRAO: ConfigXadrez = {
   volumeAmbiente: 1,
   ambiente: true,
   toque: true,
+  menosMovimento: false,
   registro: true,
   telaMovel: true,
   idioma: 'pt-BR',

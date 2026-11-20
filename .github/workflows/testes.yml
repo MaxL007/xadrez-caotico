@@ -87,6 +87,9 @@ jobs:
       - name: Adversário automático, blitz entre amigos e bilhete
         if: format('{0}', inputs.com_tela) != 'false'
         run: node testes/testar-adversario-automatico.mjs
+      - name: O golpe que pesa e as habilidades
+        if: format('{0}', inputs.com_tela) != 'false'
+        run: node testes/testar-golpe-que-pesa.mjs
       - name: Registros do simulador e do site (se algo falhou)
         if: failure()
         run: tail -n 100 wrangler.log vite.log

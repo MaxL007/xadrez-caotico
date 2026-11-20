@@ -43,6 +43,7 @@ node testes/testar-blitz.mjs       # blitz: modo e ritmo, o relógio, o fim no t
 node testes/testar-adversario-automatico.mjs  # adversário automático, relógio do servidor, denunciar/bloquear, blitz entre amigos, bilhete
 node testes/testar-registro-de-erros.mjs      # o relatório de erro: sem dados da pessoa, repetidos somados, limite por endereço
 node testes/testar-passeio-e-configuracoes.mjs  # passeio da primeira vez, privacidade e termos, volume por categoria
+node testes/testar-golpe-que-pesa.mjs  # câmera, borda, som e congelamento na captura, xeque, coração da blitz, habilidades completas
 node testes/testar-qualidade.mjs   # média como padrão e a resolução de cada qualidade no computador e no celular
 node testes/testar-armas.mjs       # o ataque e o som de cada arma, o saque, os passos e a promoção com equipamentos
 node testes/medir-som.mjs          # o pico de cada som pela cadeia de saída do jogo: nada estoura

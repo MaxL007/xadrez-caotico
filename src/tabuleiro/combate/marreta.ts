@@ -6,6 +6,7 @@ import { prepararParaSumir } from '../animacoes/queda'
 import { animarParticulas, geoOndaPoder, type Particula, texturaBrilho } from './poderes'
 import { materiaisPorFaccao, materialCoroa, materialLaminaEspada } from '../pecas/materiais'
 import { mostrarEspadaRPG, novaSequenciaRPG } from '../pecas/modelosRPG'
+import { agoraDoJogo } from '../sensacao/relogioDoJogo'
 
 // As armas da torre feitas em código: marreta, machado e maça, com a pose do corpo seguindo o cabo, a peça presa na maça e os efeitos da pancada.
 
@@ -296,7 +297,7 @@ export function baterComMarreta(
   const marreta = criarMarreta(cor, torre.userData.arma as string | undefined)
   marreta.scale.setScalar(0.001)
   torre.add(marreta)
-  marretadas.add({ torre, marreta, ossos: salvarOssosDoGolpe(torre), inicio: performance.now(), acertou: false, continua, aoAcertar, aoSoltar, soltou: false, pancada })
+  marretadas.add({ torre, marreta, ossos: salvarOssosDoGolpe(torre), inicio: agoraDoJogo(), acertou: false, continua, aoAcertar, aoSoltar, soltou: false, pancada })
   return marreta
 }
 
@@ -399,7 +400,7 @@ export function prenderPeloPeito(maca: THREE.Group, vitima: THREE.Object3D, torr
   vitima.position.add(ondeOPeitoFica.sub(peito))
   vitima.updateWorldMatrix(false, true)
   maca.attach(vitima)
-  pecasPresas.set(maca, { peca: vitima, ossos: salvarOssos(vitima, OSSOS_PENDURADOS), desde: performance.now() })
+  pecasPresas.set(maca, { peca: vitima, ossos: salvarOssos(vitima, OSSOS_PENDURADOS), desde: agoraDoJogo() })
 }
 
 /** A peça que soltou dos espinhos cai no tabuleiro, rolando, e some. */

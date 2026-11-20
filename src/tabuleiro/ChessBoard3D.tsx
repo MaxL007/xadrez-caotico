@@ -12,7 +12,11 @@ import { RelogioDeXadrez, type Ritmo } from '../jogo/relogio'
 import { PainelDeLances } from './PainelDeLances'
 import { atualizarLutas, desfazerPosesDasLutas } from './combate/lutaSemArma'
 import { atualizarPuxoes, desfazerPosesDosPuxoes } from './combate/puxaoUniversal'
-import { ambienteDoTabuleiro, configurarSom, destravarSom, tocarSom } from '../som/sons'
+import { definirMenosMovimento, menosMovimento, type SensacaoDaPartida } from './sensacao/golpeQuePesa'
+import { passarQuadro } from './sensacao/relogioDoJogo'
+import { aplicarInercia, desfazerInercia } from './sensacao/inercia'
+import { Vinheta } from './Vinheta'
+import { abafarAmbiente, ambienteDoTabuleiro, configurarSom, definirTomDosGolpes, destravarSom, tocarSom } from '../som/sons'
 import { type QualidadeXadrez, useConfigXadrez } from '../jogo/configXadrez'
 import { type ChaveTexto, tradutor, type Traduzir } from '../textos/idiomas'
 import { MenuXadrez } from '../telas/MenuXadrez'
@@ -214,6 +218,15 @@ export function ChessBoard3D() {
   }, [empate])
   // a cor de quem joga, pra aba de lances dizer quem fez cada lance
   const [corDoJogador, setCorDoJogador] = useState<'w' | 'b'>('w')
+  // "o golpe que pesa": a borda escurece na luta (o peso dela, de 0 a 1) e pulsa com o rei de quem joga em xeque
+  const [vinhetaDaLuta, setVinhetaDaLuta] = useState<number | null>(null)
+  const [emXeque, setEmXeque] = useState(false)
+  useEffect(() => definirMenosMovimento(config.menosMovimento), [config.menosMovimento])
+  // no xeque, o vento e a música abaixam
+  useEffect(() => {
+    abafarAmbiente('xeque', emXeque)
+    return () => abafarAmbiente('xeque', false)
+  }, [emXeque])
   const [confirmandoDesistencia, setConfirmandoDesistencia] = useState(false)
   // tabuleiro ocupando a tela toda (e a tela cheia do navegador, se der)
   // a tela inicial sempre ocupa a página inteira
@@ -283,7 +296,9 @@ export function ChessBoard3D() {
       andamento.filaDaSala = []
       andamento.animandoDaSala = false
       andamento.ultimoPedidoDeEmpate = -1
+      andamento.capturasSeguidas = 0
       setEmpate(null)
+      sensacao.terminarLuta()
     }
 
     const cena = montarCena(container, configRef.current.qualidade)
@@ -293,6 +308,22 @@ export function ChessBoard3D() {
       resolucao: (largura, altura) => resolucaoDoJogo(largura, altura),
     })
     const { scene, camera, renderer, controls, dirLight, squareMeshes, piecesGroup, highlightGroup, xequeMesh, xequeMat, gerarReflexoDoAmbiente } = cena
+    // "o golpe que pesa": durante a captura a câmera chega perto, a borda escurece, o ambiente abaixa e os golpes saem
+    // no tom da troca (ver sensacao/golpeQuePesa.ts)
+    const sensacao: SensacaoDaPartida = {
+      comecarLuta: (ponto, peso, tom) => {
+        vista.aproximarDaLuta(ponto, peso)
+        abafarAmbiente('luta', true)
+        definirTomDosGolpes(tom)
+        setVinhetaDaLuta(peso)
+      },
+      terminarLuta: () => {
+        vista.voltarDaLuta()
+        abafarAmbiente('luta', false)
+        definirTomDosGolpes(1)
+        setVinhetaDaLuta(null)
+      },
+    }
     function marcarXeque() {
       const chess = chessRef.current
       const rei = chess.isCheck() ? chess.board().flat().find((c) => c && c.type === 'k' && c.color === chess.turn()) : undefined
@@ -301,7 +332,13 @@ export function ChessBoard3D() {
         return
       }
       // o mate tem o som dele; aqui é só xeque novo, não a mesma tela sendo redesenhada
-      if (!chess.isCheckmate() && (!xequeMesh.visible || xequeMesh.userData.casa !== rei.square)) tocarSom('xeque')
+      if (!chess.isCheckmate() && (!xequeMesh.visible || xequeMesh.userData.casa !== rei.square)) {
+        tocarSom('xeque')
+        if (rei.color === corHumanoRef.current) {
+          const { x, z } = squareToPos(rei.square)
+          vista.encostarNoRei(new THREE.Vector3(x, 0, z))
+        }
+      }
       const { x, z } = squareToPos(rei.square)
       xequeMesh.position.set(x, 0.006, z)
       xequeMesh.userData.casa = rei.square
@@ -546,6 +583,7 @@ export function ChessBoard3D() {
       const jogando = !!partidaDoJogador && partidaDoJogador.status !== 'FINALIZADA' && !chess.isGameOver() && (!salaAtual || salaAtual.status === 'andamento')
       const corHumano = corHumanoRef.current
       setPodeDesistir(jogando)
+      setEmXeque(jogando && chess.isCheck() && chess.turn() === corHumano)
       setPodeEmpatar(
         jogando && andamento.ultimoPedidoDeEmpate !== chess.history().length && (salaAtual ? !salaAtual.empate : chess.turn() === corHumano && !vezDaMaquinaRef.current),
       )
@@ -615,6 +653,7 @@ export function ChessBoard3D() {
       pecasAliadasProximas,
       andarRelogioDaPartida: () => maquina.andarRelogioDaPartida(),
       setHistorico,
+      sensacao,
     })
 
     const maquina = criarPartidaContraMaquina({
@@ -970,18 +1009,26 @@ export function ChessBoard3D() {
       ultimoQuadro = agoraDoQuadro
       const delta = relogio.getDelta()
       const agora = performance.now()
-      desfazerPosesDasLutas()
-      desfazerPosesDosPuxoes()
+      // o relógio do corpo das peças para no congelamento do impacto ("o golpe que pesa"): os clipes não andam, e a
+      // luta, a marreta e o puxão ficam no quadro do acerto
+      const { agora: agoraDoCorpo, congelado } = passarQuadro(agora)
+      // as poses saem na ordem contrária à que entraram (a última posta é a primeira tirada)
+      desfazerInercia()
       desfazerPosturas()
+      desfazerPosesDosPuxoes()
+      desfazerPosesDasLutas()
       for (const peca of piecesGroup.children) {
-        ;(peca.userData.mixer as THREE.AnimationMixer | undefined)?.update(delta)
+        if (!congelado) (peca.userData.mixer as THREE.AnimationMixer | undefined)?.update(delta)
         atualizarGestoRPG(peca, agora)
       }
-      atualizarMarretadas(agora)
-      atualizarLutas(agora)
-      atualizarPuxoes(agora)
+      atualizarMarretadas(agoraDoCorpo)
+      atualizarLutas(agoraDoCorpo)
+      atualizarPuxoes(agoraDoCorpo)
       atualizarPosturas(agora)
+      // a inércia é a última pose: o tronco inclinando ao andar e balançando ao parar
+      aplicarInercia(piecesGroup.children, congelado ? 0 : delta)
       vista.atualizarGiroCamera(agora)
+      vista.atualizarAproximacao(agora)
       if (xequeMesh.visible) xequeMat.opacity = 0.45 + 0.25 * ((Math.sin(agora / 260) + 1) / 2)
       controls.update()
       // nos testes com dois jogadores ao mesmo tempo, sem placa de vídeo, é o desenho que trava. O clique
@@ -1212,6 +1259,7 @@ export function ChessBoard3D() {
           />
         )}
 
+        {tela === 'jogo' && <Vinheta luta={vinhetaDaLuta} xeque={emXeque} calma={config.menosMovimento || menosMovimento()} />}
         {tela === 'jogo' && config.registro && <PainelDeLances t={t} lances={historico} brancas={nomeDoLado('w')} pretas={nomeDoLado('b')} />}
 
         {tela === 'jogo' && (

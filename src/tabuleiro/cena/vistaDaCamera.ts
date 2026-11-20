@@ -6,6 +6,7 @@ import { tocarSom } from '../../som/sons'
 import { diferencaAngular } from '../animacoes/movimento'
 import { definirLadoDaCamera, ladoDaCamera, MEIA_LARGURA_TABULEIRO } from '../casas'
 import type { CenaDoTabuleiro } from './montarCena'
+import { menosMovimento } from '../sensacao/golpeQuePesa'
 
 /** Meia-volta do tabuleiro ao escolher a cor das peças. */
 const GIRO_CAMERA_MS = 1400
@@ -119,6 +120,7 @@ export function criarVistaDaCamera(
   /** Põe a câmera do lado da cor da pessoa. Na troca de partida, mantém a inclinação e o zoom que ela
    * escolheu; vindo do menu, volta pra vista de jogo. */
   function virarCameraPara(lado: 1 | -1) {
+    desfazerAproximacao()
     const atual = poseAtualDaCamera()
     const vemDoMenu = emMenu
     emMenu = false
@@ -131,12 +133,93 @@ export function criarVistaDaCamera(
   /** Vista da tela inicial: de lado, com as brancas de um lado e as pretas do outro, em qualquer tela. Na tela em
    * pé a câmera recua até o tabuleiro caber na largura, e os botões ficam embaixo dele. */
   function irParaVistaDoMenu(instantaneo = false) {
+    desfazerAproximacao()
     emMenu = true
     definirLadoDaCamera(1)
     levarCameraPara(
       { raio: Math.max(RAIO_CAMERA_MENU, raioQueEnquadra(INCLINACAO_CAMERA_MENU, Math.PI / 2)), phi: INCLINACAO_CAMERA_MENU, theta: Math.PI / 2 },
       instantaneo,
     )
+  }
+
+  // --- a câmera na luta ("o golpe que pesa"): na captura, chega um pouco mais perto de onde a luta acontece (mais
+  // quanto mais pesa o golpe) e volta sozinha no fim; no xeque, encosta um instante no rei ameaçado. Se a pessoa mexe
+  // na câmera no meio, ela fica onde a pessoa deixou
+  interface Aproximacao {
+    /** De onde a câmera saiu: é pra lá que ela volta. */
+    alvoAntes: THREE.Vector3
+    raioAntes: number
+    de: { alvo: THREE.Vector3; raio: number }
+    para: { alvo: THREE.Vector3; raio: number }
+    inicio: number
+    duracao: number
+    voltando: boolean
+  }
+  const CHEGA_MS = 650
+  const VOLTA_MS = 900
+  let aproximacao: Aproximacao | null = null
+  let voltaDoRei: number | undefined
+  controls.addEventListener('start', () => {
+    // a pessoa pegou a câmera: ela manda
+    aproximacao = null
+    window.clearTimeout(voltaDoRei)
+  })
+
+  function irAte(para: { alvo: THREE.Vector3; raio: number }, duracao: number, voltando: boolean) {
+    const de = { alvo: controls.target.clone(), raio: camera.position.distanceTo(controls.target) }
+    const alvoAntes = aproximacao?.alvoAntes ?? de.alvo.clone()
+    const raioAntes = aproximacao?.raioAntes ?? de.raio
+    aproximacao = { alvoAntes, raioAntes, de, para, inicio: performance.now(), duracao, voltando }
+  }
+
+  /** A captura começou em `ponto`: a câmera chega perto (`peso` de 0 a 1). */
+  function aproximarDaLuta(ponto: THREE.Vector3, peso: number) {
+    if (emMenu || giroCamera || menosMovimento()) return
+    window.clearTimeout(voltaDoRei)
+    const alvoAntes = aproximacao?.alvoAntes ?? controls.target.clone()
+    const raioAntes = aproximacao?.raioAntes ?? camera.position.distanceTo(controls.target)
+    const alvo = alvoAntes.clone().lerp(new THREE.Vector3(ponto.x, alvoAntes.y, ponto.z), 0.3 + 0.2 * peso)
+    irAte({ alvo, raio: Math.max(controls.minDistance, raioAntes * (0.9 - 0.12 * peso)) }, CHEGA_MS, false)
+  }
+
+  /** A luta acabou: a câmera volta pra onde estava. */
+  function voltarDaLuta() {
+    window.clearTimeout(voltaDoRei)
+    if (!aproximacao) return
+    irAte({ alvo: aproximacao.alvoAntes.clone(), raio: aproximacao.raioAntes }, VOLTA_MS, true)
+  }
+
+  /** Xeque no rei de quem joga: a câmera encosta de leve nele e volta. Durante uma luta, fica onde está. */
+  function encostarNoRei(ponto: THREE.Vector3) {
+    if (aproximacao && !aproximacao.voltando) return
+    aproximarDaLuta(ponto, 0)
+    if (!aproximacao) return
+    voltaDoRei = window.setTimeout(voltarDaLuta, CHEGA_MS + 500)
+  }
+
+  /** Desfaz na hora a aproximação da luta (indo pro menu ou trocando de partida no meio dela). */
+  function desfazerAproximacao() {
+    window.clearTimeout(voltaDoRei)
+    if (!aproximacao) return
+    const direcao = camera.position.clone().sub(controls.target).normalize()
+    controls.target.copy(aproximacao.alvoAntes)
+    camera.position.copy(controls.target).addScaledVector(direcao, aproximacao.raioAntes)
+    aproximacao = null
+  }
+
+  function atualizarAproximacao(agora: number) {
+    if (!aproximacao) return
+    if (giroCamera || emMenu) {
+      aproximacao = null
+      return
+    }
+    const { de, para } = aproximacao
+    const t = Math.min(1, (agora - aproximacao.inicio) / aproximacao.duracao)
+    const suave = t * t * (3 - 2 * t)
+    const direcao = camera.position.clone().sub(controls.target).normalize()
+    controls.target.copy(de.alvo).lerp(para.alvo, suave)
+    camera.position.copy(controls.target).addScaledVector(direcao, de.raio + (para.raio - de.raio) * suave)
+    if (t >= 1 && aproximacao.voltando) aproximacao = null
   }
 
   // distância da câmera que o enquadramento automático escolheu por último — se o jogador não mexeu
@@ -198,6 +281,10 @@ export function criarVistaDaCamera(
     colocarCamera,
     liberarCamera,
     atualizarGiroCamera,
+    atualizarAproximacao,
+    aproximarDaLuta,
+    voltarDaLuta,
+    encostarNoRei,
     virarCameraPara,
     irParaVistaDoMenu,
     distanciaQueEnquadra,

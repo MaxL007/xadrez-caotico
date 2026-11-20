@@ -83,6 +83,8 @@ const PT = {
   'config.ambiente': 'Som ambiente',
   'config.toque': 'Toque',
   'config.toqueDica': 'Som e vibração ao tocar nas peças',
+  'config.menosMovimento': 'Menos movimento',
+  'config.menosMovimentoDica': 'Sem a câmera chegando perto da luta, o tabuleiro tremendo, a borda pulsando e as peças balançando',
   'config.registro': 'Aba de lances',
   'config.registroDica': 'Mostra os lances da partida numa aba na borda do tabuleiro',
   'config.tela': 'Tela do jogo',
@@ -514,6 +516,8 @@ const EN: Record<ChaveTexto, string> = {
   'config.ambiente': 'Ambient sound',
   'config.toque': 'Touch feedback',
   'config.toqueDica': 'Sound and vibration when touching pieces',
+  'config.menosMovimento': 'Reduced motion',
+  'config.menosMovimentoDica': 'No camera moving in on fights, no board shaking, no pulsing edges and no swaying pieces',
   'config.registro': 'Moves tab',
   'config.registroDica': 'Shows the game moves in a tab at the edge of the board',
   'config.tela': 'Game view',
@@ -943,6 +947,8 @@ const ES: Record<ChaveTexto, string> = {
   'config.ambiente': 'Sonido ambiente',
   'config.toque': 'Toque',
   'config.toqueDica': 'Sonido y vibración al tocar las piezas',
+  'config.menosMovimento': 'Menos movimiento',
+  'config.menosMovimentoDica': 'Sin la cámara acercándose a la pelea, el tablero temblando, el borde latiendo ni las piezas balanceándose',
   'config.registro': 'Pestaña de jugadas',
   'config.registroDica': 'Muestra las jugadas en una pestaña al borde del tablero',
   'config.tela': 'Vista del juego',
@@ -1308,4 +1314,9 @@ export function tradutor(idioma: Idioma): Traduzir {
     for (const [nome, valor] of Object.entries(valores ?? {})) texto = texto.replace(`{${nome}}`, String(valor))
     return texto
   }
+}
+
+/** Só pra conferir textos montados por nome (as habilidades): a chave existe nos três idiomas? */
+export function existeTexto(chave: string): boolean {
+  return Object.values(TEXTOS).every((textos) => typeof (textos as Record<string, string>)[chave] === 'string')
 }
