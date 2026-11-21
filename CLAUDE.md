@@ -502,7 +502,9 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
 
   `vista.enquadrarLuta` testa pontos de vista em volta (de lado pra linha da luta, girando 0,35 e 0,7 rad pros dois
   lados, de 30 a 66 graus de altura) e fica com o que olha mais de lado (uma peça não tampa a outra), com menos peças no
-  caminho e girando menos a câmera, na menor distância em que todos os pontos cabem com folga pros botões. As peças que
+  caminho e girando menos a câmera, na menor distância em que todos os pontos cabem no miolo da tela (`FOLGA_DA_LUTA`),
+  nunca mais perto que `DISTANCIA_MINIMA_DA_LUTA` (5,2): de perto demais o golpe ficava cortado e sem o tabuleiro em volta
+  (pedido do usuário). As peças que
   ainda ficam no caminho esmaecem até a luta acabar (`cena/esmaecer.ts`, cópias dos materiais). Vale ver só as duas
   peças. A volta devolve o giro, a altura e o zoom de antes. Fotos da vista de jogo de sempre:
   `SO=enquadra-puxao,enquadra-retalho,enquadra-torre,enquadra-bispo node testes/fotos-armas.mjs` (`camera: null`).

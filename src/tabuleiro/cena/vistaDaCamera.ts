@@ -13,6 +13,11 @@ const GIRO_CAMERA_MS = 1400
 /** Vista de lado do menu: mais baixa e mais perto que a do jogo, pra ver as peças de frente. */
 const RAIO_CAMERA_MENU = 11.5
 const INCLINACAO_CAMERA_MENU = 1.12
+/** Na luta, a câmera nunca chega mais perto que isto (pedido do usuário: o campo de visão da habilidade maior), e o
+ * golpe ocupa só o miolo da tela: até onde os pontos dele podem ir, de -1 a 1 em cada direção. O resto é o tabuleiro
+ * em volta, pra ver de onde a peça veio e pra onde a vítima vai. */
+const DISTANCIA_MINIMA_DA_LUTA = 5.2
+const FOLGA_DA_LUTA = { lados: 0.66, cima: 0.55, baixo: 0.6 }
 
 export interface PoseCamera {
   raio: number
@@ -158,7 +163,7 @@ export function criarVistaDaCamera(
 
   /** A prévia da Loja: a câmera sai da tela inicial e vem de perto até `ponto` (onde a captura acontece), de lado e
    * um pouco de cima; a volta é `irParaVistaDoMenu`. Devolve quantos ms a câmera leva pra chegar. */
-  function irParaAcao(ponto: THREE.Vector3, theta: number, raio = 4.4): number {
+  function irParaAcao(ponto: THREE.Vector3, theta: number, raio = DISTANCIA_MINIMA_DA_LUTA + 0.6): number {
     desfazerAproximacao()
     emMenu = false
     definirLadoDaCamera(1)
@@ -249,7 +254,7 @@ export function criarVistaDaCamera(
     const posicao = new THREE.Vector3()
     /** A menor distância em que todos os pontos ficam dentro da tela, com folga. */
     const raioQueCabe = (phi: number, theta: number) => {
-      for (let raio = 2.4; raio < 22; raio += 0.2) {
+      for (let raio = DISTANCIA_MINIMA_DA_LUTA; raio < 24; raio += 0.2) {
         posicao.setFromSphericalCoords(raio, phi, theta).add(alvo)
         teste.position.copy(posicao)
         teste.lookAt(alvo)
@@ -257,7 +262,7 @@ export function criarVistaDaCamera(
         // a folga: os botões em cima e a situação embaixo
         if (pontos.every((p) => {
           const naTela = p.clone().project(teste)
-          return naTela.z < 1 && Math.abs(naTela.x) <= 0.86 && naTela.y <= 0.7 && naTela.y >= -0.78
+          return naTela.z < 1 && Math.abs(naTela.x) <= FOLGA_DA_LUTA.lados && naTela.y <= FOLGA_DA_LUTA.cima && naTela.y >= -FOLGA_DA_LUTA.baixo
         })) return raio
       }
       return 22
