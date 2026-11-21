@@ -14,7 +14,11 @@ import { animarAscensao, animarPetalas } from '../animacoes/cerimonias'
 import { cavaloChegaEMontam, daMontaria, desfazerEquipamentos, doCavaleiro, encaixarEquipamentos, esconderPartes, partesVestidas, peaoCavaleiro } from '../animacoes/promocao'
 import { animarComemoracao, voltarAoDescanso } from '../animacoes/gestos'
 import { animarPosicao, animarPosicaoRPG, deslocarRPG, pararRPG, pecaSaltaRPG, rumoEntre, virarRPG } from '../animacoes/movimento'
-import { animarQuedaEDesaparecimento, arremessarPeca, prepararParaSumir } from '../animacoes/queda'
+import { arremessarPeca, prepararParaSumir } from '../animacoes/queda'
+import { faisca } from '../combate/efeitosDeAnime'
+import { nocautear, sacudir } from '../combate/nocaute'
+import { massaDaPeca } from '../sensacao/realismo'
+import { congelar } from '../sensacao/relogioDoJogo'
 import { squareToPosPeca } from '../casas'
 import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, CHANCE_HONRA_SAMURAI, DISTANCIA_REVERENCIA, type EstiloAtaque } from '../combate/golpes'
 import { alcanceDaMaca, ARMAS_DA_TORRE, baterComMarreta, cairDaMaca, esmagarPeca, MACA_ERGUIDA_ATE_MS, MARRETA_PANCADA_MS, ondaDaMarretada, pancadaNoPeito, poeiraDaPancada, prenderPeloPeito, soltarDaMaca } from '../combate/marreta'
@@ -453,26 +457,31 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         })
       }
 
-      // no instante em que o golpe acerta: a vítima cai (pra longe do atacante) e as aliadas
-      // por perto comemoram
-      const acertar = (direcaoGolpe: { x: number; z: number }, derruba = estilo === 'derrubada') => {
-        tocarSom(`queda:${vitima.userData.tipo as string}`)
+      // no instante em que o golpe acerta, a força joga a vítima (nocaute.ts: voa, gira, cai deitada e some) e as aliadas
+      // por perto comemoram. `forca` 1 é um direto forte (a derrubada da espada passa disso, o corte fica abaixo);
+      // `altura` é onde o golpe pega, de 0 (os pés) a 1 (a cabeça); `passoDepois`: quem bateu de perto dá um passo pra
+      // trás depois do congelamento (a luta sem arma já tem o dela)
+      const massaDeQuemBate = massaDaPeca(tipoAtacante)
+      const massaDaVitima = massaDaPeca(tipoVitima)
+      const acertar = (direcaoGolpe: { x: number; z: number }, forca = estilo === 'derrubada' ? 1.2 : 0.9, altura = 0.55, passoDepois = !aDistancia) => {
         animarImpacto(scene, posVitima.x, posVitima.z)
-        const nocaute = derruba ? direcaoGolpe : undefined
-        // o corpo congela no instante do acerto; depois a vítima cai e quem bateu de perto dá um passo pra trás
-        depoisDoCongelamento(impacto(), () => {
-          if (!vigente()) return
-          animarQuedaEDesaparecimento(
-            vitima,
-            () => {
-              removerVitima()
-              seguirParaDestino()
-            },
-            nocaute,
-            direcaoGolpe,
-          )
-          if (!aDistancia) continuarDoGolpe(atacante, direcaoGolpe)
+        faisca(scene, vitima.position.clone().add(new THREE.Vector3(0, altura * 0.85 * vitima.scale.y, 0)), 0xffffff, 0.5 * vitima.scale.x)
+        // o corpo congela no instante do acerto, já na pose da pancada, e sai voando quando o tempo volta
+        const ms = impacto()
+        nocautear(scene, vitima, { direcao: direcaoGolpe, forca, massaDeQuemBate, massaDaVitima, altura }, piecesGroup.children, vigente, {
+          aoPousar: (onde, massa) => {
+            tocarSom(`queda:${tipoVitima}`)
+            animarImpacto(scene, onde.x, onde.z)
+            tremerTabuleiro(scene, 0.015 + 0.006 * massa, 220)
+          },
+          aoTerminar: () => {
+            removerVitima()
+            seguirParaDestino()
+          },
         })
+        if (passoDepois) depoisDoCongelamento(ms, () => vigente() && continuarDoGolpe(atacante, direcaoGolpe))
+        // o golpe que arremessa longe: a câmera sente
+        if (forca * Math.pow(massaDeQuemBate / massaDaVitima, 0.35) > 1.2) sensacao.socoNaCamera(2.5, 280)
         comemorarAliadas()
       }
 
@@ -514,11 +523,18 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
           const direcaoGolpe = { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }
           // o corpo recua um palmo antes do golpe
           antecipar(atacante, direcaoGolpe, () => lutarSemArma(atacante, vitima, golpe, vigente, {
-            antes: () => tocarSom(golpe === 'socos' ? 'soco:jab' : 'chute:ar'),
+            antes: () => {
+              tocarSom(golpe === 'socos' ? 'soco:jab' : 'chute:ar')
+              if (golpe !== 'socos') return
+              // o jab pega no queixo: a cabeça vai pra trás e a vítima recua meio passo, tonta (não cai ainda)
+              sacudir(vitima, direcaoGolpe, 1)
+              faisca(scene, vitima.position.clone().add(new THREE.Vector3(0, 0.6 * vitima.scale.y, 0)), 0xffffff, 0.3 * vitima.scale.x, 180)
+              congelar(35)
+            },
             aoAcertar: () => {
               tocarSom(golpe === 'socos' ? 'soco' : 'chute')
-              // o chute sempre joga a vítima longe; o direto, às vezes
-              acertar(direcaoGolpe, golpe === 'chute' || estilo === 'derrubada')
+              // o direto no queixo; o chute na barriga, mais forte, dobra o corpo
+              acertar(direcaoGolpe, golpe === 'chute' ? 1.3 : 1.05, golpe === 'chute' ? 0.42 : 0.6, false)
             },
           }))
         })

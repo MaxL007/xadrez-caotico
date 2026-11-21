@@ -209,6 +209,24 @@ As pastas de `src` são por função:
   `src/tabuleiro/pecas/ossos.ts` (o mesmo da marreta): antes dos clipes o quadro desfaz a pose (`desfazerPosesDasLutas`), e
   depois deles guarda o que o clipe deixou e posa de novo (`atualizarLutas`). Quem bate para a `distanciaDaLuta` da
   vítima. O orbe do bispo e a onda do rei, que eram o ataque sem arma, ficaram sem uso no código.
+- Os golpes simples são fortes de verdade (pedido do usuário: a queda tem de fazer sentido). O direto tem carga (o punho
+  puxado pra trás, o tronco torcido) e sai com o corpo todo: um passo pra dentro do soco, o punho passando do ponto. O
+  chute sobe o joelho alto, joga o tronco pra trás e empurra atravessando a vítima. O passo de quem bate parte de onde
+  estava e volta pra lá no fim (`avancar`, em `lutaSemArma.ts`).
+- A vítima dos golpes simples (socos, chute, espada e katana sem habilidade, raio, poder do bispo, onda do rei, cristal) é
+  jogada pela força (`src/tabuleiro/combate/nocaute.ts`, `nocautear`), não cai mais no lugar:
+  - a distância sai da força do golpe e da razão das massas (`massaDaPeca`): a rainha arremessa o peão a mais de uma
+    casa, o peão derruba a rainha quase no lugar;
+  - o golpe acima do meio do corpo faz a peça girar pra trás no ar; os mais fortes dão uma cambalhota antes de cair;
+  - a peça cai deitada, quica, desliza um pouco e fica estirada antes de sumir;
+  - apanhando de frente, os membros vão pra frente; de costas, cai de cara;
+  - uma peça no caminho segura o voo antes dela; perto da beira, cai na mesa.
+
+  O jab só sacode (`sacudir`): a cabeça vai pra trás e a peça recua meio passo, tonta. Tudo anda no relógio do jogo: no
+  congelamento do impacto, a vítima fica parada na pose da pancada e voa quando o tempo volta. O som de queda (`queda:<peça>`)
+  toca quando ela bate no chão, não no golpe. As duas peças em pose ganham `userData.poseDeHabilidade`, que tira a
+  inércia. As fotos saem de `SO=golpe,chute-rainha,golpe-peao,socos,chute node testes/fotos-armas.mjs`. A queda antiga
+  (tombar no lugar, `animarQuedaEDesaparecimento`) saiu do código.
 - O ataque da captura segue a arma (`src/tabuleiro/combate/efeitosDasArmas.ts`, cada um com som próprio em `sons.ts`):
   retalhamento da katana (vários cortes e a peça em pedaços, só pra quem comprou), marreta (rachaduras desenhadas a cada
   pancada e o tabuleiro tremendo), machado (a peça cortada ao meio por plano de recorte; a metade de cima é cópia pelo

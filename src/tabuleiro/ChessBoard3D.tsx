@@ -12,6 +12,7 @@ import { RelogioDeXadrez, type Ritmo } from '../jogo/relogio'
 import { PainelDeLances } from './PainelDeLances'
 import { atualizarLutas, desfazerPosesDasLutas } from './combate/lutaSemArma'
 import { atualizarPuxoes, desfazerPosesDosPuxoes } from './combate/puxaoUniversal'
+import { atualizarNocautes, desfazerPosesDosNocautes } from './combate/nocaute'
 import { definirMenosMovimento, menosMovimento, type SensacaoDaPartida } from './sensacao/golpeQuePesa'
 import { passarQuadro } from './sensacao/relogioDoJogo'
 import { aplicarInercia, desfazerInercia } from './sensacao/inercia'
@@ -1071,6 +1072,7 @@ export function ChessBoard3D() {
       // as poses saem na ordem contrária à que entraram (a última posta é a primeira tirada)
       desfazerInercia()
       desfazerPosturas()
+      desfazerPosesDosNocautes()
       desfazerPosesDosPuxoes()
       desfazerPosesDasLutas()
       for (const peca of piecesGroup.children) {
@@ -1080,6 +1082,7 @@ export function ChessBoard3D() {
       atualizarMarretadas(agoraDoCorpo)
       atualizarLutas(agoraDoCorpo)
       atualizarPuxoes(agoraDoCorpo)
+      atualizarNocautes(agoraDoCorpo)
       atualizarPosturas(agora)
       // a inércia é a última pose: o tronco inclinando ao andar e balançando ao parar
       aplicarInercia(piecesGroup.children, congelado ? 0 : delta)
