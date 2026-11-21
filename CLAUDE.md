@@ -161,9 +161,10 @@ As pastas de `src` são por função:
   (`renderOrder` negativo), e a vítima é desenhada antes da tampa pra continuar à vista dentro do buraco. As rachaduras
   vão rentes ao tampo (`altura` 0,001), senão aparecem por cima do buraco.
 
-  O símbolo (`emblemas.ts`) é a segunda versão do desenho do usuário (21/11): o X do meio e os quatro pares de arcos,
-  traços de pincel (`traco`, pontas redondas) com os pontos tirados dos traços pretos da imagem (1254 px, centro 627,587,
-  escala 1/900).
+  O símbolo (`emblemas.ts`) é a terceira versão do desenho do usuário (21/11): dois elos abertos no meio, um de frente
+  pro outro, com as pontas em seta, e os quatro pares de arcos em volta. Tudo sai dos traços pretos da imagem (1254 px,
+  centro 626,5 e 595,5, escala 1/875): os arcos como traços de pincel de grossura igual (`traco`), e os elos pelo
+  contorno de cada um, seguido pixel a pixel e simplificado (`contorno`).
 
   O som segue a forma do áudio de referência que o usuário mandou (o "Banshō Ten'in" do Pain, dublado em pt-br). O
   arquivo não entra no jogo, que é público e o áudio é de outra obra: o som é sintetizado com a mesma forma, medida

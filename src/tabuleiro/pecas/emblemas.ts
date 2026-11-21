@@ -83,18 +83,18 @@ function retalhamento(): THREE.Group {
   return emblema
 }
 
-// --- o Puxão Universal, do desenho do usuário (a segunda versão, de 21/11): dois traços curvos que se cruzam em X no
-// meio (o de cima à esquerda desce até o gancho embaixo à direita; o de cima à direita desce até a ponta embaixo à
-// esquerda) e, em volta, quatro pares de arcos (em cima, embaixo, à esquerda e à direita), como ondas sendo puxadas
-// pro centro. Os pontos são do desenho (1254 px de lado), tirados dos traços pretos dele, cada traço de pincel com as
-// pontas redondas.
+// --- o Puxão Universal, do desenho do usuário (a terceira versão, de 21/11): no meio, dois elos abertos, um de frente
+// pro outro (cada um um "C" com as pontas em seta, apontando pro centro), e em volta quatro pares de arcos (em cima,
+// embaixo, à esquerda e à direita), como ondas sendo puxadas pro centro. Os pontos são do desenho (1254 px de lado),
+// tirados dos traços pretos dele: os arcos são traços de pincel de grossura igual (`traco`, pontas redondas) e os elos,
+// o contorno de cada um, seguido pixel a pixel e simplificado.
 
 /** Onde fica o meio de cada desenho (em px) e quanto um px vale no símbolo. */
 interface Quadro {
   centro: THREE.Vector2
   escala: number
 }
-const QUADRO_DO_PUXAO: Quadro = { centro: new THREE.Vector2(627, 587), escala: 1 / 900 }
+const QUADRO_DO_PUXAO: Quadro = { centro: new THREE.Vector2(626.5, 595.5), escala: 1 / 875 }
 const doDesenho = (quadro: Quadro) => ([x, y]: [number, number]) => new THREE.Vector2((x - quadro.centro.x) * quadro.escala, -(y - quadro.centro.y) * quadro.escala)
 
 /** Um traço de pincel: a linha suave pelos pontos do desenho, com a grossura (em px do desenho, uma só ou uma por
@@ -135,27 +135,34 @@ function traco(pontos: [number, number][], grossura: number | number[], quadro: 
   return forma
 }
 
+/** Uma forma pelo contorno, em pontos do desenho. */
+function contorno(pontos: [number, number][], quadro: Quadro = QUADRO_DO_PUXAO): THREE.Shape {
+  return new THREE.Shape(pontos.map(doDesenho(quadro)))
+}
+
 function puxao(): THREE.Group {
   const emblema = new THREE.Group()
-  const malha = (forma: THREE.Shape, z = 0) => {
+  const malha = (forma: THREE.Shape) => {
     const parte = new THREE.Mesh(extrudar(forma, 24), acoEscuro)
     parte.castShadow = true
-    parte.position.z = z
     emblema.add(parte)
   }
-  // o X: o segundo traço fica um fio à frente, pros dois não brigarem onde se cruzam
-  malha(traco([[350, 392], [400, 383], [450, 382], [500, 394], [540, 416], [575, 452], [605, 500], [632, 548], [662, 600], [698, 655], [745, 704], [800, 730], [850, 727], [893, 712]], [64,74,80,86,92,98,102,104,102,98,92,86,80,70]))
-  malha(traco([[902, 362], [850, 370], [800, 388], [750, 411], [705, 445], [668, 495], [632, 555], [596, 620], [558, 688], [510, 742], [455, 778], [400, 802], [355, 814]], [40,62,76,86,94,100,104,104,100,94,86,78,68]), 0.004)
-  // os pares de arcos em volta: o de fora mais comprido, o de dentro mais curto
+  // os dois elos do meio, pelo contorno
+  const elos: [number, number][][] = [
+    [[426, 461], [520, 461], [533, 465], [543, 471], [597, 523], [607, 535], [607, 549], [601, 556], [597, 558], [527, 559], [523, 558], [522, 514], [423, 515], [404, 519], [381, 530], [358, 551], [351, 561], [343, 578], [340, 589], [340, 619], [345, 635], [352, 648], [370, 668], [381, 676], [395, 683], [417, 689], [506, 689], [523, 688], [524, 638], [593, 637], [601, 640], [607, 647], [608, 657], [605, 664], [529, 738], [512, 743], [420, 743], [404, 741], [370, 731], [354, 723], [334, 709], [323, 699], [309, 682], [301, 669], [292, 649], [285, 616], [286, 586], [294, 556], [302, 539], [312, 523], [335, 498], [363, 479], [393, 467], [417, 462]],
+    [[733, 461], [836, 462], [872, 471], [906, 489], [920, 500], [938, 519], [950, 537], [957, 551], [967, 586], [968, 614], [966, 629], [959, 654], [949, 674], [936, 692], [920, 708], [902, 721], [885, 730], [859, 739], [833, 743], [741, 743], [734, 742], [722, 737], [649, 666], [645, 658], [645, 650], [647, 645], [656, 638], [702, 638], [730, 638], [731, 689], [836, 689], [858, 683], [872, 676], [883, 668], [895, 656], [902, 646], [909, 632], [913, 618], [913, 590], [907, 571], [897, 554], [881, 537], [873, 531], [856, 522], [841, 517], [830, 515], [801, 514], [731, 514], [729, 558], [694, 559], [657, 558], [652, 556], [645, 546], [645, 538], [649, 530], [709, 472], [722, 464]],
+  ]
+  for (const elo of elos) malha(contorno(elo))
+  // os pares de arcos em volta: em cima, à esquerda, à direita e embaixo, o de fora mais comprido
   const arcos: [[number, number][], number][] = [
-    [[[350, 170], [420, 142], [500, 122], [580, 109], [660, 101], [740, 96], [792, 92]], 78],
-    [[[470, 245], [530, 233], [590, 227], [650, 223], [692, 224]], 70],
-    [[[773, 897], [724, 910], [664, 920], [604, 924], [544, 923], [505, 919]], 70],
-    [[[925, 996], [860, 1024], [790, 1044], [710, 1058], [630, 1066], [550, 1067], [470, 1060], [405, 1048]], 84],
-    [[[160, 312], [123, 375], [95, 450], [83, 530], [85, 610], [103, 695], [136, 778], [175, 848]], 84],
-    [[[240, 425], [220, 470], [207, 520], [201, 570], [204, 620], [214, 670]], 80],
-    [[[1085, 312], [1125, 385], [1155, 465], [1170, 548], [1166, 630], [1145, 713], [1110, 790], [1078, 846]], 84],
-    [[[996, 422], [1018, 464], [1033, 510], [1041, 560], [1039, 610], [1030, 655], [1022, 680]], 80],
+    [[[375, 194], [438, 162], [506, 141], [575, 130], [646, 127], [716, 135], [784, 151], [849, 178], [874, 192]], 51],
+    [[[457, 261], [499, 244], [542, 232], [586, 224], [631, 221], [675, 225], [719, 233], [762, 247], [793, 261]], 52],
+    [[[166, 797], [125, 746], [95, 688], [81, 624], [85, 558], [105, 496], [138, 440], [168, 403]], 56],
+    [[[1087, 406], [1117, 444], [1142, 486], [1161, 531], [1171, 579], [1171, 628], [1162, 676], [1142, 722], [1116, 763], [1094, 787]], 56],
+    [[[244, 736], [220, 704], [201, 669], [190, 631], [189, 592], [197, 553], [212, 516], [234, 483], [247, 462]], 55],
+    [[[1008, 465], [1031, 497], [1049, 532], [1060, 569], [1064, 609], [1059, 648], [1045, 685], [1022, 718], [1008, 739]], 56],
+    [[[801, 922], [761, 941], [718, 954], [675, 962], [630, 965], [586, 963], [542, 956], [500, 944], [459, 926]], 52],
+    [[[872, 996], [810, 1028], [743, 1049], [674, 1061], [604, 1063], [534, 1054], [466, 1036], [402, 1008], [377, 993]], 54],
   ]
   for (const [arco, grossura] of arcos) malha(traco(arco, grossura))
   return emblema
