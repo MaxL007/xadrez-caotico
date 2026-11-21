@@ -83,6 +83,10 @@
       "guerra"
     ]
   },
+  "blocosDeHabilidade": {
+    "2": 50,
+    "3": 70
+  },
   "habilidades": {
     "p": [
       "nenhuma",

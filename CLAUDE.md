@@ -161,8 +161,20 @@ As pastas de `src` são por função:
   (`renderOrder` negativo), e a vítima é desenhada antes da tampa pra continuar à vista dentro do buraco. As rachaduras
   vão rentes ao tampo (`altura` 0,001), senão aparecem por cima do buraco.
 
-  O símbolo (`emblemas.ts`) são os traços de pincel do desenho (`traco`, pontas redondas): o X do meio e os quatro pares
-  de arcos.
+  O símbolo (`emblemas.ts`) é a segunda versão do desenho do usuário (21/11): o X do meio e os quatro pares de arcos,
+  traços de pincel (`traco`, pontas redondas) com os pontos tirados dos traços pretos da imagem (1254 px, centro 627,587,
+  escala 1/900).
+
+  O som segue a forma do áudio de referência que o usuário mandou (o "Banshō Ten'in" do Pain, dublado em pt-br). O
+  arquivo não entra no jogo, que é público e o áudio é de outra obra: o som é sintetizado com a mesma forma, medida
+  a cada 50 ms (volume, faixas e centro do espectro):
+  - um sopro de ar agudo no começo;
+  - uma entoação grave de quatro sílabas, só vogais (a, o, e, i), emendadas e com o acento forte na última, logo
+    antes de a cabeça travar na mão. O Puxão, do começo à pegada, tem o tamanho da voz do áudio (1,15 s);
+  - depois da pegada, uma cauda escura que segura o nível e desce uns 9 dB em 0,8 s, durante a hélice.
+
+  São `puxao:chama`, `puxao:arrasta` e `puxao:agarra`, e o sintetizador ganhou o envelope que segura
+  (`envelopeSustentado`; `sustenta` em `sopro` e `voz`).
 
   As fotos de cada pose-chave saem de `SO=puxao,puxao-de-lado,puxao-de-cima,puxao-rainha node testes/fotos-armas.mjs`
   (a última compara a cratera da rainha com a do peão).
@@ -201,6 +213,34 @@ As pastas de `src` são por função:
   põe a pose do corpo arrancado por cima do clipe (costas arqueadas, membros pra trás ou pra frente, abertos, tremulando)
   e `massaDaPeca` dá o peso de cada peça. Seguem o Puxão, a Dempsey Roll e o nocaute dos golpes simples. A peça com
   `userData.poseDeHabilidade` (as duas de uma habilidade, a vítima no ar) fica fora da inércia de quem anda e dos gestos.
+- Os blocos de habilidade (pedido do usuário): até três habilidades na mesma peça, e na captura quem joga escolhe qual
+  usar.
+  - O 1º bloco é grátis; o 2º custa 50 e o 3º, 70 óticoins, uma vez por peça (`peça:bloco:2`, `peça:bloco:3`, preços em
+    `blocosDeHabilidade` no catálogo).
+  - Um bloco só é vendido quando a peça tem habilidades pra ele: hoje o peão tem o 2º e ninguém tem o 3º. O 3º pede o 2º
+    antes (`falta-o-bloco-anterior`).
+  - Cada bloco é uma parte da peça: `golpe`, `golpe2` e `golpe3`, com as mesmas opções. O servidor confere o bloco
+    comprado (`bloco-bloqueado`) e a habilidade comprada (a parte `golpe` do catálogo vale pros três). A mesma
+    habilidade escolhida noutro bloco muda de bloco, no servidor e no aparelho.
+  - A Personalização mostra os três blocos ao tocar em Habilidade; a Loja vende os blocos na aba Habilidades, depois
+    das habilidades da peça, com o símbolo de placas (`emblemaDoBloco`).
+  - Na captura (`tentarMover` no ChessBoard3D), com duas ou mais equipadas que podem sair (`habilidadesQuePodem`: a
+    peça certa e a arma na mão), aparece "Qual habilidade usar?" antes do lance. A escolha vai em
+    `executarLanceComAnimacao({ ..., habilidade })`; sem escolha vale a do primeiro bloco que pode. É só de quem joga:
+    o adversário vê o golpe de sempre. Na promoção com captura, a peça da promoção vem antes.
+  - A prévia da Loja tira os outros blocos, pra não perguntar.
+- A katana fica na bainha quando a peça não vai usá-la (bug visto pelo usuário). Um gesto com a katana cortado no meio
+  por um lance perdia a guarda: a nova sequência invalidava o "guardar" do fim do gesto, e a katana ficava na mão. Com
+  ela na mão saíam a Dempsey Roll, os socos e a reverência da honra do samurai. Agora `embainharAntes` (lanceAnimado)
+  guarda a katana antes:
+  - das habilidades de longe e das de mãos livres;
+  - dos socos e do chute;
+  - da honra do samurai (que também não acontece mais com uma habilidade escolhida);
+  - do passo de sempre.
+
+  Se a guarda não terminar em 1,6 s, segue sem ela. A vítima de qualquer captura perde a katana da mão na hora.
+  `testar-armas` confere a katana voltando pra bainha (`sacarKatanaParaTeste`, `katanasNaMao`) e a escolha da
+  habilidade (`escolherHabilidade`).
 - As habilidades têm cadastro único: `src/conta/habilidades.ts` (`HABILIDADES`) diz de que peça é cada uma, se vai até
   a vítima (`corpoACorpo`) ou não (`aDistancia`), se pede uma arma na mão e se luta com as mãos (`maosLivres`: vai
   até a vítima sem sacar a arma). A animação de cada uma fica em
@@ -211,7 +251,8 @@ As pastas de `src` são por função:
 ### Como adicionar uma habilidade
 
 1. **Catálogo** (`src/catalogos/personalizacao.json`): o nome em `habilidades.<peça>` e o preço em
-   `loja.<peça>["golpe:<nome>"]`. O servidor lê o catálogo, então publica o servidor junto (`wrangler deploy`).
+   `loja.<peça>["golpe:<nome>"]`. O servidor lê o catálogo, então publica o servidor junto (`wrangler deploy`). A 2ª e a
+   3ª habilidade de uma peça abrem sozinhas a venda do 2º e do 3º bloco dela.
 2. **Cadastro** em `src/conta/habilidades.ts`: a peça, o alcance e a arma exigida. Uma arma nova exigida pede dois
    textos: o aviso na Personalização e o complemento na Loja.
 3. **Animação** em `CAPTURAS` (`combate/habilidades.ts`): o padrão de anime (`brilhoDeAnime` no começo,

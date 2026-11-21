@@ -632,6 +632,13 @@ try {
   conferir('o peão equipa a Dempsey Roll', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'dempsey' })).json?.personalizacao?.p?.golpe === 'dempsey')
   conferir('a Dempsey Roll é só do peão', (await personalizar({ peca: 'q', parte: 'golpe', opcao: 'dempsey' })).status === 422)
   conferir('habilidade inventada não entra', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'voo' })).status === 422)
+  // os blocos de habilidade: com tudo liberado, o peão leva as duas; a mesma não fica em dois blocos
+  await personalizar({ peca: 'p', parte: 'golpe', opcao: 'retalhamento' })
+  const doisBlocos = (await personalizar({ peca: 'p', parte: 'golpe2', opcao: 'dempsey' })).json?.personalizacao?.p
+  conferir('o peão leva duas habilidades, uma em cada bloco', doisBlocos?.golpe === 'retalhamento' && doisBlocos?.golpe2 === 'dempsey', JSON.stringify(doisBlocos))
+  const mudouDeBloco = (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'dempsey' })).json?.personalizacao?.p
+  conferir('a mesma habilidade escolhida noutro bloco muda de bloco', mudouDeBloco?.golpe === 'dempsey' && mudouDeBloco?.golpe2 === undefined, JSON.stringify(mudouDeBloco))
+  conferir('o bloco 4 não existe', (await personalizar({ peca: 'p', parte: 'golpe4', opcao: 'dempsey' })).status === 422)
   const semElmo = (await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'padrao' })).json?.personalizacao
   conferir('voltar ao padrão apaga a escolha e mantém as outras', semElmo?.p?.cabeca === undefined && semElmo?.p?.arma === 'espada', JSON.stringify(semElmo))
   const invalidas = [
@@ -837,6 +844,9 @@ try {
   const semSaldoProPuxao = await comprar('q:golpe:puxao')
   conferir('o Puxão Universal está à venda (sem saldo, não compra)', semSaldoProPuxao.status === 402, JSON.stringify(semSaldoProPuxao.json))
   conferir('a arma que já saiu pela conquista não precisa ser comprada', (await comprar('p:arma:katana')).status === 409)
+  conferir('o 2º bloco de habilidade do peão está à venda (sem saldo, não compra)', (await comprar('p:bloco:2')).status === 402)
+  conferir('sem habilidades pra ele, o bloco não é vendido: o 3º do peão e o 2º da rainha', (await comprar('p:bloco:3')).status === 422 && (await comprar('q:bloco:2')).status === 422)
+  conferir('o 2º bloco só se usa comprado', (await personalizar({ peca: 'p', parte: 'golpe2', opcao: 'dempsey' }, bia.token)).status === 403)
   const doPerfil = (await api('GET', '/perfil', { token: bia.token })).json
   conferir('o perfil traz os itens comprados e as conquistas', doPerfil.itens?.includes('p:ombros:placas') && doPerfil.conquistas?.includes('torres-30'), JSON.stringify({ itens: doPerfil.itens, conquistas: doPerfil.conquistas }))
   const saldoAntes = (await api('GET', '/conquistas', { token: ana.token })).json.oticoins

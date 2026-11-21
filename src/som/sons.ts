@@ -40,6 +40,18 @@ function envelope(ctx: Contexto, t: number, ataque: number, dur: number, pico: n
   return g
 }
 
+/** Sobe, segura (descendo do pico até `queda` vezes ele) e só nos últimos 20% apaga: a voz que fala e o som que dura,
+ * em vez da batida que cai logo depois do ataque. */
+function envelopeSustentado(ctx: Contexto, t: number, ataque: number, dur: number, pico: number, queda = 1): GainNode {
+  const g = ctx.createGain()
+  const subida = Math.max(0.001, ataque)
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0001, pico), t + subida)
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0001, pico * queda), t + subida + dur * 0.8)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + subida + dur)
+  return g
+}
+
 interface OpcoesTom {
   tipo?: OscillatorType
   freq: number
@@ -79,6 +91,8 @@ interface OpcoesSopro {
   ataque?: number
   dur: number
   vol: number
+  /** Segura o som em vez de cair logo (envelopeSustentado), descendo até `sustenta` vezes o pico. */
+  sustenta?: number
   filtro?: BiquadFilterType
   freq: number
   ate?: number
@@ -97,7 +111,7 @@ function sopro(s: Saida, o: OpcoesSopro) {
   filtro.Q.value = o.q ?? 1
   filtro.frequency.setValueAtTime(o.freq * s.v, t)
   if (o.ate) filtro.frequency.exponentialRampToValueAtTime(o.ate * s.v, t + ataque + o.dur)
-  const g = envelope(s.ctx, t, ataque, o.dur, o.vol)
+  const g = o.sustenta !== undefined ? envelopeSustentado(s.ctx, t, ataque, o.dur, o.vol, o.sustenta) : envelope(s.ctx, t, ataque, o.dur, o.vol)
   fonte.connect(filtro).connect(g).connect(s.destino)
   fonte.start(t, Math.random() * 1.5)
   fonte.stop(t + ataque + o.dur + 0.02)
@@ -106,14 +120,14 @@ function sopro(s: Saida, o: OpcoesSopro) {
 /** Uma voz curta, sintetizada: a corda vocal (uma onda dente de serra deslizando de `f0` a `ate`) passando pelos
  * formantes da boca (filtros em faixa, cada um [frequência, Q]), com um pouco de ar por cima. É o grunhido de esforço de
  * quem golpeia e o gemido de quem apanha. */
-function voz(s: Saida, o: { f0: number; ate: number; dur: number; vol: number; formantes: [number, number][]; inicio?: number; ataque?: number }) {
+function voz(s: Saida, o: { f0: number; ate: number; dur: number; vol: number; formantes: [number, number][]; inicio?: number; ataque?: number; sustenta?: number }) {
   const t = s.t + (o.inicio ?? 0)
   const ataque = o.ataque ?? 0.02
   const osc = s.ctx.createOscillator()
   osc.type = 'sawtooth'
   osc.frequency.setValueAtTime(o.f0 * s.v, t)
   osc.frequency.exponentialRampToValueAtTime(o.ate * s.v, t + ataque + o.dur)
-  const g = envelope(s.ctx, t, ataque, o.dur, o.vol)
+  const g = o.sustenta !== undefined ? envelopeSustentado(s.ctx, t, ataque, o.dur, o.vol, o.sustenta) : envelope(s.ctx, t, ataque, o.dur, o.vol)
   for (const [freq, q] of o.formantes) {
     const filtro = s.ctx.createBiquadFilter()
     filtro.type = 'bandpass'
@@ -500,18 +514,36 @@ export const SONS: Record<string, (s: Saida) => number> = {
   // as vozes das peças: o grunhido de quem golpeia e o gemido de quem apanha
   ...sonsDasVozes(),
   // Puxão Universal (habilidade da rainha): a energia acendendo na palma, um zumbido que sobe
+  // A forma do som segue a do áudio de referência que o usuário mandou (o "Banshō Ten'in" do Pain, dublado; o arquivo
+  // não entra no jogo, que é público): um sopro de ar agudo no começo; uma entoação grave de quatro sílabas, só vogais,
+  // com o acento forte na última, logo antes de a cabeça travar na mão (o Puxão inteiro, do começo à pegada, tem o
+  // tamanho da voz do áudio, 1,15 s); e, depois da pegada, uma cauda escura que some devagar.
   'puxao:chama': (s) => {
-    tom(s, { freq: 110, ate: 220, ataque: 0.25, dur: 0.45, vol: 0.12 })
-    tom(s, { tipo: 'triangle', freq: 660, ate: 1320, ataque: 0.2, dur: 0.4, vol: 0.025 })
-    sopro(s, { ataque: 0.25, dur: 0.35, vol: 0.06, freq: 1600, ate: 3800, q: 3 })
-    return 0.7
+    // o ar abrindo e a energia acendendo na palma
+    sopro(s, { ataque: 0.01, dur: 0.18, vol: 0.6, freq: 1550, ate: 1850, q: 2, sustenta: 0.6 })
+    tom(s, { freq: 120, ate: 165, ataque: 0.2, dur: 0.5, vol: 0.04 })
+    tom(s, { tipo: 'triangle', freq: 660, ate: 990, ataque: 0.15, dur: 0.35, vol: 0.02 })
+    // a entoação: a, o, e e o "i" final, forte; uma voz grave e firme (abaixo do grunhido dela), as sílabas emendadas
+    // como no áudio, que não tem silêncio da primeira à última
+    const silabas: { inicio: number; dur: number; f0: number; ate: number; vol: number; boca: [number, number][] }[] = [
+      { inicio: 0.06, dur: 0.2, f0: 196, ate: 186, vol: 0.3, boca: [[780, 5], [1180, 7]] },
+      { inicio: 0.27, dur: 0.22, f0: 188, ate: 176, vol: 0.32, boca: [[540, 5], [880, 7]] },
+      { inicio: 0.5, dur: 0.22, f0: 182, ate: 176, vol: 0.3, boca: [[560, 5], [1750, 8]] },
+      { inicio: 0.74, dur: 0.36, f0: 222, ate: 168, vol: 0.46, boca: [[420, 5], [1900, 8]] },
+    ]
+    for (const silaba of silabas) {
+      voz(s, { inicio: silaba.inicio, f0: silaba.f0, ate: silaba.ate, dur: silaba.dur, vol: silaba.vol, formantes: silaba.boca, ataque: 0.03, sustenta: 0.7 })
+      tom(s, { inicio: silaba.inicio, freq: silaba.f0 / 2, ate: silaba.ate / 2, ataque: 0.03, dur: silaba.dur, vol: silaba.vol * 0.12 })
+    }
+    return 1.15
   },
-  // a peça vindo: a gravidade puxando num grave que cresce e o ar rasgando cada vez mais rápido
+  // a peça vindo: a gravidade puxando num grave que cresce e o ar sendo sugado pra mão, cada vez mais rápido, no meio
+  // do espectro da voz do áudio
   'puxao:arrasta': (s) => {
-    tom(s, { freq: 46, ate: 92, ataque: 0.15, dur: 0.75, vol: 0.3 })
-    tom(s, { tipo: 'sawtooth', freq: 55, ate: 110, ataque: 0.2, dur: 0.7, vol: 0.05, corte: 260 })
-    sopro(s, { ataque: 0.6, dur: 0.28, vol: 0.24, freq: 300, ate: 2600, q: 1.3 })
-    return 0.95
+    tom(s, { freq: 46, ate: 92, ataque: 0.2, dur: 0.66, vol: 0.12 })
+    tom(s, { tipo: 'sawtooth', freq: 55, ate: 110, ataque: 0.25, dur: 0.62, vol: 0.035, corte: 300 })
+    sopro(s, { ataque: 0.5, dur: 0.2, vol: 0.16, freq: 900, ate: 1600, q: 1.1 })
+    return 0.75
   },
   // a ascensão completa: o brilho de anime e um acorde que sobe
   'ascensao:pose': (s) => {
@@ -557,11 +589,16 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { ataque: 0.04, dur: 0.14, vol: 0.16, freq: 520, ate: 1500, q: 2.2 })
     return 0.25
   },
-  // a cabeça batendo na mão: um tranco seco
+  // a cabeça batendo na mão: um tranco seco e a cauda escura do áudio de referência, grave (150 a 430 Hz) e sumindo
+  // devagar por quase um segundo, enquanto a peça gira na hélice
   'puxao:agarra': (s) => {
     pancada(s, 150, 70, 0.18, 0.42)
     sopro(s, { dur: 0.06, vol: 0.12, freq: 900, q: 2 })
-    return 0.3
+    // a cauda: segura e desce só uns 7 dB em 0,8 s, como no áudio
+    sopro(s, { inicio: 0.04, ataque: 0.05, dur: 0.85, vol: 0.4, filtro: 'lowpass', freq: 420, ate: 300, q: 0.7, sustenta: 0.5 })
+    sopro(s, { inicio: 0.04, ataque: 0.06, dur: 0.85, vol: 0.14, freq: 380, ate: 300, q: 1, sustenta: 0.45 })
+    tom(s, { inicio: 0.04, tipo: 'triangle', freq: 240, ate: 160, ataque: 0.05, dur: 0.8, vol: 0.05 })
+    return 1
   },
   // lua: o vento do tornado subindo, uivando, e o assobio da peça arremessada
   tornado: (s) => {

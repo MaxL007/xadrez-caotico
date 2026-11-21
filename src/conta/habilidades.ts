@@ -29,6 +29,35 @@ export const HABILIDADES: Record<string, DadosDaHabilidade> = {
   dempsey: { peca: 'p', alcance: 'corpoACorpo', maosLivres: true },
 }
 
+/**
+ * Os blocos de habilidade de cada peça (pedido do usuário): até três habilidades na mesma peça, e na captura quem joga
+ * escolhe qual usar. O 1º bloco é grátis; o 2º e o 3º se liberam na Loja, uma vez por peça (`peça:bloco:2` e
+ * `peça:bloco:3`, nos preços de `blocosDeHabilidade` no catálogo). Um bloco só é vendido quando a peça tem habilidades
+ * pra ele (o 3º, quando ela tiver três), e o 3º pede o 2º antes. Cada bloco é uma parte da peça: 'golpe', 'golpe2' e
+ * 'golpe3', com as mesmas opções.
+ */
+export const BLOCOS_DE_HABILIDADE = ['golpe', 'golpe2', 'golpe3'] as const
+export const PRECO_DO_BLOCO = catalogo.blocosDeHabilidade as Record<string, number>
+/** O número do bloco da parte (1, 2 ou 3), ou 0 se a parte não é de habilidade. */
+export const numeroDoBloco = (parte: string) => BLOCOS_DE_HABILIDADE.indexOf(parte as (typeof BLOCOS_DE_HABILIDADE)[number]) + 1
+
+/** Quantas habilidades a peça tem no catálogo: é até onde vão os blocos dela. */
+export const habilidadesDaPeca = (peca: string) => ((catalogo.habilidades as Record<string, string[]>)[peca] ?? []).filter((id) => id !== 'nenhuma')
+
+/** As habilidades que a peça leva pra captura: as dos blocos, na ordem, sem repetir, que são dela e que têm na mão a
+ * arma que pedem. */
+export function habilidadesQuePodem(escolhasDaPeca: Record<string, string>, peca: string, armaNaMao: string): string[] {
+  const podem: string[] = []
+  for (const bloco of BLOCOS_DE_HABILIDADE) {
+    const id = escolhasDaPeca[bloco]
+    const dados = id ? HABILIDADES[id] : undefined
+    if (!id || !dados || dados.peca !== peca || podem.includes(id)) continue
+    if (dados.arma && armaNaMao !== dados.arma.opcao) continue
+    podem.push(id)
+  }
+  return podem
+}
+
 /** Todas as habilidades do catálogo, peça por peça (sem o "nenhuma"). */
 export function habilidadesDoCatalogo(): { peca: Peca; id: string }[] {
   return Object.entries(catalogo.habilidades as Record<string, string[]>).flatMap(([peca, opcoes]) =>

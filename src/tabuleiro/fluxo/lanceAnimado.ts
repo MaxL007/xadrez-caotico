@@ -24,7 +24,7 @@ import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, CHANCE_HONRA_SAMURAI,
 import { alcanceDaMaca, ARMAS_DA_TORRE, baterComMarreta, cairDaMaca, esmagarPeca, MACA_ERGUIDA_ATE_MS, MARRETA_PANCADA_MS, ondaDaMarretada, pancadaNoPeito, poeiraDaPancada, prenderPeloPeito, soltarDaMaca } from '../combate/marreta'
 import { lancarOndaDoRei, lancarPoderDoBispo, lancarRaioDaDama } from '../combate/poderes'
 import { CAPTURAS, type CapturaComHabilidade } from '../combate/habilidades'
-import { HABILIDADES } from '../../conta/habilidades'
+import { HABILIDADES, habilidadesQuePodem } from '../../conta/habilidades'
 import { antecipar, areaDaLuta, continuarDoGolpe, depoisDoCongelamento, pesoDoGolpe, sentirImpacto, type SensacaoDaPartida, tomDaTroca } from '../sensacao/golpeQuePesa'
 import { materiaisDaPeca, materiaisPorFaccao, materialCoroa } from '../pecas/materiais'
 import { type EspadaRPG, guardarEspadaRPG, modelosRPG, mostrarEspadaRPG, novaSequenciaRPG, sacarEspadaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez, tocarGolpeRPG } from '../pecas/modelosRPG'
@@ -51,14 +51,36 @@ export interface DependenciasDoLance {
 
 /** A habilidade especial com que a peça captura, ou null: equipada por quem joga, desta peça, e com a arma que ela pede
  * na mão (o servidor só deixa equipar quem comprou). */
-function habilidadeDaCaptura(atacante: THREE.Object3D, tipo: string, cor: 'w' | 'b', ehRPG: boolean, arma: string): string | null {
+function habilidadeDaCaptura(atacante: THREE.Object3D, tipo: string, cor: 'w' | 'b', ehRPG: boolean, arma: string, escolhida?: string): string | null {
   if (!ehRPG || cor !== vestimenta.cor) return null
-  const id = vestimenta.escolhas[tipo]?.golpe
-  const dados = id ? HABILIDADES[id] : undefined
-  if (!id || !dados || dados.peca !== tipo) return null
   const naMao = tipo === 'p' ? (armaDoPeaoNoTabuleiro(atacante) ?? 'nenhuma') : arma
-  if (dados.arma && naMao !== dados.arma.opcao) return null
-  return id
+  const podem = habilidadesQuePodem(vestimenta.escolhas[tipo] ?? {}, tipo, naMao)
+  // a escolhida na hora da captura; sem escolha (um bloco só, ou a prévia), a do primeiro bloco que pode
+  if (escolhida && podem.includes(escolhida)) return escolhida
+  return podem[0] ?? null
+}
+
+/** A katana que ficou na mão (um gesto com ela cortado no meio por um lance: quem a guardaria perdeu a vez) volta pra
+ * bainha antes de a peça seguir sem ela (as habilidades, os socos, a reverência, o passo de sempre). `depois` roda com
+ * ela guardada, ou na hora se já estava. Se a guarda não terminar (o clipe cortado), segue do mesmo jeito. */
+function embainharAntes(peca: THREE.Object3D, depois: () => void) {
+  const espada = peca.userData.espadaRPG as EspadaRPG | undefined
+  if (!espada?.fora) {
+    depois()
+    return
+  }
+  let feito = false
+  const seguir = () => {
+    if (feito) return
+    feito = true
+    depois()
+  }
+  guardarEspadaRPG(peca, novaSequenciaRPG(peca), seguir)
+  window.setTimeout(() => {
+    if (feito) return
+    mostrarEspadaRPG(peca, false)
+    seguir()
+  }, 1600)
 }
 
 export function criarLanceAnimado(dependencias: DependenciasDoLance) {
@@ -72,7 +94,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
    * anda junto com o rei. A promoção só assume a forma final ao ressincronizar no fim.
    */
   function executarLanceComAnimacao(
-    entrada: string | { from: Square; to: Square; promotion?: string },
+    entrada: string | { from: Square; to: Square; promotion?: string; habilidade?: string },
     aoTerminar: () => void,
   ) {
     const chess = chessRef.current
@@ -346,6 +368,8 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       | undefined
     const vitima = casaDaVitima ? pieceMeshBySquare.get(casaDaVitima) : undefined
     const golpeia = resultado.piece === 'p' || Boolean(meshMovendo?.userData.acoesRPG)
+    // quem vai ser capturado não segura a katana (um gesto dele cortado pela captura)
+    if (vitima) mostrarEspadaRPG(vitima, false)
 
     if (vitima && golpeia && meshMovendo && casaOrigem && casaDestino) {
       const atacante = meshMovendo
@@ -357,7 +381,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       // "o golpe que pesa": a câmera chega perto, a borda escurece e o ambiente abaixa enquanto dura a luta, mais quanto
       // mais pesa (a peça capturada e a arma); nas trocas seguidas, os golpes soam mais agudos
       const armaDoAtacante = (atacante.userData.arma as string | undefined) ?? 'nenhuma'
-      const habilidade = habilidadeDaCaptura(atacante, tipoAtacante, corAtacante, ehRPG, armaDoAtacante)
+      const habilidade = habilidadeDaCaptura(atacante, tipoAtacante, corAtacante, ehRPG, armaDoAtacante, typeof entrada === 'string' ? undefined : entrada.habilidade)
       const tipoVitima = (vitima.userData.tipo as string | undefined) ?? 'p'
       const peso = pesoDoGolpe(tipoVitima, habilidade ?? armaDoAtacante)
       // de longe: a habilidade que não sai do lugar e os poderes (rei, dama e bispo com arma); o resto vai até a vítima.
@@ -437,13 +461,9 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       // ele, ajoelha, faz uma reverência profunda e tomba pra frente, entre pétalas de cerejeira
       const acoesVitima = vitima.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
       const acoesAtacante = atacante.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
-      if (
-        tipoAtacante === 'p' &&
-        vitima.userData.tipo === 'p' &&
-        acoesVitima?.Sacrificio &&
-        acoesAtacante?.Reverencia &&
-        Math.random() < CHANCE_HONRA_SAMURAI
-      ) {
+      const derrotado = vitima
+      const honra = () => {
+        const vitima = derrotado
         novaSequenciaRPG(atacante)
         const de = { x: atacante.position.x, z: atacante.position.z }
         const distancia = Math.hypot(posVitima.x - de.x, posVitima.z - de.z)
@@ -483,6 +503,16 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             )
           }),
         )
+      }
+      if (
+        !habilidade &&
+        tipoAtacante === 'p' &&
+        vitima.userData.tipo === 'p' &&
+        acoesVitima?.Sacrificio &&
+        acoesAtacante?.Reverencia &&
+        Math.random() < CHANCE_HONRA_SAMURAI
+      ) {
+        embainharAntes(atacante, () => vigente() && honra())
         return
       }
 
@@ -556,24 +586,31 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         sentirImpacto: impacto,
         sensacao,
       })
+      // as habilidades que não usam a katana (as de longe e as de mãos livres) e os socos começam com ela na bainha
       if (habilidade && HABILIDADES[habilidade].alcance === 'aDistancia') {
         voltarAoDescanso(atacante)
-        virarRPG(atacante, rumoEntre(atacante.position, posVitima), () => {
-          if (!vigente()) return
-          pararRPG(atacante)
-          CAPTURAS[habilidade](comHabilidade())
-        })
+        embainharAntes(atacante, () =>
+          vigente() &&
+          virarRPG(atacante, rumoEntre(atacante.position, posVitima), () => {
+            if (!vigente()) return
+            pararRPG(atacante)
+            CAPTURAS[habilidade](comHabilidade())
+          }),
+        )
         return
       }
 
       // a habilidade de mãos livres (a Dempsey Roll): vai até a vítima sem sacar a arma, no alcance dos socos
       if (habilidade && HABILIDADES[habilidade].maosLivres) {
         voltarAoDescanso(atacante)
-        chegarPerto(distanciaDaLuta('socos', atacante, vitima), () => {
-          if (!vigente()) return
-          pararRPG(atacante)
-          antecipar(atacante, { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }, () => CAPTURAS[habilidade](comHabilidade()))
-        })
+        embainharAntes(atacante, () =>
+          vigente() &&
+          chegarPerto(distanciaDaLuta('socos', atacante, vitima), () => {
+            if (!vigente()) return
+            pararRPG(atacante)
+            antecipar(atacante, { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }, () => CAPTURAS[habilidade](comHabilidade()))
+          }),
+        )
         return
       }
 
@@ -581,7 +618,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         const golpe: GolpeSemArma = sortearGolpeSemArma()
         voltarAoDescanso(atacante)
         // só outro jogo entrando no meio para a luta: um gesto que cai na peça não pode deixar a captura sem fim
-        chegarPerto(distanciaDaLuta(golpe, atacante, vitima), () => {
+        embainharAntes(atacante, () => vigente() && chegarPerto(distanciaDaLuta(golpe, atacante, vitima), () => {
           if (!vigente()) return
           pararRPG(atacante)
           const direcaoGolpe = { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }
@@ -601,7 +638,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
               acertar(direcaoGolpe, golpe === 'chute' ? 1.3 : 1.05, golpe === 'chute' ? 0.42 : 0.6, false)
             },
           }))
-        })
+        }))
         return
       }
 
@@ -768,7 +805,9 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
     }
 
     if (vitima) removerSemAnimacao(vitima)
-    seguirParaDestino()
+    // o passo de sempre: a katana que ficou na mão volta pra bainha antes
+    if (meshMovendo) embainharAntes(meshMovendo, () => vigente() && seguirParaDestino())
+    else seguirParaDestino()
 
     function removerSemAnimacao(mesh: THREE.Group) {
       piecesGroup.remove(mesh)

@@ -35,7 +35,8 @@ import { COR_DESTINO, COR_SELECIONADA, squareToPos, squareToPosPeca } from './ca
 import { atualizarMarretadas } from './combate/marreta'
 import { garantirModelosRPG, modelosRPG } from './pecas/modelosRPG'
 import { buildPieceMesh } from './pecas/montarPeca'
-import { assinaturaDaVestimenta, definirVestimenta } from './pecas/vestimenta'
+import { assinaturaDaVestimenta, definirVestimenta, vestimenta } from './pecas/vestimenta'
+import { habilidadesQuePodem, textoDoNome } from '../conta/habilidades'
 import { montarExpositor, montarVitrine } from './pecas/vitrine'
 import { montarCena, QUALIDADES } from './cena/montarCena'
 import { criarVistaDaCamera } from './cena/vistaDaCamera'
@@ -51,6 +52,9 @@ import { type EstadoDoEmpate, useSalaOnline } from './fluxo/useSalaOnline'
 import { criarPartidaContraMaquina, PAUSA_MAQUINA_MS } from './fluxo/partidaContraMaquina'
 
 
+
+/** Na escolha da habilidade da captura, um sinal pra cada uma (a do catálogo sem sinal fica com o brilho). */
+const ICONE_DA_HABILIDADE: Record<string, string> = { retalhamento: '⚔️', puxao: '🌀', dempsey: '🥊' }
 
 const PECAS_PROMOCAO: { peca: PecaPromocao; nome: ChaveTexto; branca: string; preta: string }[] = [
   { peca: 'q', nome: 'promocao.rainha', branca: '♕', preta: '♛' },
@@ -203,6 +207,10 @@ export function ChessBoard3D() {
   const [promocaoPendente, setPromocaoPendente] = useState<'w' | 'b' | null>(null)
   const resolverPromocaoRef = useRef<((peca: PecaPromocao | null) => void) | null>(null)
   useFecharComEsc(() => resolverPromocaoRef.current?.(null), promocaoPendente !== null)
+  // a captura com duas ou mais habilidades equipadas: quem joga escolhe qual usar (os blocos de habilidade)
+  const [habilidadesNaEscolha, setHabilidadesNaEscolha] = useState<string[] | null>(null)
+  const resolverHabilidadeRef = useRef<((id: string | null) => void) | null>(null)
+  useFecharComEsc(() => resolverHabilidadeRef.current?.(null), habilidadesNaEscolha !== null)
   const [resultadoOverlay, setResultadoOverlay] = useState<FimDaPartida | null>(null)
   // a vitória contra a máquina paga, ou não (3 recompensas por hora): a taça só diz depois de perguntar ao servidor
   const [recompensa, setRecompensa] = useState<RecompensaDaVitoria | null>(null)
@@ -302,6 +310,7 @@ export function ChessBoard3D() {
     let escolhasDaPrevia: Record<string, Record<string, string>> | null = null
     function novoTabuleiro() {
       resolverPromocaoRef.current?.(null)
+      resolverHabilidadeRef.current?.(null)
       andamento.geracao++
       andamento.lancesEmAndamento = 0
       andamento.filaDaSala = []
@@ -845,18 +854,39 @@ export function ChessBoard3D() {
       selecionadaRef.current = null
       destinosRef.current = []
       limparDestaques()
-      const jogar = (promotion?: PecaPromocao) => {
+      const jogar = (promotion?: PecaPromocao, habilidade?: string) => {
         const conexaoDaSala = salaRef.current?.conexao
         const numeroDoLance = chess.history().length
-        executarLanceComAnimacao({ from: origem, to: destino, promotion }, () => {
+        executarLanceComAnimacao({ from: origem, to: destino, promotion, habilidade }, () => {
           atualizarStatusTexto()
           if (salaRef.current) online.processarFilaDaSala()
           else if (!chess.isGameOver()) maquina.jogarLanceDaMaquina()
         })
         conexaoDaSala?.enviarLance(numeroDoLance, origem, destino, promotion)
       }
+      // a captura de uma peça com duas ou mais habilidades: o lance só sai depois de escolher qual usar. Cancelando,
+      // a peça fica onde está e a vez continua de quem ia jogar. A escolha é só de quem joga: o adversário vê o golpe
+      // de sempre, porque as peças dele não estão vestidas com o que esta conta escolheu
+      const escolherHabilidadeEJogar = (promotion?: PecaPromocao) => {
+        const lance = chess.moves({ square: origem, verbose: true }).find((m) => m.to === destino)
+        const mesh = pieceMeshBySquare.get(origem)
+        const opcoes =
+          lance?.captured && mesh?.userData.acoesRPG && lance.color === vestimenta.cor
+            ? habilidadesQuePodem(vestimenta.escolhas[lance.piece] ?? {}, lance.piece, (mesh.userData.arma as string | undefined) ?? 'nenhuma')
+            : []
+        if (opcoes.length < 2) {
+          jogar(promotion)
+          return
+        }
+        resolverHabilidadeRef.current = (id) => {
+          resolverHabilidadeRef.current = null
+          setHabilidadesNaEscolha(null)
+          if (id) jogar(promotion, id)
+        }
+        setHabilidadesNaEscolha(opcoes)
+      }
       if (!chess.moves({ square: origem, verbose: true }).some((m) => m.to === destino && m.promotion)) {
-        jogar()
+        escolherHabilidadeEJogar()
         return
       }
       // o peão chegou ao outro lado: o lance só sai depois de escolher a peça. Cancelando, ele fica
@@ -864,7 +894,7 @@ export function ChessBoard3D() {
       resolverPromocaoRef.current = (peca) => {
         resolverPromocaoRef.current = null
         setPromocaoPendente(null)
-        if (peca) jogar(peca)
+        if (peca) escolherHabilidadeEJogar(peca)
       }
       setPromocaoPendente(chess.turn())
     }
@@ -1186,6 +1216,7 @@ export function ChessBoard3D() {
         vezDaMaquinaRef,
         salaRef,
         resolverPromocaoRef,
+        resolverHabilidadeRef,
         carregarPgn: (pgn, cor) => acoesRef.current?.carregarPgn(pgn, cor),
         sincronizarPecas: () => sincronizarPecas(),
         tentarSelecionar,
@@ -1543,6 +1574,36 @@ export function ChessBoard3D() {
                 onClick={() => resolverPromocaoRef.current?.(null)}
                 className="mt-4 text-xs text-ink-400 underline hover:text-ink-600"
               >
+                {t('promocao.voltar')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {habilidadesNaEscolha && (
+          <div role="dialog" aria-label={t('habilidade.escolher')} className="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-black/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-xl bg-[#1c120a] p-4 text-center text-[#f5e6c8] shadow-xl ring-1 ring-[#c9a24a]/60" data-escolha-de-habilidade>
+              <h3 className="mb-1 font-display text-base font-semibold">{t('habilidade.escolher')}</h3>
+              <p className="mb-4 text-xs text-[#c9b48a]">{t('habilidade.escolherTexto')}</p>
+              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${habilidadesNaEscolha.length}, minmax(0, 1fr))` }}>
+                {habilidadesNaEscolha.map((id, i) => (
+                  <button
+                    key={id}
+                    type="button"
+                    autoFocus={i === 0}
+                    onClick={() => resolverHabilidadeRef.current?.(id)}
+                    className="flex flex-col items-center gap-1.5 rounded-xl border border-[#c9a24a]/60 px-2 py-3 transition hover:bg-[#3a2614] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c675]"
+                    data-escolher-habilidade={id}
+                  >
+                    <span aria-hidden className="text-2xl leading-none">
+                      {ICONE_DA_HABILIDADE[id] ?? '✨'}
+                    </span>
+                    <span className="text-xs font-semibold">{t(textoDoNome(id))}</span>
+                    <span className="text-[0.6rem] text-[#c9b48a]">{t('habilidade.bloco', { n: i + 1 })}</span>
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={() => resolverHabilidadeRef.current?.(null)} className="mt-4 text-xs text-[#c9b48a] underline hover:text-[#f5e6c8]">
                 {t('promocao.voltar')}
               </button>
             </div>

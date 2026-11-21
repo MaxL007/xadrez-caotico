@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { ChaveTexto, Traduzir } from '../textos/idiomas'
 import { desenhoDosPaineis } from '../jogo/configXadrez'
 import { urlDoAvatar } from '../conta/aparencia'
-import { acessoDaOpcao, comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Peca } from '../conta/personalizacao'
+import { acessoDaOpcao, blocoLiberado, comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Peca } from '../conta/personalizacao'
 import { CONQUISTAS, type SituacaoDasConquistas } from '../conta/conquistas'
 import { nomeDaConquista } from './PainelConquistas'
 import { temPrevia } from '../tabuleiro/fluxo/previaDaLoja'
@@ -30,21 +30,22 @@ const ABAS: Aba[] = ['armaduras', 'armas', 'habilidades']
 const ICONE_DA_ABA: Record<Aba, string> = { armaduras: '🛡️', armas: '⚔️', habilidades: '✨' }
 const AVATAR_DA_PECA: Record<Peca, string> = { p: 'peao-brancas', r: 'torre-brancas', n: 'cavalo-brancas', b: 'bispo-brancas', q: 'dama-brancas', k: 'rei-brancas' }
 
-/** A parte de cada aba por peça: as armas e as habilidades especiais ('golpe'). */
-const PARTE_DA_ABA: Record<AbaPorPeca, string> = { armas: 'arma', habilidades: 'golpe' }
-const daAbaPorPeca = (id: string) => Object.values(PARTE_DA_ABA).includes(id.split(':')[0])
+/** As partes de cada aba por peça: as armas; as habilidades especiais ('golpe') e os blocos pra ter mais de uma. */
+const PARTES_DA_ABA: Record<AbaPorPeca, string[]> = { armas: ['arma'], habilidades: ['golpe', 'bloco'] }
+const daAbaPorPeca = (id: string) => Object.values(PARTES_DA_ABA).flat().includes(id.split(':')[0])
 
-/** Por peça, os itens daquela parte, na ordem do catálogo; só as peças que têm algum. */
-function porPeca(parte: string) {
+/** Por peça, os itens daquelas partes, na ordem do catálogo (os blocos depois das habilidades); só as peças que têm
+ * algum. */
+function porPeca(partes: string[]) {
   return PECAS.map((peca) => ({
     peca,
     itens: Object.entries(NA_LOJA[peca])
-      .filter(([id]) => id.startsWith(`${parte}:`))
+      .filter(([id]) => partes.includes(id.split(':')[0]))
       .map(([id, preco]): [string, number] => [`${peca}:${id}`, preco]),
   })).filter(({ itens }) => itens.length > 0)
 }
 
-const POR_PECA: Record<AbaPorPeca, ReturnType<typeof porPeca>> = { armas: porPeca('arma'), habilidades: porPeca('golpe') }
+const POR_PECA: Record<AbaPorPeca, ReturnType<typeof porPeca>> = { armas: porPeca(PARTES_DA_ABA.armas), habilidades: porPeca(PARTES_DA_ABA.habilidades) }
 const TODOS_POR_PECA: Record<AbaPorPeca, string[]> = {
   armas: POR_PECA.armas.flatMap(({ itens }) => itens.map(([item]) => item)),
   habilidades: POR_PECA.habilidades.flatMap(({ itens }) => itens.map(([item]) => item)),
@@ -261,7 +262,10 @@ export function PainelLoja({
   }
 
   const nomeDaPeca = (p: Peca) => t(`personalizacao.peca.${p}` as ChaveTexto)
-  const nomeDoItem = (item: string) => t(`personalizacao.opcao.${partesDoItem(item).opcao}` as ChaveTexto)
+  const nomeDoItem = (item: string) => {
+    const { parte, opcao } = partesDoItem(item)
+    return parte === 'bloco' ? t('loja.bloco', { n: opcao }) : t(`personalizacao.opcao.${opcao}` as ChaveTexto)
+  }
 
   function abrir(item: string) {
     giroManualRef.current = null
@@ -300,6 +304,7 @@ export function PainelLoja({
   /** O que o item faz, como sair e, se faltar óticoins, as conquistas mais perto: só nas armas e habilidades. */
   function comoConseguir(item: string, preco: number) {
     const { peca: p, parte, opcao } = partesDoItem(item)
+    if (parte === 'bloco') return <p className="text-xs leading-relaxed text-[#e9dcc0]" data-como-conseguir>{t('loja.blocoExplica', { n: opcao })}</p>
     if (parte !== 'arma' && parte !== 'golpe') return null
     const liberado = opcaoLiberada(personalizacao, p, parte, opcao)
     const acesso = acessoDaOpcao(p, parte, opcao)
@@ -356,6 +361,10 @@ export function PainelLoja({
   function botaoDeCompra(item: string, preco: number) {
     const { peca: p, parte, opcao } = partesDoItem(item)
     if (opcaoLiberada(personalizacao, p, parte, opcao)) return <span className="text-xs font-semibold text-[#9fe0a8]">✓ {t('loja.liberado')}</span>
+    // o 3º bloco de habilidade pede o 2º antes
+    if (parte === 'bloco' && Number(opcao) > 2 && !blocoLiberado(personalizacao, p, Number(opcao) - 1)) {
+      return <span className="text-[0.65rem] font-semibold text-[#c9b48a]">🔒 {t('loja.blocoAntes', { n: Number(opcao) - 1 })}</span>
+    }
     return (
       <button
         type="button"

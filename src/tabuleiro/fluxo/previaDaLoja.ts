@@ -41,6 +41,9 @@ export function cenaDaPrevia(item: string): CenaDaPrevia | null {
 export function vestimentaDaPrevia(item: string, escolhas: Record<string, Record<string, string>>): Record<string, Record<string, string>> {
   const [peca, parte, opcao] = item.split(':')
   const daPeca: Record<string, string> = { ...(escolhas[peca] ?? {}), [parte]: opcao }
+  // a prévia mostra só o item: as habilidades dos outros blocos saem (sem a escolha na hora da captura)
+  delete daPeca.golpe2
+  delete daPeca.golpe3
   if (parte === 'golpe') {
     const arma = HABILIDADES[opcao]?.arma
     if (arma) daPeca.arma = arma.opcao

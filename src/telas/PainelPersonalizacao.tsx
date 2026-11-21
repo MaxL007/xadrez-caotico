@@ -5,9 +5,9 @@ import type { ChaveTexto, Traduzir } from '../textos/idiomas'
 import { desenhoDosPaineis } from '../jogo/configXadrez'
 import type { VitrineDaPeca } from '../tabuleiro/pecas/equipamentos'
 import { CONQUISTAS } from '../conta/conquistas'
-import { acessoDaOpcao, escolhaDaParte, escolherOpcao, opcaoLiberada, partesDaPeca, PECAS, usePersonalizacao, type ParteDaPeca, type Peca } from '../conta/personalizacao'
+import { acessoDaOpcao, blocoLiberado, escolhaDaParte, escolherOpcao, opcaoLiberada, partesDaPeca, PECAS, usePersonalizacao, type ParteDaPeca, type Peca } from '../conta/personalizacao'
 import { nomeDaConquista } from './PainelConquistas'
-import { HABILIDADES, textoDoQueFaz } from '../conta/habilidades'
+import { BLOCOS_DE_HABILIDADE, HABILIDADES, habilidadesDaPeca, numeroDoBloco, PRECO_DO_BLOCO, textoDoQueFaz } from '../conta/habilidades'
 import { criarExpositor, desenharNoExpositor, noSuporte } from '../tabuleiro/pecas/expositor'
 
 // Personalização, como no desenho do peão: a peça no meio e, dos lados, um quadrado por parte, ligado a ela por um
@@ -315,6 +315,54 @@ export function PainelPersonalizacao({
   const habilidadeMostrada = parte.parte === 'golpe' ? (atual !== 'nenhuma' ? atual : parte.opcoes.find((opcao) => opcao !== 'nenhuma')) : undefined
   const armaDaHabilidade = habilidadeMostrada ? HABILIDADES[habilidadeMostrada]?.arma : undefined
   const faltaAArma = atual !== 'nenhuma' && !!armaDaHabilidade && (!parteDaArma || escolhaDaParte(personalizacao.escolhas, peca, parteDaArma) !== armaDaHabilidade.opcao)
+  const ehHabilidade = parte.parte === 'golpe'
+  /** Os botões das opções de uma parte (um bloco de habilidade é uma parte). */
+  const opcoesDaParte = (daParte: ParteDaPeca) => {
+    const escolhida = escolhaDaParte(personalizacao.escolhas, peca, daParte)
+    return daParte.opcoes.map((opcao) => {
+      const liberada = opcaoLiberada(personalizacao, peca, daParte.parte, opcao)
+      const acesso = acessoDaOpcao(peca, daParte.parte, opcao)
+      const conquista = acesso.tipo !== 'livre' && acesso.conquista ? CONQUISTAS.find((c) => c.id === acesso.conquista) : undefined
+      // a habilidade que já está noutro bloco: escolher aqui muda ela de bloco
+      const emOutroBloco =
+        numeroDoBloco(daParte.parte) > 0 && opcao !== 'nenhuma'
+          ? BLOCOS_DE_HABILIDADE.find((outro) => outro !== daParte.parte && personalizacao.escolhas[peca]?.[outro] === opcao)
+          : undefined
+      return (
+        <button
+          key={opcao}
+          type="button"
+          role="radio"
+          aria-checked={escolhida === opcao}
+          disabled={!liberada}
+          onClick={() => {
+            setErro(false)
+            escolherOpcao(peca, daParte, opcao).catch(() => setErro(true))
+          }}
+          className={`rounded-lg border px-2.5 py-2 text-left transition disabled:cursor-not-allowed ${
+            escolhida === opcao ? 'border-[#e6c675] bg-[#c9a24a] text-[#1c120a]' : 'border-[#c9a24a]/40 text-[#f5e6c8] enabled:hover:bg-[#3a2614]'
+          }`}
+        >
+          <span className={`block text-xs font-semibold ${liberada ? '' : 'opacity-60'}`}>
+            {liberada ? '' : '🔒 '}
+            {t(`personalizacao.opcao.${opcao}` as ChaveTexto)}
+          </span>
+          {emOutroBloco && <span className="mt-0.5 block text-[0.6rem] leading-snug opacity-80">{t('personalizacao.noBloco', { n: numeroDoBloco(emOutroBloco) })}</span>}
+          {!liberada && personalizacao.conta && acesso.tipo !== 'livre' && (
+            <span className="mt-0.5 block text-[0.6rem] leading-snug text-[#c9b48a]">
+              {acesso.tipo === 'loja'
+                ? conquista
+                  ? t('personalizacao.naLojaOuConquista', { preco: acesso.preco, conquista: nomeDaConquista(t, conquista) })
+                  : t('personalizacao.naLoja', { preco: acesso.preco })
+                : conquista && t('personalizacao.pelaConquista', { conquista: nomeDaConquista(t, conquista) })}
+            </span>
+          )}
+        </button>
+      )
+    })
+  }
+  // quantas habilidades a peça leva pra captura: com duas ou mais, quem joga escolhe na hora
+  const equipadas = new Set(BLOCOS_DE_HABILIDADE.map((bloco) => personalizacao.escolhas[peca]?.[bloco]).filter((id) => id && id !== 'nenhuma')).size
 
   return (
     <div className="space-y-3">
@@ -350,46 +398,50 @@ export function PainelPersonalizacao({
         </p>
       )}
 
-      <div className="space-y-2" data-opcoes={parte.parte}>
-        <p className="text-sm font-medium">{rotuloDaParte(t, peca, parte.parte)}</p>
-        <div role="radiogroup" aria-label={rotuloDaParte(t, peca, parte.parte)} className="grid grid-cols-2 gap-2">
-          {parte.opcoes.map((opcao) => {
-            const liberada = opcaoLiberada(personalizacao, peca, parte.parte, opcao)
-            const acesso = acessoDaOpcao(peca, parte.parte, opcao)
-            const conquista = acesso.tipo !== 'livre' && acesso.conquista ? CONQUISTAS.find((c) => c.id === acesso.conquista) : undefined
+      {!ehHabilidade && (
+        <div className="space-y-2" data-opcoes={parte.parte}>
+          <p className="text-sm font-medium">{rotuloDaParte(t, peca, parte.parte)}</p>
+          <div role="radiogroup" aria-label={rotuloDaParte(t, peca, parte.parte)} className="grid grid-cols-2 gap-2">
+            {opcoesDaParte(parte)}
+          </div>
+        </div>
+      )}
+      {ehHabilidade && (
+        // os três blocos de habilidade: o 1º grátis, o 2º e o 3º liberados na Loja (só existem se a peça tiver
+        // habilidades pra eles). Com duas ou mais equipadas, quem joga escolhe qual usar na hora da captura
+        <div className="space-y-2" data-blocos-de-habilidade>
+          <p className="text-sm font-medium">{rotuloDaParte(t, peca, parte.parte)}</p>
+          {BLOCOS_DE_HABILIDADE.map((bloco, i) => {
+            const numero = i + 1
+            const daParte: ParteDaPeca = { parte: bloco, opcoes: parte.opcoes }
+            const existe = numero <= Math.max(1, habilidadesDaPeca(peca).length)
+            const aberto = existe && blocoLiberado(personalizacao, peca, numero)
             return (
-              <button
-                key={opcao}
-                type="button"
-                role="radio"
-                aria-checked={atual === opcao}
-                disabled={!liberada}
-                onClick={() => {
-                  setErro(false)
-                  escolherOpcao(peca, parte, opcao).catch(() => setErro(true))
-                }}
-                className={`rounded-lg border px-2.5 py-2 text-left transition disabled:cursor-not-allowed ${
-                  atual === opcao ? 'border-[#e6c675] bg-[#c9a24a] text-[#1c120a]' : 'border-[#c9a24a]/40 text-[#f5e6c8] enabled:hover:bg-[#3a2614]'
-                }`}
-              >
-                <span className={`block text-xs font-semibold ${liberada ? '' : 'opacity-60'}`}>
-                  {liberada ? '' : '🔒 '}
-                  {t(`personalizacao.opcao.${opcao}` as ChaveTexto)}
-                </span>
-                {!liberada && personalizacao.conta && acesso.tipo !== 'livre' && (
-                  <span className="mt-0.5 block text-[0.6rem] leading-snug text-[#c9b48a]">
-                    {acesso.tipo === 'loja'
-                      ? conquista
-                        ? t('personalizacao.naLojaOuConquista', { preco: acesso.preco, conquista: nomeDaConquista(t, conquista) })
-                        : t('personalizacao.naLoja', { preco: acesso.preco })
-                      : conquista && t('personalizacao.pelaConquista', { conquista: nomeDaConquista(t, conquista) })}
+              <div key={bloco} className="space-y-1.5 rounded-lg border border-[#c9a24a]/30 bg-[#2a1c10]/60 p-2" data-bloco={numero} data-opcoes={bloco}>
+                <p className="flex items-center justify-between gap-2 text-xs font-semibold">
+                  <span>
+                    {aberto ? '' : '🔒 '}
+                    {t('personalizacao.bloco', { n: numero })}
                   </span>
+                  {numero === 1 && <span className="text-[0.65rem] font-normal text-[#9fe0a8]">{t('personalizacao.blocoGratis')}</span>}
+                </p>
+                {aberto ? (
+                  <div role="radiogroup" aria-label={t('personalizacao.bloco', { n: numero })} className="grid grid-cols-2 gap-2">
+                    {opcoesDaParte(daParte)}
+                  </div>
+                ) : (
+                  <p className="text-[0.65rem] leading-snug text-[#c9b48a]" data-bloco-trancado>
+                    {existe ? t('personalizacao.blocoNaLoja', { preco: PRECO_DO_BLOCO[numero] }) : t('personalizacao.blocoEmBreve', { n: numero })}
+                  </p>
                 )}
-              </button>
+              </div>
             )
           })}
+          {equipadas > 1 && <p className="text-[0.65rem] leading-snug text-[#9fe0a8]">{t('personalizacao.escolheNaCaptura')}</p>}
         </div>
-        {parte.parte === 'golpe' && (
+      )}
+      <div className="space-y-2">
+        {ehHabilidade && (
           // o que a habilidade da peça faz. O retalhamento é da katana: sem ela na mão, a habilidade fica guardada
           <p className="text-[0.65rem] leading-snug text-[#c9b48a]" data-dica-habilidade>
             {habilidadeMostrada && t(textoDoQueFaz(habilidadeMostrada))}

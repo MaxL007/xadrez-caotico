@@ -109,6 +109,42 @@ try {
   const retalhoDeEspada = await capturar('retalhamento com espada', { ...COM_PEAO, vestir: { p: { arma: 'espada', golpe: 'retalhamento' } } })
   conferir('equipado, mas com a espada na mão, não retalha', !retalhoDeEspada.tocados.includes('retalho:corte') && retalhoDeEspada.tocados.includes('espada:saca'), retalhoDeEspada.tocados.join(' '))
 
+  // =================== os blocos de habilidade e a katana ===================
+  // duas habilidades equipadas: a captura pergunta qual usar; escolhida a Dempsey Roll, a katana fica na bainha
+  await h('vestirParaTeste', { p: { arma: 'katana', golpe: 'retalhamento', golpe2: 'dempsey' } })
+  await h('carregarTeste', COM_PEAO.pgn, 'w')
+  await esperarParar()
+  await limparSons()
+  await h('jogar', COM_PEAO.de, COM_PEAO.para)
+  await page.locator('[data-escolha-de-habilidade]').waitFor({ timeout: 10000 })
+  const opcoesDaEscolha = await page.locator('[data-escolher-habilidade]').evaluateAll((botoes) => botoes.map((b) => b.dataset.escolherHabilidade))
+  conferir('com duas habilidades equipadas, a captura pergunta qual usar', opcoesDaEscolha.join(',') === 'retalhamento,dempsey', opcoesDaEscolha.join(','))
+  await h('escolherHabilidade', 'dempsey')
+  await esperarParar()
+  const escolhida = await sons()
+  conferir('escolhida a Dempsey Roll, ela sai (e não o retalhamento)', escolhida.includes('dempsey:final') && !escolhida.includes('retalho:corte') && !escolhida.includes('katana:saca'), escolhida.join(' '))
+  // a katana que ficou fora da bainha (um gesto com ela cortado pela captura) volta pra ela antes dos ganchos
+  await h('vestirParaTeste', { p: { arma: 'katana', golpe: 'dempsey' } })
+  await h('carregarTeste', COM_PEAO.pgn, 'w')
+  await esperarParar()
+  await h('sacarKatanaParaTeste', COM_PEAO.de)
+  const antesDaCaptura = await h('katanasNaMao')
+  await limparSons()
+  await h('jogar', COM_PEAO.de, COM_PEAO.para)
+  conferir('com uma habilidade só, a captura não pergunta', (await page.locator('[data-escolha-de-habilidade]').count()) === 0)
+  await page.waitForFunction(() => window.__sonsTocados.includes('dempsey:gancho'), null, { timeout: 30000, polling: 50 })
+  const naHoraDosGanchos = await h('katanasNaMao')
+  await esperarParar()
+  conferir('a katana que estava na mão volta pra bainha antes da Dempsey Roll', antesDaCaptura === 1 && naHoraDosGanchos === 0, `${antesDaCaptura} → ${naHoraDosGanchos}`)
+  // e no passo de sempre
+  await h('vestirParaTeste', { p: { arma: 'katana' } })
+  await h('carregarTeste', '1. e4 a6', 'w')
+  await esperarParar()
+  await h('sacarKatanaParaTeste', 'e4')
+  await h('jogar', 'e4', 'e5')
+  await esperarParar()
+  conferir('andando, a katana que estava na mão também volta pra bainha', (await h('katanasNaMao')) === 0)
+
   // =================== bispo, rainha e rei ===================
   const COM_BISPO = { pgn: '1. e4 e5 2. Bc4 d6', de: 'c4', para: 'f7' }
   const cristal = await capturar('cristal', { ...COM_BISPO, vestir: { b: { arma: 'cristal' } } })

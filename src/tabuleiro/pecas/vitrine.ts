@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { type OssoSalvo, restaurarOssos } from './ossos'
-import { emblemaDaHabilidade } from './emblemas'
+import { emblemaDaHabilidade, emblemaDoBloco } from './emblemas'
 import { cajadoDoModelo, equipamentoSozinho, katanaDoModelo, vestirPeca, type VitrineDaPeca } from './equipamentos'
 import { ARMAS_DA_TORRE, criarMarreta, posarComMarreta, POSE_MARRETA_GUARDA, salvarOssosDoGolpe } from '../combate/marreta'
 import { materiaisDaPeca } from './materiais'
@@ -41,6 +41,7 @@ export function montarExpositor(tipo: string, parte: string, opcao: string): THR
   if (parte === 'arma' && tipo === 'r') return ARMAS_DA_TORRE.includes(opcao) ? criarMarreta('w', opcao) : null
   // a habilidade especial aparece como o símbolo dela
   if (parte === 'golpe') return emblemaDaHabilidade(opcao)
+  if (parte === 'bloco') return emblemaDoBloco(Number(opcao))
   const modelo = modelosRPG[tipo]
   if (parte === 'arma' && modelo && (opcao === 'katana' || opcao === 'cajado')) {
     const peca = buildPecaRPG(modelo, 'w')

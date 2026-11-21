@@ -83,16 +83,18 @@ function retalhamento(): THREE.Group {
   return emblema
 }
 
-// --- o Puxão Universal, do desenho do usuário: dois traços curvos que se cruzam em X no meio (grossos no centro,
-// finos nas pontas) e, em volta, quatro pares de arcos (em cima, embaixo, à esquerda e à direita), como ondas sendo
-// puxadas pro centro. Os pontos são do desenho (1920 px de lado), cada traço de pincel com as pontas redondas.
+// --- o Puxão Universal, do desenho do usuário (a segunda versão, de 21/11): dois traços curvos que se cruzam em X no
+// meio (o de cima à esquerda desce até o gancho embaixo à direita; o de cima à direita desce até a ponta embaixo à
+// esquerda) e, em volta, quatro pares de arcos (em cima, embaixo, à esquerda e à direita), como ondas sendo puxadas
+// pro centro. Os pontos são do desenho (1254 px de lado), tirados dos traços pretos dele, cada traço de pincel com as
+// pontas redondas.
 
 /** Onde fica o meio de cada desenho (em px) e quanto um px vale no símbolo. */
 interface Quadro {
   centro: THREE.Vector2
   escala: number
 }
-const QUADRO_DO_PUXAO: Quadro = { centro: new THREE.Vector2(822, 857), escala: 1 / 1060 }
+const QUADRO_DO_PUXAO: Quadro = { centro: new THREE.Vector2(627, 587), escala: 1 / 900 }
 const doDesenho = (quadro: Quadro) => ([x, y]: [number, number]) => new THREE.Vector2((x - quadro.centro.x) * quadro.escala, -(y - quadro.centro.y) * quadro.escala)
 
 /** Um traço de pincel: a linha suave pelos pontos do desenho, com a grossura (em px do desenho, uma só ou uma por
@@ -133,11 +135,6 @@ function traco(pontos: [number, number][], grossura: number | number[], quadro: 
   return forma
 }
 
-/** A grossura dos arcos de fora, em px do desenho. */
-const GROSSURA_DOS_ARCOS = 72
-/** O X do meio é o traço mais pesado do desenho. */
-const GROSSURA_DO_X = 1.25
-
 function puxao(): THREE.Group {
   const emblema = new THREE.Group()
   const malha = (forma: THREE.Shape, z = 0) => {
@@ -145,35 +142,22 @@ function puxao(): THREE.Group {
     parte.castShadow = true
     parte.position.z = z
     emblema.add(parte)
-    return parte
   }
-  // o X do meio: do braço de cima à esquerda até o gancho embaixo à direita, e do braço de cima à direita até a ponta
-  // embaixo à esquerda. O segundo fica um fio à frente, pros dois não brigarem onde se cruzam
-  malha(
-    traco(
-      [[497, 625], [560, 605], [650, 598], [730, 620], [800, 680], [845, 760], [860, 830], [880, 900], [930, 975], [1000, 1030], [1080, 1045], [1150, 1025], [1210, 990]],
-      [70, 85, 110, 115, 110, 100, 95, 90, 85, 80, 75, 72, 70].map((g) => g * GROSSURA_DO_X),
-    ),
-  )
-  malha(
-    traco(
-      [[1148, 585], [1090, 600], [1000, 640], [930, 700], [870, 780], [840, 860], [825, 940], [790, 1010], [730, 1070], [650, 1115], [575, 1150]],
-      [68, 80, 95, 105, 100, 95, 100, 105, 100, 85, 70].map((g) => g * GROSSURA_DO_X),
-    ),
-    0.004,
-  )
+  // o X: o segundo traço fica um fio à frente, pros dois não brigarem onde se cruzam
+  malha(traco([[350, 392], [400, 383], [450, 382], [500, 394], [540, 416], [575, 452], [605, 500], [632, 548], [662, 600], [698, 655], [745, 704], [800, 730], [850, 727], [893, 712]], [64,74,80,86,92,98,102,104,102,98,92,86,80,70]))
+  malha(traco([[902, 362], [850, 370], [800, 388], [750, 411], [705, 445], [668, 495], [632, 555], [596, 620], [558, 688], [510, 742], [455, 778], [400, 802], [355, 814]], [40,62,76,86,94,100,104,104,100,94,86,78,68]), 0.004)
   // os pares de arcos em volta: o de fora mais comprido, o de dentro mais curto
-  const arcos: [number, number][][] = [
-    [[535, 335], [700, 295], [900, 265], [1085, 258]],
-    [[697, 415], [800, 415], [895, 408]],
-    [[778, 1283], [900, 1290], [1040, 1260]],
-    [[652, 1455], [850, 1468], [1100, 1440], [1305, 1387]],
-    [[147, 487], [130, 650], [128, 800], [145, 1000], [200, 1210]],
-    [[270, 695], [252, 820], [257, 940]],
-    [[1262, 640], [1320, 720], [1343, 800], [1343, 895]],
-    [[1362, 540], [1450, 640], [1505, 760], [1512, 900], [1490, 1065]],
+  const arcos: [[number, number][], number][] = [
+    [[[350, 170], [420, 142], [500, 122], [580, 109], [660, 101], [740, 96], [792, 92]], 78],
+    [[[470, 245], [530, 233], [590, 227], [650, 223], [692, 224]], 70],
+    [[[773, 897], [724, 910], [664, 920], [604, 924], [544, 923], [505, 919]], 70],
+    [[[925, 996], [860, 1024], [790, 1044], [710, 1058], [630, 1066], [550, 1067], [470, 1060], [405, 1048]], 84],
+    [[[160, 312], [123, 375], [95, 450], [83, 530], [85, 610], [103, 695], [136, 778], [175, 848]], 84],
+    [[[240, 425], [220, 470], [207, 520], [201, 570], [204, 620], [214, 670]], 80],
+    [[[1085, 312], [1125, 385], [1155, 465], [1170, 548], [1166, 630], [1145, 713], [1110, 790], [1078, 846]], 84],
+    [[[996, 422], [1018, 464], [1033, 510], [1041, 560], [1039, 610], [1030, 655], [1022, 680]], 80],
   ]
-  for (const arco of arcos) malha(traco(arco, GROSSURA_DOS_ARCOS))
+  for (const [arco, grossura] of arcos) malha(traco(arco, grossura))
   return emblema
 }
 
@@ -210,6 +194,33 @@ function dempsey(): THREE.Group {
 }
 
 const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao, dempsey }
+
+/** O bloco de habilidade na Loja: `numero` placas lado a lado, a última dourada (a que o bloco libera). */
+export function emblemaDoBloco(numero: number): THREE.Group {
+  const emblema = new THREE.Group()
+  const ouro = new THREE.MeshStandardMaterial({ color: 0xd9ae4a, metalness: 0.9, roughness: 0.3 })
+  const largura = 0.26
+  const vao = 0.06
+  for (let i = 0; i < numero; i++) {
+    const forma = new THREE.Shape()
+    const r = 0.04
+    const [l, a] = [largura / 2, 0.36]
+    forma.moveTo(-l + r, -a)
+    forma.lineTo(l - r, -a)
+    forma.quadraticCurveTo(l, -a, l, -a + r)
+    forma.lineTo(l, a - r)
+    forma.quadraticCurveTo(l, a, l - r, a)
+    forma.lineTo(-l + r, a)
+    forma.quadraticCurveTo(-l, a, -l, a - r)
+    forma.lineTo(-l, -a + r)
+    forma.quadraticCurveTo(-l, -a, -l + r, -a)
+    const placa = new THREE.Mesh(extrudar(forma, 12), i === numero - 1 ? ouro : acoEscuro)
+    placa.castShadow = true
+    placa.position.x = (i - (numero - 1) / 2) * (largura + vao)
+    emblema.add(placa)
+  }
+  return emblema
+}
 
 /** O símbolo da habilidade, ou null pra opção sem símbolo. */
 export function emblemaDaHabilidade(opcao: string): THREE.Group | null {

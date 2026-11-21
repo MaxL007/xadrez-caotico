@@ -13,6 +13,7 @@ import { type EstadoDaSala } from '../dados/salaAoVivo'
 import { diferencaAngular, rumoDeDescanso } from './animacoes/movimento'
 import { squareToPos, squareToPosPeca } from './casas'
 import { marretadas } from './combate/marreta'
+import { mostrarEspadaRPG } from './pecas/modelosRPG'
 import type { Andamento, PecaPromocao } from './fluxo/andamento'
 import type { CenaDoTabuleiro } from './cena/montarCena'
 import type { VistaDaCamera } from './cena/vistaDaCamera'
@@ -38,6 +39,7 @@ export interface DependenciasDosTestes {
   vezDaMaquinaRef: Ref<boolean>
   salaRef: Ref<{ estado: EstadoDaSala | null } | null>
   resolverPromocaoRef: Ref<((peca: PecaPromocao | null) => void) | null>
+  resolverHabilidadeRef: Ref<((id: string | null) => void) | null>
   carregarPgn: (pgn: string, cor: 'w' | 'b') => void
   sincronizarPecas: () => void
   tentarSelecionar: (casa: Square) => void
@@ -45,7 +47,7 @@ export interface DependenciasDosTestes {
 }
 
 export function instalarGanchosDeTeste(dependencias: DependenciasDosTestes) {
-  const { vista, pieceMeshBySquare, andamento, chessRef, livroRef, partidaAtualRef, corHumanoRef, relogioRef, vezDaMaquinaRef, salaRef, resolverPromocaoRef, carregarPgn, sincronizarPecas, tentarSelecionar, tentarMover } = dependencias
+  const { vista, pieceMeshBySquare, andamento, chessRef, livroRef, partidaAtualRef, corHumanoRef, relogioRef, vezDaMaquinaRef, salaRef, resolverPromocaoRef, resolverHabilidadeRef, carregarPgn, sincronizarPecas, tentarSelecionar, tentarMover } = dependencias
   const { camera, controls, renderer, piecesGroup, xequeMesh, labelsGroup, dirLight } = dependencias.cena
   ;(window as unknown as { __xadrez?: object }).__xadrez = {
     casaEmXeque: () => (xequeMesh.visible ? (xequeMesh.userData.casa as string) : null),
@@ -142,6 +144,15 @@ export function instalarGanchosDeTeste(dependencias: DependenciasDosTestes) {
     },
     /** Responde a pergunta da promoção, como quem toca na peça. */
     escolherPromocao: (peca: PecaPromocao) => resolverPromocaoRef.current?.(peca),
+    /** Escolhe a habilidade da captura, como quem toca no botão dela. */
+    escolherHabilidade: (id: string) => resolverHabilidadeRef.current?.(id),
+    /** A katana está na mão de alguma peça? (a que ficou fora, de um gesto cortado pelo lance) */
+    katanasNaMao: () => piecesGroup.children.filter((peca) => (peca.userData.espadaRPG as { fora?: boolean } | undefined)?.fora).length,
+    /** Tira a katana da bainha do peão da casa, como um gesto com ela que o lance cortou no meio. */
+    sacarKatanaParaTeste: (casa: string) => {
+      const peca = pieceMeshBySquare.get(casa)
+      if (peca) mostrarEspadaRPG(peca, true)
+    },
     /** As partes da personalização à vista na peça da casa (a da promoção, vestida parte por parte). */
     partesVisiveis: (casa: string) => {
       const partes = new Set<string>()

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { comprarNaLoja, lerMeuPerfil, ouvirSessao, salvarEscolhaDaPeca, sessaoAtual, type EscolhasDasPecas } from '../dados/servidor'
 import catalogo from '../catalogos/personalizacao.json'
+import { BLOCOS_DE_HABILIDADE, habilidadesDaPeca, numeroDoBloco, PRECO_DO_BLOCO } from './habilidades'
 
 // O que cada peça de quem joga veste e o que a conta pode usar. O catálogo é o mesmo JSON que o servidor confere:
 // o básico é livre, o resto libera com uma conquista ou com a compra na Loja. As escolhas ficam guardadas também no
@@ -29,13 +30,22 @@ export function partesDaPeca(peca: Peca): ParteDaPeca[] {
 
 /** Equipamentos que saem por conquista: valem pra toda peça que usa aquela parte. */
 const POR_CONQUISTA = catalogo.itens as Record<string, { conquista: string }>
-/** O que cada peça compra na Loja e o preço em óticoins: a compra vale só pra aquela peça. */
-export const NA_LOJA = catalogo.loja as Record<Peca, Record<string, number>>
+/** O que cada peça compra na Loja e o preço em óticoins: a compra vale só pra aquela peça. Os blocos de habilidade
+ * (`bloco:2`, `bloco:3`) entram nas peças que têm habilidades pra eles, como o servidor confere. */
+export const NA_LOJA = Object.fromEntries(
+  PECAS.map((peca) => {
+    const daPeca: Record<string, number> = { ...((catalogo.loja as Record<string, Record<string, number>>)[peca] ?? {}) }
+    for (const [numero, preco] of Object.entries(PRECO_DO_BLOCO)) if (Number(numero) <= habilidadesDaPeca(peca).length) daPeca[`bloco:${numero}`] = preco
+    return [peca, daPeca]
+  }),
+) as Record<Peca, Record<string, number>>
 
 /** Como a opção se libera: é livre, sai por conquista ou se compra na Loja (o item é 'peça:parte:opção'). */
 export type Acesso = { tipo: 'livre' } | { tipo: 'conquista'; conquista: string } | { tipo: 'loja'; preco: number; item: string; conquista?: string }
 
-export function acessoDaOpcao(peca: Peca, parte: string, opcao: string): Acesso {
+export function acessoDaOpcao(peca: Peca, parteDaPeca: string, opcao: string): Acesso {
+  // a habilidade é a mesma em qualquer bloco
+  const parte = numeroDoBloco(parteDaPeca) > 1 ? 'golpe' : parteDaPeca
   const preco = NA_LOJA[peca]?.[`${parte}:${opcao}`]
   const porConquista = POR_CONQUISTA[`${parte}:${opcao}`]
   // a arma vendida na Loja também sai pela conquista dela
@@ -119,6 +129,12 @@ export function opcaoLiberada(atual: Estado, peca: Peca, parte: string, opcao: s
   return true
 }
 
+/** O bloco de habilidade `numero` da peça está aberto: o 1º sempre, o 2º e o 3º depois de comprados. */
+export function blocoLiberado(atual: Estado, peca: Peca, numero: number): boolean {
+  if (numero <= 1) return true
+  return atual.tudoLiberado || atual.itens.includes(`${peca}:bloco:${numero}`)
+}
+
 /** Traz da conta o que cada peça veste e o que ela pode usar. */
 export async function carregarPersonalizacao() {
   if (!sessaoAtual()) return
@@ -137,6 +153,10 @@ export function escolherOpcao(peca: Peca, parte: ParteDaPeca, opcao: string): Pr
   const daPeca = { ...estado.escolhas[peca] }
   if (opcao === parte.opcoes[0]) delete daPeca[parte.parte]
   else daPeca[parte.parte] = opcao
+  // a habilidade escolhida num bloco sai do outro em que estava (o servidor faz o mesmo)
+  if (numeroDoBloco(parte.parte) > 0 && opcao !== parte.opcoes[0]) {
+    for (const outro of BLOCOS_DE_HABILIDADE) if (outro !== parte.parte && daPeca[outro] === opcao) delete daPeca[outro]
+  }
   const escolhas = { ...estado.escolhas }
   if (Object.keys(daPeca).length > 0) escolhas[peca] = daPeca
   else delete escolhas[peca]

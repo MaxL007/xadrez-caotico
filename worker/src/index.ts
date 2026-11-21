@@ -512,7 +512,8 @@ function opcoesDaParte(peca: string, parte: string): string[] | undefined {
   if (!personalizacao.pecas.includes(peca)) return undefined
   if (Object.hasOwn(personalizacao.corpo, parte)) return personalizacao.corpo[parte as keyof typeof personalizacao.corpo]
   if (parte === 'arma' && Object.hasOwn(personalizacao.armas, peca)) return personalizacao.armas[peca as keyof typeof personalizacao.armas]
-  if (parte === 'golpe' && Object.hasOwn(personalizacao.habilidades, peca)) return personalizacao.habilidades[peca as keyof typeof personalizacao.habilidades]
+  // os três blocos de habilidade têm as mesmas opções
+  if (/^golpe[23]?$/.test(parte) && Object.hasOwn(personalizacao.habilidades, peca)) return personalizacao.habilidades[peca as keyof typeof personalizacao.habilidades]
   if (peca === 'n' && Object.hasOwn(personalizacao.montaria, parte)) return personalizacao.montaria[parte as keyof typeof personalizacao.montaria]
   return undefined
 }
@@ -523,7 +524,16 @@ const POR_CONQUISTA = personalizacao.itens as Record<string, { conquista: string
  * nem em POR_CONQUISTA é livre. */
 const NA_LOJA = personalizacao.loja as Record<string, Record<string, number>>
 
+/** Os blocos de habilidade (o 1º é grátis): o 2º e o 3º se compram uma vez por peça, e só quando a peça tem habilidades
+ * pra eles. */
+const PRECO_DO_BLOCO = personalizacao.blocosDeHabilidade as Record<string, number>
+
 function precoNaLoja(peca: string, parte: string, opcao: string): number | undefined {
+  if (parte === 'bloco') {
+    const habilidades = Object.hasOwn(personalizacao.habilidades, peca) ? personalizacao.habilidades[peca as keyof typeof personalizacao.habilidades] : []
+    const quantas = habilidades.filter((id) => id !== 'nenhuma').length
+    return Object.hasOwn(PRECO_DO_BLOCO, opcao) && Number(opcao) <= quantas ? PRECO_DO_BLOCO[opcao] : undefined
+  }
   const daPeca = Object.hasOwn(NA_LOJA, peca) ? NA_LOJA[peca] : undefined
   return daPeca && Object.hasOwn(daPeca, `${parte}:${opcao}`) ? daPeca[`${parte}:${opcao}`] : undefined
 }
@@ -538,8 +548,14 @@ async function mudarPersonalizacao(pedido: Request, env: Ambiente) {
     .bind(usuario.id)
     .first<{ tudo_liberado: number; personalizacao: string | null }>()
   if (!conta) throw new Falha(401, 'sessao')
+  // os blocos de habilidade: a habilidade é a mesma em qualquer bloco, e o 2º e o 3º só pra quem comprou o bloco
+  const bloco = /^golpe([23])$/.exec(parte as string)?.[1]
+  if (conta.tudo_liberado !== 1 && bloco && opcao !== opcoes[0]) {
+    const temOBloco = await env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${peca}:bloco:${bloco}`).first()
+    if (!temOBloco) throw new Falha(403, 'bloco-bloqueado')
+  }
   if (conta.tudo_liberado !== 1) {
-    const doCatalogo = `${parte}:${opcao}`
+    const doCatalogo = `${bloco ? 'golpe' : parte}:${opcao}`
     const vendida = precoNaLoja(peca as string, parte as string, opcao) !== undefined
     const conquista = Object.hasOwn(POR_CONQUISTA, doCatalogo) ? POR_CONQUISTA[doCatalogo].conquista : null
     // a arma vendida na Loja também sai pela conquista dela: vale qualquer um dos dois
@@ -556,6 +572,10 @@ async function mudarPersonalizacao(pedido: Request, env: Ambiente) {
   const daPeca = { ...atual[peca as string] }
   if (opcao === opcoes[0]) delete daPeca[parte as string]
   else daPeca[parte as string] = opcao
+  // a habilidade escolhida num bloco sai do outro em que estava: a mesma não fica em dois
+  if (/^golpe[23]?$/.test(parte as string) && opcao !== opcoes[0]) {
+    for (const outro of ['golpe', 'golpe2', 'golpe3']) if (outro !== parte && daPeca[outro] === opcao) delete daPeca[outro]
+  }
   if (Object.keys(daPeca).length > 0) atual[peca as string] = daPeca
   else delete atual[peca as string]
   await env.DB.prepare('UPDATE usuarios SET personalizacao = ?1 WHERE id = ?2').bind(JSON.stringify(atual), usuario.id).run()
@@ -619,6 +639,10 @@ async function comprarItem(pedido: Request, env: Ambiente) {
   if (preco === undefined) throw new Falha(422, 'item-invalido')
   const jaTem = async () => Boolean(await env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, item).first())
   if (await jaTem()) throw new Falha(409, 'ja-tem')
+  // o 3º bloco de habilidade pede o 2º antes
+  if (parte === 'bloco' && Number(opcao) > 2 && !(await env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${peca}:bloco:${Number(opcao) - 1}`).first())) {
+    throw new Falha(409, 'falta-o-bloco-anterior')
+  }
   // a arma que já saiu pela conquista não precisa ser comprada
   const conquista = Object.hasOwn(POR_CONQUISTA, `${parte}:${opcao}`) ? POR_CONQUISTA[`${parte}:${opcao}`].conquista : null
   if (conquista && (await env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, conquista).first())) {
