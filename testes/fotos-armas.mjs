@@ -63,7 +63,8 @@ async function fotografar(nome, { pgn, vestir, golpe = null, de, para, promocao 
   await h('carregarTeste', pgn, 'w', 'facil')
   await livre()
   await page.clock.runFor(2500)
-  await h('aproximarDaCasa', alvo ?? para, ...camera)
+  // sem `camera`, fica a vista de jogo de sempre: é o enquadramento automático da luta que se vê
+  if (camera) await h('aproximarDaCasa', alvo ?? para, ...camera)
   await page.evaluate(() => (window.__sonsTocados.length = 0))
   await h('jogar', de, para)
   if (promocao) {
@@ -140,22 +141,31 @@ try {
     momentos: [['equipamento:surge', 350, 'promocao-rainha-surgem.png'], ['encaixe', 0, 'promocao-rainha-encaixe.png'], ['encaixe', 900, 'promocao-rainha-vestida.png']],
   })
   // a Dempsey Roll (peão com os punhos): a guarda com o brilho, os ganchos, o oito, a parada, a carga e o golpe final
+  // a Dempsey Roll com o enquadramento automático: a guarda, o aquecimento no ∞ (a vítima com medo), o começo dos
+  // ganchos, a vítima tonta, o golpe final e ela voando
+  const DEMPSEY = ['anime:brilho', 30, 'dempsey-guarda.png']
   await fotografar('dempsey', {
     ...PEAO,
-    camera: [3.6, -35, 70],
+    camera: null,
     vestir: { p: { golpe: 'dempsey' } },
     momentos: [
-      ['anime:brilho', 30, 'dempsey-guarda.png'],
+      DEMPSEY,
+      ['dempsey:balanco', 350, 'dempsey-aquecimento.png'],
+      ['dempsey:balanco', 1100, 'dempsey-aquecimento-2.png'],
       ['dempsey:gancho', 0, 'dempsey-gancho-1.png'],
-      ['dempsey:gancho', 330, 'dempsey-oito.png'],
-      ['anime:estala', 60, 'dempsey-parada.png'],
-      ['anime:estala', 560, 'dempsey-carga.png'],
+      ['dempsey:gancho', 900, 'dempsey-tonta.png'],
       ['dempsey:final', 0, 'dempsey-final.png'],
-      ['dempsey:final', 260, 'dempsey-voando.png'],
-      ['dempsey:final', 760, 'dempsey-no-chao.png'],
+      ['dempsey:final', 300, 'dempsey-voando.png'],
+      ['dempsey:final', 800, 'dempsey-no-chao.png'],
     ],
   })
-  await fotografar('dempsey-de-lado', { ...PEAO, camera: [3, 50, 78], vestir: { p: { golpe: 'dempsey' } }, momentos: [['dempsey:gancho', 120, 'dempsey-de-lado-gancho.png'], ['dempsey:gancho', 520, 'dempsey-de-lado-oito.png']] })
+  await fotografar('dempsey-de-lado', { ...PEAO, camera: [3, 50, 78], vestir: { p: { golpe: 'dempsey' } }, momentos: [['dempsey:balanco', 600, 'dempsey-de-lado-aquecimento.png'], ['dempsey:gancho', 120, 'dempsey-de-lado-gancho.png'], ['dempsey:gancho', 700, 'dempsey-de-lado-oito.png']] })
+  // o enquadramento automático da luta, da vista de jogo de sempre (sem câmera posta à mão): o golpe inteiro tem de
+  // aparecer, mesmo do outro lado do tabuleiro e no meio das outras peças
+  await fotografar('enquadra-puxao', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', camera: null, vestir: { q: { golpe: 'puxao' } }, momentos: [['puxao:arrasta', 120, 'enquadra-puxao-resiste.png'], ['puxao:gira', 200, 'enquadra-puxao-helice.png'], ['marreta:impacto', 300, 'enquadra-puxao-cratera.png']] })
+  await fotografar('enquadra-retalho', { ...PEAO, camera: null, vestir: { p: { arma: 'katana', golpe: 'retalhamento' } }, momentos: [['retalho:corte', 60, 'enquadra-retalho-corte.png'], ['retalho:pedacos', 200, 'enquadra-retalho-pedacos.png']] })
+  await fotografar('enquadra-torre', { ...TORRE, camera: null, golpe: 'socos', vestir: {}, momentos: [['soco', 0, 'enquadra-torre-soco.png'], ['soco', 300, 'enquadra-torre-voando.png']] })
+  await fotografar('enquadra-bispo', { ...BISPO, camera: null, vestir: { b: { arma: 'cajado' } }, momentos: [['raio:q', 250, 'enquadra-bispo-raio.png']] })
   // a ascensão com o foco: começa de longe (como na partida) e a câmera fecha na peça, que vira de frente pra ela
   await fotografar('ascensao', {
     ...PROMOCAO,

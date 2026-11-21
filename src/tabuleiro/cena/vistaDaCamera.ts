@@ -169,12 +169,15 @@ export function criarVistaDaCamera(
   // --- a câmera na luta ("o golpe que pesa"): na captura, chega um pouco mais perto de onde a luta acontece (mais
   // quanto mais pesa o golpe) e volta sozinha no fim; no xeque, encosta um instante no rei ameaçado. Se a pessoa mexe
   // na câmera no meio, ela fica onde a pessoa deixou
+  interface PontoDeVista {
+    alvo: THREE.Vector3
+    pose: PoseCamera
+  }
   interface Aproximacao {
-    /** De onde a câmera saiu: é pra lá que ela volta. */
-    alvoAntes: THREE.Vector3
-    raioAntes: number
-    de: { alvo: THREE.Vector3; raio: number }
-    para: { alvo: THREE.Vector3; raio: number }
+    /** De onde a câmera saiu: é pra lá que ela volta (o centro, o giro e o zoom de antes). */
+    antes: PontoDeVista
+    de: PontoDeVista
+    para: PontoDeVista
     inicio: number
     duracao: number
     voltando: boolean
@@ -187,7 +190,7 @@ export function criarVistaDaCamera(
   controls.addEventListener('start', () => {
     // a pessoa pegou a câmera: ela manda no giro e no zoom, mas o centro volta pro lugar (no celular todo toque conta
     // como pegar a câmera, e o centro ficava preso perto da luta, com o tabuleiro torto até na tela inicial)
-    if (aproximacao) recentrar = { de: controls.target.clone(), para: aproximacao.alvoAntes.clone(), inicio: performance.now() }
+    if (aproximacao) recentrar = { de: controls.target.clone(), para: aproximacao.antes.alvo.clone(), inicio: performance.now() }
     aproximacao = null
     window.clearTimeout(voltaDoRei)
   })
@@ -202,23 +205,111 @@ export function criarVistaDaCamera(
     if (t >= 1) recentrar = null
   }
 
-  function irAte(para: { alvo: THREE.Vector3; raio: number }, duracao: number, voltando: boolean) {
-    const de = { alvo: controls.target.clone(), raio: camera.position.distanceTo(controls.target) }
-    const alvoAntes = aproximacao?.alvoAntes ?? de.alvo.clone()
-    const raioAntes = aproximacao?.raioAntes ?? de.raio
-    aproximacao = { alvoAntes, raioAntes, de, para, inicio: performance.now(), duracao, voltando }
+  const pontoDeVistaAtual = (): PontoDeVista => ({ alvo: controls.target.clone(), pose: poseAtualDaCamera() })
+
+  function irAte(para: PontoDeVista, duracao: number, voltando: boolean) {
+    const de = pontoDeVistaAtual()
+    const antes = aproximacao?.antes ?? { alvo: de.alvo.clone(), pose: { ...de.pose } }
+    aproximacao = { antes, de, para, inicio: performance.now(), duracao, voltando }
   }
 
   /** Leva o centro uma `fracao` do caminho até `ponto` (e até a altura dele, com `naAltura`) e a distância pra
-   * `fatorDoRaio` da de antes; volta com `voltarDaLuta`. */
+   * `fatorDoRaio` da de antes, olhando do mesmo lado; volta com `voltarDaLuta`. */
   function focar(ponto: THREE.Vector3, fracao: number, fatorDoRaio: number, naAltura: boolean, ms = CHEGA_MS) {
     if (emMenu || giroCamera || menosMovimento()) return
     window.clearTimeout(voltaDoRei)
     recentrar = null
-    const alvoAntes = aproximacao?.alvoAntes ?? controls.target.clone()
-    const raioAntes = aproximacao?.raioAntes ?? camera.position.distanceTo(controls.target)
-    const alvo = alvoAntes.clone().lerp(new THREE.Vector3(ponto.x, naAltura ? ponto.y : alvoAntes.y, ponto.z), fracao)
-    irAte({ alvo, raio: Math.max(controls.minDistance, raioAntes * fatorDoRaio) }, ms, false)
+    const antes = aproximacao?.antes ?? pontoDeVistaAtual()
+    const alvo = antes.alvo.clone().lerp(new THREE.Vector3(ponto.x, naAltura ? ponto.y : antes.alvo.y, ponto.z), fracao)
+    irAte({ alvo, pose: { ...antes.pose, raio: Math.max(controls.minDistance, antes.pose.raio * fatorDoRaio) } }, ms, false)
+  }
+
+  /**
+   * O golpe inteiro à vista (pedido do usuário: a câmera de antes só chegava um pouco mais perto, do mesmo lado, e a
+   * habilidade ficava atrás das outras peças ou fora da tela). Entre os pontos de vista em volta da luta (de lado pra
+   * linha `rumo` entre as duas peças e girando dali, de quatro alturas), fica o que olha mais de lado (uma peça não
+   * tampa a outra), com menos peças no caminho e girando menos a câmera; a distância é a menor em que todos os pontos
+   * cabem na tela, com folga pros botões. Vale ver só as duas peças: devolve as `obstaculos` (as outras peças) que
+   * ainda ficam no caminho, pra esmaecer.
+   */
+  function enquadrarLuta(pontos: THREE.Vector3[], rumo: THREE.Vector3, obstaculos: THREE.Object3D[]): THREE.Object3D[] {
+    if (emMenu || giroCamera || menosMovimento() || pontos.length === 0) return []
+    window.clearTimeout(voltaDoRei)
+    recentrar = null
+    const antes = aproximacao?.antes ?? pontoDeVistaAtual()
+    const caixa = new THREE.Box3().setFromPoints(pontos)
+    const alvo = caixa.getCenter(new THREE.Vector3())
+    alvo.y = THREE.MathUtils.clamp(alvo.y, 0.3, 0.8)
+    // a linha da luta, no chão: o ponto de vista de lado olha atravessado pra ela
+    const linha = new THREE.Vector3(rumo.x, 0, rumo.z)
+    const temLinha = linha.lengthSq() > 1e-6
+    if (temLinha) linha.normalize()
+    const deLado = temLinha ? Math.atan2(linha.x, linha.z) + Math.PI / 2 : antes.pose.theta
+    const teste = new THREE.PerspectiveCamera(camera.fov, camera.aspect, camera.near, camera.far)
+    const posicao = new THREE.Vector3()
+    /** A menor distância em que todos os pontos ficam dentro da tela, com folga. */
+    const raioQueCabe = (phi: number, theta: number) => {
+      for (let raio = 2.4; raio < 22; raio += 0.2) {
+        posicao.setFromSphericalCoords(raio, phi, theta).add(alvo)
+        teste.position.copy(posicao)
+        teste.lookAt(alvo)
+        teste.updateMatrixWorld()
+        // a folga: os botões em cima e a situação embaixo
+        if (pontos.every((p) => {
+          const naTela = p.clone().project(teste)
+          return naTela.z < 1 && Math.abs(naTela.x) <= 0.86 && naTela.y <= 0.7 && naTela.y >= -0.78
+        })) return raio
+      }
+      return 22
+    }
+    /** As outras peças que cortam alguma linha de visão (da câmera a cada ponto), e quantas linhas ficam cortadas. */
+    const tampam = (de: THREE.Vector3) => {
+      const pecas = new Set<THREE.Object3D>()
+      let linhas = 0
+      const linhaDeVisao = new THREE.Line3()
+      const maisPerto = new THREE.Vector3()
+      for (const p of pontos) {
+        linhaDeVisao.set(de, p)
+        let cortada = false
+        for (const peca of obstaculos) {
+          if (!peca.visible) continue
+          for (const altura of [0.3, 0.7]) {
+            const corpo = new THREE.Vector3(peca.position.x, altura * peca.scale.y, peca.position.z)
+            const u = linhaDeVisao.closestPointToPointParameter(corpo, true)
+            if (u > 0.04 && u < 0.97 && linhaDeVisao.at(u, maisPerto).distanceTo(corpo) < 0.26 * peca.scale.x) {
+              pecas.add(peca)
+              cortada = true
+              break
+            }
+          }
+        }
+        if (cortada) linhas++
+      }
+      return { pecas: [...pecas], linhas }
+    }
+    let melhor: { pose: PoseCamera; nota: number; tampam: THREE.Object3D[] } | null = null
+    for (const lado of [0, Math.PI]) {
+      for (const giro of [0, -0.35, 0.35, -0.7, 0.7]) {
+        const theta = deLado + lado + giro
+        for (const elevacao of [30, 42, 54, 66]) {
+          const phi = THREE.MathUtils.degToRad(90 - elevacao)
+          const raio = raioQueCabe(phi, theta)
+          posicao.setFromSphericalCoords(raio, phi, theta).add(alvo)
+          // olhando ao longo da linha da luta, uma peça tampa a outra: o de lado vale mais que tudo. Depois, as peças
+          // no caminho (esmaecem, mas é melhor nem precisar), girar a câmera pra longe de onde ela estava, subir demais
+          // e ficar longe
+          const olhar = new THREE.Vector3(alvo.x - posicao.x, 0, alvo.z - posicao.z).normalize()
+          const aoLongo = temLinha ? Math.abs(olhar.dot(linha)) : 0
+          const noCaminho = tampam(posicao)
+          const nota = 6 * aoLongo + 2.5 * noCaminho.linhas + 0.8 * noCaminho.pecas.length + 0.9 * Math.abs(diferencaAngular(antes.pose.theta, theta)) + 0.025 * (elevacao - 30) + 0.08 * raio
+          if (!melhor || nota < melhor.nota) melhor = { pose: { raio: Math.max(controls.minDistance, raio), phi, theta }, nota, tampam: noCaminho.pecas }
+        }
+      }
+    }
+    if (!melhor) return []
+    const giroDaCamera = Math.abs(diferencaAngular(poseAtualDaCamera().theta, melhor.pose.theta))
+    irAte({ alvo, pose: melhor.pose }, CHEGA_MS + 260 * giroDaCamera, false)
+    return melhor.tampam
   }
 
   /** A captura começou em `ponto`: a câmera chega perto (`peso` de 0 a 1). */
@@ -235,7 +326,7 @@ export function criarVistaDaCamera(
   function voltarDaLuta() {
     window.clearTimeout(voltaDoRei)
     if (!aproximacao) return
-    irAte({ alvo: aproximacao.alvoAntes.clone(), raio: aproximacao.raioAntes }, VOLTA_MS, true)
+    irAte({ alvo: aproximacao.antes.alvo.clone(), pose: { ...aproximacao.antes.pose } }, VOLTA_MS + 200 * Math.abs(diferencaAngular(poseAtualDaCamera().theta, aproximacao.antes.pose.theta)), true)
   }
 
   /** Xeque no rei de quem joga: a câmera encosta de leve nele e volta. Durante uma luta, fica onde está. */
@@ -250,9 +341,8 @@ export function criarVistaDaCamera(
   function desfazerAproximacao() {
     window.clearTimeout(voltaDoRei)
     if (!aproximacao) return
-    const direcao = camera.position.clone().sub(controls.target).normalize()
-    controls.target.copy(aproximacao.alvoAntes)
-    camera.position.copy(controls.target).addScaledVector(direcao, aproximacao.raioAntes)
+    controls.target.copy(aproximacao.antes.alvo)
+    colocarCamera(aproximacao.antes.pose)
     aproximacao = null
   }
 
@@ -285,9 +375,13 @@ export function criarVistaDaCamera(
     const { de, para } = aproximacao
     const t = Math.min(1, (agora - aproximacao.inicio) / aproximacao.duracao)
     const suave = t * t * (3 - 2 * t)
-    const direcao = camera.position.clone().sub(controls.target).normalize()
     controls.target.copy(de.alvo).lerp(para.alvo, suave)
-    camera.position.copy(controls.target).addScaledVector(direcao, de.raio + (para.raio - de.raio) * suave)
+    colocarCamera({
+      raio: de.pose.raio + (para.pose.raio - de.pose.raio) * suave,
+      phi: de.pose.phi + (para.pose.phi - de.pose.phi) * suave,
+      theta: de.pose.theta + diferencaAngular(de.pose.theta, para.pose.theta) * suave,
+    })
+    camera.lookAt(controls.target)
     if (t >= 1 && aproximacao.voltando) aproximacao = null
   }
 
@@ -352,6 +446,7 @@ export function criarVistaDaCamera(
     atualizarGiroCamera,
     atualizarAproximacao,
     aproximarDaLuta,
+    enquadrarLuta,
     focarNaPeca,
     voltarDaLuta,
     socoNaCamera,

@@ -46,6 +46,11 @@ const PANCADA_ATE = 1850
 /** A rainha fica na pose do golpe (o zanshin) e depois volta devagar. */
 const FICA_ATE = 2250
 const VOLTA_ATE = 2700
+/** A vítima percebe a rainha carregando: vira pra ela e se encolhe com medo. */
+const PERCEBE_DE = 140
+/** O começo do puxão (fração do caminho): a vítima resiste, inclinada pra trás e arrastando os pés, até ser arrancada. */
+const ARRASTA_ATE = 0.22
+const ARRANCA_ATE = 0.38
 /** O tranco na pegada: o tempo para um instante. */
 const TRANCO_MS = 70
 
@@ -211,6 +216,8 @@ interface Puxao {
   pes: { lado: 'Left' | 'Right'; base: THREE.Vector3; desvio: THREE.Vector3 }[]
   /** Onde a vítima estava. */
   de: THREE.Vector3
+  /** Pra onde a vítima olhava antes de perceber a rainha. */
+  giroInicial: THREE.Quaternion
   /** A vítima em pé, de frente pra rainha. */
   deFrente: THREE.Quaternion
   /** A cabeça da vítima, no espaço dela (tamanho incluído), e o corpo dos pés ao alto da cabeça. */
@@ -284,6 +291,7 @@ export function puxaoUniversal(rainha: THREE.Object3D, vitima: THREE.Object3D, c
     zq,
     pes,
     de: vitima.position.clone(),
+    giroInicial: vitima.quaternion.clone(),
     deFrente: new THREE.Quaternion().setFromAxisAngle(CIMA, Math.atan2(rumo.x, rumo.z)),
     // em pé e de frente pra rainha, a cabeça fica em cima do centro da peça
     cabeca: new THREE.Vector3(0, cabeca.y, 0),
@@ -430,10 +438,22 @@ function posarRainha(p: Puxao, t: number, agora: number): THREE.Vector3 {
 
 /** Os braços e as pernas da vítima em cada instante (ver realismo.ts). */
 function poseDaVitima(t: number): PoseLargada {
+  if (t < PUXA_DE) {
+    // percebeu: os braços pra frente, se protegendo, e o corpo encolhido
+    const medo = sobe(t, PERCEBE_DE, PUXA_DE)
+    return { pratras: -0.55 * medo, abertura: 0.3 * medo, arco: -0.25 * medo }
+  }
   if (t < PUXA_ATE) {
-    // o tranco do começo joga tudo pra trás de uma vez, e a velocidade mantém
     const u = fracao(t, PUXA_DE, PUXA_ATE)
-    return { pratras: sobe(t, PUXA_DE, PUXA_DE + 130) * (0.8 + 0.2 * u), abertura: 0.15, arco: sobe(t, PUXA_DE, PUXA_DE + 160) }
+    // resistindo: os braços se debatendo; arrancada, o tranco joga tudo pra trás e a velocidade mantém
+    const arrancou = sobe(u, ARRASTA_ATE, ARRANCA_ATE)
+    const debate = 0.55 * Math.sin(t / 55)
+    return {
+      pratras: (1 - arrancou) * debate + arrancou * (0.8 + 0.2 * u),
+      abertura: 0.15 + 0.35 * (1 - arrancou),
+      arco: arrancou,
+      deLado: 0.4 * (1 - arrancou) * Math.sin(t / 80),
+    }
   }
   if (t < HELICE_ATE) {
     // girando: os membros esticados pra fora e atrasados, todos pro mesmo lado
@@ -459,9 +479,21 @@ function giroDaVitima(p: Puxao, inclinacao: number, helice: number, pancada: num
 
 function posar(p: Puxao, t: number, agora: number) {
   const ondeEstaAMao = p.rainhaSolta ? null : posarRainha(p, t, agora)
+  if (!p.esmagou && t >= PERCEBE_DE && t < PUXA_DE) perceber(p, t)
   if (!p.esmagou && ondeEstaAMao && t >= PUXA_DE) moverVitima(p, t, agora, ondeEstaAMao)
   // os braços e as pernas por último, sobre o corpo já no lugar deste quadro; parada no alto, tremem em dois
-  if (t >= PUXA_DE) corpoLargado(p.vitima, poseDaVitima(t), t >= HELICE_ATE && t < APICE_ATE ? emDois(agora) : agora)
+  if (t >= PERCEBE_DE) corpoLargado(p.vitima, poseDaVitima(t), t >= HELICE_ATE && t < APICE_ATE ? emDois(agora) : agora)
+}
+
+/** A vítima vê a rainha carregando: vira de frente pra ela e se inclina pra trás, com medo (a reação, pedido do usuário). */
+function perceber(p: Puxao, t: number) {
+  const vira = sobe(t, PERCEBE_DE, PERCEBE_DE + 200)
+  const medo = sobe(t, PERCEBE_DE + 80, PUXA_DE)
+  p.vitima.quaternion
+    .copy(p.giroInicial)
+    .slerp(p.deFrente, vira)
+    .premultiply(new THREE.Quaternion().setFromAxisAngle(p.eixoDaInclinacao, -0.22 * medo))
+  p.vitima.position.copy(p.de)
 }
 
 /** Onde está e como está virada a vítima: voando, na hélice, parada no alto, na pancada. */
@@ -470,15 +502,18 @@ function moverVitima(p: Puxao, t: number, agora: number, ondeEstaAMao: THREE.Vec
   const L = p.comprimento
   const cabeca = ondeEstaAMao.clone().add(p.naFrenteDaMao)
   if (t < PUXA_ATE) {
-    // a gravidade: parte devagar e acelera (o caminho cresce com o quadrado do tempo); sobe logo no arranque e vem pelo
-    // ar, um pouco deitada pra frente, a cabeça na frente
+    // a gravidade: parte devagar e acelera (o caminho cresce com o quadrado do tempo). No começo a vítima resiste:
+    // inclinada pra trás, os pés arrastando no chão; arrancada, sobe e vem pelo ar, deitada pra frente, a cabeça na frente
     const u = fracao(t, PUXA_DE, PUXA_ATE)
     const caminho = u * u
-    const giro = giroDaVitima(p, INCLINACAO_NO_VOO * suave(Math.min(1, u * 1.4)), 0, 0)
+    const arrancou = sobe(u, ARRASTA_ATE, ARRANCA_ATE)
+    const resistindo = -0.32 + 0.08 * Math.sin(t / 45)
+    const giro = giroDaVitima(p, resistindo + (INCLINACAO_NO_VOO * suave(Math.min(1, u * 1.4)) - resistindo) * arrancou, 0, 0)
     p.vitima.quaternion.copy(giro)
     const alvo = cabeca.clone().sub(p.cabeca.clone().applyQuaternion(giro))
     p.vitima.position.copy(p.de).lerp(alvo, caminho)
-    p.vitima.position.y = Math.max(CHAO, p.de.y + (alvo.y - p.de.y) * (1 - (1 - caminho) ** 3))
+    const noAr = Math.max(CHAO, p.de.y + (alvo.y - p.de.y) * (1 - (1 - caminho) ** 3))
+    p.vitima.position.y = CHAO + (noAr - CHAO) * arrancou
     if (p.aneis.length === 0 || agora - p.aneis[p.aneis.length - 1].nasce > 110) novoAnel(p, agora)
     moverAneis(p, agora, ondeEstaAMao)
     linhasDoCorpo(p, t, 2)

@@ -12,7 +12,7 @@ import { massaDaPeca } from '../sensacao/realismo'
 import { abrirCratera, afundarNaCratera } from './cratera'
 import { faisca, rastroDeBrilho } from './efeitosDeAnime'
 import { dempseyRoll } from './dempseyRoll'
-import { nocautear } from './nocaute'
+import { nocautear, sacudir } from './nocaute'
 import { congelar } from '../sensacao/relogioDoJogo'
 import { animarImpacto } from './golpes'
 import { ondaDaMarretada, poeiraDaPancada } from './marreta'
@@ -104,6 +104,9 @@ function retalhar(c: CapturaComHabilidade) {
       if (!c.vigente()) return
       tocarSom('retalho:corte')
       rastroDeCorte(c.cena, c.vitima, corDoCorte)
+      // a reação a cada corte: recua e cambaleia, um corte pra cada lado
+      const rumo = Math.atan2(c.posVitima.x - c.atacante.position.x, c.posVitima.z - c.atacante.position.z) + (feitos % 2 === 0 ? 0.6 : -0.6)
+      sacudir(c.vitima, { x: Math.sin(rumo), z: Math.cos(rumo) }, 0.9)
       faisca(c.cena, meioDo(c.vitima, 0.35 + 0.1 * feitos), corDoCorte, 0.35 * c.vitima.scale.x, 160)
     }, 170)
     if (!tocou) window.setTimeout(proximo, 300)
@@ -172,6 +175,8 @@ function dempsey(c: CapturaComHabilidade) {
     aoBalancar: () => tocarSom('dempsey:balanco'),
     // o rastro do oito: a cor da facção forte e mais demorado, pra ficar o desenho do ∞ no ar
     aoRolar: (cabeca) => rastroDeBrilho(c.cena, cabeca, cor, 0.3 * tamanho, 380),
+    // o aquecimento acabou: o estalo e as linhas de foco marcam o começo dos ganchos
+    aoComecarOsGanchos: (queixo) => impulsoDeAnime(c, queixo),
     aoGancho: (numero, queixo) => {
       tocarSom('dempsey:gancho', 0, 1 + 0.05 * numero)
       if (numero % 2 === 1) tocarSom(`dor:${tipoVitima}`, 0.03)

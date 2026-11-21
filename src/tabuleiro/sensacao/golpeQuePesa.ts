@@ -1,4 +1,4 @@
-import type * as THREE from 'three'
+import * as THREE from 'three'
 import { tremerTabuleiro } from '../combate/efeitosDasArmas'
 import { tocarSom } from '../../som/sons'
 import { congelar } from './relogioDoJogo'
@@ -24,9 +24,45 @@ export function definirMenosMovimento(sim: boolean) {
 export const menosMovimento = () => menosMovimentoEscolhido || window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** O que a cena faz junto com a captura: a câmera, a borda e o ambiente (ver ChessBoard3D). */
+/** O golpe inteiro: os pontos que a câmera tem de mostrar e as peças que lutam. */
+export interface AreaDaLuta {
+  pontos: THREE.Vector3[]
+  /** De quem ataca pra vítima, no chão: a câmera olha de lado pra essa linha. */
+  rumo: THREE.Vector3
+  envolvidas: THREE.Object3D[]
+}
+
+/**
+ * Os pontos de uma captura que têm de aparecer: as duas peças inteiras (do chão ao alto), o lugar onde quem bate de perto
+ * para e, quando o golpe joga a vítima, onde ela cai. `deLonge`: o golpe não sai do lugar (poderes, Puxão); `alto`: o
+ * golpe sobe acima de quem ataca (a hélice do Puxão).
+ */
+export function areaDaLuta(atacante: THREE.Object3D, vitima: THREE.Object3D, deLonge: boolean, joga: boolean, alto = false): AreaDaLuta {
+  const alturaDe = (peca: THREE.Object3D) => Math.max(0.5, new THREE.Box3().setFromObject(peca).max.y)
+  const a = new THREE.Vector3(atacante.position.x, 0, atacante.position.z)
+  const v = new THREE.Vector3(vitima.position.x, 0, vitima.position.z)
+  const rumo = v.clone().sub(a)
+  const distancia = rumo.length()
+  if (distancia > 1e-4) rumo.divideScalar(distancia)
+  const alturaA = alturaDe(atacante)
+  const alturaV = alturaDe(vitima)
+  const corpo = (chao: THREE.Vector3, altura: number) => [chao.clone().setY(0.02), chao.clone().setY(altura)]
+  const pontos = corpo(v, alturaV)
+  // de longe, quem ataca fica onde está; de perto, a luta é na casa da vítima: quem bate para na frente dela (a câmera
+  // espera ele lá, em vez de mostrar o caminho)
+  if (deLonge) pontos.push(...corpo(a, alturaA))
+  else pontos.push(...corpo(v.clone().addScaledVector(rumo, -0.45), alturaA))
+  // a vítima jogada pela força cai uma casa adiante
+  if (joga) pontos.push(v.clone().addScaledVector(rumo, 0.9).setY(0.3))
+  // a hélice do Puxão: a vítima gira presa na mão erguida, acima da rainha e pra trás dela
+  if (alto) pontos.push(a.clone().addScaledVector(rumo, 0.35).setY(alturaA * 2.1), a.clone().addScaledVector(rumo, -0.45).setY(alturaA * 1.2))
+  return { pontos, rumo, envolvidas: [atacante, vitima] }
+}
+
 export interface SensacaoDaPartida {
-  /** A captura começou: `ponto` é onde a luta acontece, `peso` de 0 a 1, `tom` o dos efeitos (trocas seguidas). */
-  comecarLuta: (ponto: THREE.Vector3, peso: number, tom: number) => void
+  /** A captura começou: `area` é o que tem de ficar à vista (os pontos do golpe inteiro e as peças que lutam, que não
+   * contam como obstáculo), `peso` de 0 a 1, `tom` o dos efeitos (trocas seguidas). */
+  comecarLuta: (area: AreaDaLuta, peso: number, tom: number) => void
   /** A vítima saiu: tudo volta ao normal. */
   terminarLuta: () => void
   /** Os efeitos de tela do anime (efeitosDeAnime.ts): as linhas de foco apontando pra `ponto` por `ms`. */

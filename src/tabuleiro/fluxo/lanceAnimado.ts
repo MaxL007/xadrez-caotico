@@ -25,7 +25,7 @@ import { alcanceDaMaca, ARMAS_DA_TORRE, baterComMarreta, cairDaMaca, esmagarPeca
 import { lancarOndaDoRei, lancarPoderDoBispo, lancarRaioDaDama } from '../combate/poderes'
 import { CAPTURAS, type CapturaComHabilidade } from '../combate/habilidades'
 import { HABILIDADES } from '../../conta/habilidades'
-import { antecipar, continuarDoGolpe, depoisDoCongelamento, pesoDoGolpe, sentirImpacto, type SensacaoDaPartida, tomDaTroca } from '../sensacao/golpeQuePesa'
+import { antecipar, areaDaLuta, continuarDoGolpe, depoisDoCongelamento, pesoDoGolpe, sentirImpacto, type SensacaoDaPartida, tomDaTroca } from '../sensacao/golpeQuePesa'
 import { materiaisDaPeca, materiaisPorFaccao, materialCoroa } from '../pecas/materiais'
 import { type EspadaRPG, guardarEspadaRPG, modelosRPG, mostrarEspadaRPG, novaSequenciaRPG, sacarEspadaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez, tocarGolpeRPG } from '../pecas/modelosRPG'
 import { armaDoPeaoNoTabuleiro, vestimenta } from '../pecas/vestimenta'
@@ -360,11 +360,12 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       const habilidade = habilidadeDaCaptura(atacante, tipoAtacante, corAtacante, ehRPG, armaDoAtacante)
       const tipoVitima = (vitima.userData.tipo as string | undefined) ?? 'p'
       const peso = pesoDoGolpe(tipoVitima, habilidade ?? armaDoAtacante)
-      sensacao.comecarLuta(
-        new THREE.Vector3((atacante.position.x + posVitima.x) / 2, 0, (atacante.position.z + posVitima.z) / 2),
-        peso,
-        tomDaTroca(andamento.capturasSeguidas),
-      )
+      // de longe: a habilidade que não sai do lugar e os poderes (rei, dama e bispo com arma); o resto vai até a vítima.
+      // Jogam a vítima pela força os golpes simples e a Dempsey Roll; as armas com efeito próprio, não
+      const habilidadeDeLonge = habilidade ? HABILIDADES[habilidade].alcance === 'aDistancia' : false
+      const deLonge = habilidade ? habilidadeDeLonge : ehRPG && armaDoAtacante !== 'nenhuma' && ['b', 'q', 'k'].includes(tipoAtacante)
+      const comEfeitoProprio = ['marreta', 'machado', 'maca', 'cetro', 'lua'].includes(armaDoAtacante) || habilidade === 'retalhamento' || habilidade === 'puxao'
+      sensacao.comecarLuta(areaDaLuta(atacante, vitima, deLonge, !comEfeitoProprio, habilidade === 'puxao'), peso, tomDaTroca(andamento.capturasSeguidas))
       let lutaAcabou = false
       /** O golpe acertou: congela um instante, treme e solta as vozes (`fator` multiplica o peso). Devolve os ms do
        * congelamento, que a queda da vítima espera. */

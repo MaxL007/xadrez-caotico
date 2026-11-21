@@ -14,6 +14,7 @@ import { atualizarLutas, desfazerPosesDasLutas } from './combate/lutaSemArma'
 import { atualizarPuxoes, desfazerPosesDosPuxoes } from './combate/puxaoUniversal'
 import { atualizarNocautes, desfazerPosesDosNocautes } from './combate/nocaute'
 import { atualizarDempseys, desfazerPosesDasDempseys } from './combate/dempseyRoll'
+import { desesmaecer, esmaecer } from './cena/esmaecer'
 import { definirMenosMovimento, menosMovimento, type SensacaoDaPartida } from './sensacao/golpeQuePesa'
 import { passarQuadro } from './sensacao/relogioDoJogo'
 import { aplicarInercia, desfazerInercia } from './sensacao/inercia'
@@ -321,13 +322,16 @@ export function ChessBoard3D() {
     // "o golpe que pesa": durante a captura a câmera chega perto, a borda escurece, o ambiente abaixa e os golpes saem
     // no tom da troca (ver sensacao/golpeQuePesa.ts)
     const sensacao: SensacaoDaPartida = {
-      comecarLuta: (ponto, peso, tom) => {
-        vista.aproximarDaLuta(ponto, peso)
+      comecarLuta: (area, peso, tom) => {
+        // o golpe inteiro à vista: a câmera olha de lado pras duas peças, e as outras que ainda ficarem no caminho
+        // esmaecem até a luta acabar
+        esmaecer(vista.enquadrarLuta(area.pontos, area.rumo, piecesGroup.children.filter((peca) => !area.envolvidas.includes(peca))))
         abafarAmbiente('luta', true)
         definirTomDosGolpes(tom)
         setVinhetaDaLuta(peso)
       },
       terminarLuta: () => {
+        desesmaecer()
         vista.voltarDaLuta()
         abafarAmbiente('luta', false)
         definirTomDosGolpes(1)

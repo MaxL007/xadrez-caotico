@@ -170,15 +170,23 @@ As pastas de `src` são por função:
   boxe de Jack Dempsey que é o golpe final do Ippo em Hajime no Ippo. Luta com os punhos (`maosLivres` no cadastro): vai
   até a vítima sem sacar a arma, no alcance dos socos, e vale com qualquer arma.
   - Agachado na guarda alta, os olhos brilham ("tiin").
-  - O tronco descreve um oito deitado (∞), sen φ de lado e sen 2φ de cima pra baixo, avançando, com um rastro de luz na
-    cabeça; a cada ponta do balanço sai um gancho, esquerdo e direito alternados, cada vez mais rápido (três voltas, seis
-    ganchos). Cada gancho joga a cabeça da vítima pro lado (uma mola), com faísca, gemido e um tranco curto.
+  - O aquecimento (pedido do usuário): duas voltas do oito sem bater, 2 s, o balanço crescendo, com o rastro de luz
+    desenhando o ∞.
+  - Os ganchos: o tronco descreve o oito deitado (sen φ de lado, sen 2φ de cima pra baixo) avançando; a cada ponta do
+    balanço sai um gancho, esquerdo e direito alternados, começando no ritmo do aquecimento e acelerando (três voltas,
+    seis ganchos, 2,4 s: mais lento que a primeira versão, pedido do usuário). Começa com o estalo de anime.
   - No meio do oito, a parada brusca (a do Ippo depois do Sawamura), e a roda volta mais rápida.
   - A carga parada, tremendo em dois, o brilho no punho direito, e o gancho final com o corpo todo: o quadro de impacto,
     e a vítima sai voando pelo nocaute (força 2,2).
+  - A vítima reage (`posarVitima`, pedido do usuário): no aquecimento levanta a guarda cobrindo o rosto, treme, recua uns
+    passos e a cabeça acompanha o balanço; cada gancho joga a cabeça pro lado (uma mola) e o corpo gira junto, a guarda
+    cai, ela cambaleia pro lado do golpe e os joelhos vão cedendo; depois do terceiro, tonta, o tronco roda devagar.
 
   Fica em `combate/dempseyRoll.ts` (as duas peças, por cima do clipe, desfeito e refeito no laço como o puxão). As fotos
   saem de `SO=dempsey,dempsey-de-lado node testes/fotos-armas.mjs`.
+- Nas outras habilidades a vítima também reage: no Puxão, vê a rainha carregando, vira pra ela e se inclina pra trás com
+  os braços na frente; puxada, resiste inclinada pra trás e arrastando os pés, se debatendo, até ser arrancada do chão
+  (`ARRASTA_ATE`, `ARRANCA_ATE`). No Retalhamento, recua e cambaleia a cada corte, um pra cada lado (`sacudir`).
 - Toda habilidade segue o padrão de anime (`brilhoDeAnime`, `impulsoDeAnime` e `impactoDeAnime`, em
   `combate/habilidades.ts`): o brilho com o "tiin" no começo (os olhos, a palma, a lâmina), o impulso quando o golpe sai
   (estalo, linhas de foco, a câmera fechando) e, no golpe que decide, o quadro de impacto, as linhas de foco, a faísca e
@@ -485,6 +493,19 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
 
 ## Câmera
 
+- O enquadramento da luta (pedido do usuário: o golpe inteiro tem de aparecer sem a pessoa mexer na câmera). Antes a
+  câmera só chegava um pouco mais perto do mesmo lado, e a habilidade ficava atrás de outras peças ou fora da tela.
+  Agora o lance passa a área do golpe (`areaDaLuta`, em `sensacao/golpeQuePesa.ts`):
+  - as duas peças do chão ao alto, com quem bate de perto já parado na frente da vítima;
+  - onde a vítima cai, quando o golpe a joga;
+  - o alto da hélice, no Puxão.
+
+  `vista.enquadrarLuta` testa pontos de vista em volta (de lado pra linha da luta, girando 0,35 e 0,7 rad pros dois
+  lados, de 30 a 66 graus de altura) e fica com o que olha mais de lado (uma peça não tampa a outra), com menos peças no
+  caminho e girando menos a câmera, na menor distância em que todos os pontos cabem com folga pros botões. As peças que
+  ainda ficam no caminho esmaecem até a luta acabar (`cena/esmaecer.ts`, cópias dos materiais). Vale ver só as duas
+  peças. A volta devolve o giro, a altura e o zoom de antes. Fotos da vista de jogo de sempre:
+  `SO=enquadra-puxao,enquadra-retalho,enquadra-torre,enquadra-bispo node testes/fotos-armas.mjs` (`camera: null`).
 - A tela inicial e a partida nova olham sempre pro meio do tabuleiro (`CENTRO` em `vistaDaCamera.ts`): o giro da câmera
   leva o centro de volta. Antes o centro ficava preso perto da última luta quando a pessoa encostava na câmera no meio
   da aproximação (no celular, todo toque conta), e o tabuleiro aparecia torto até na tela inicial (bug visto pelo
