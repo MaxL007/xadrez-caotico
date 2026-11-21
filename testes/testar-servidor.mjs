@@ -282,12 +282,12 @@ try {
   await api('POST', `/amigos/${idAna}/remover`, { token: tokenCaio })
 
   const progresso = (token, contagem) => api('POST', '/conquistas/progresso', { token, corpo: { contagem } })
-  const contada = { peoes: 37, torres: 12, cavalos: 3, bispos: 0, rainhas: 1, roques: 2, xeques: 9, vitorias: 1 }
+  const contada = { peoes: 37, torres: 12, cavalos: 3, bispos: 0, rainhas: 1, roques: 2, xeques: 9, ascensoes: 4, vitorias: 1 }
   const antesDoProgresso = (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json?.conquistas
   conferir('o perfil da amiga traz as conquistas, mesmo antes de o aparelho mandar o progresso', Array.isArray(antesDoProgresso?.recebidas) && antesDoProgresso?.contagem?.peoes === 0, JSON.stringify(antesDoProgresso))
   conferir('guarda o progresso contado no aparelho', (await progresso(ana.token, contada)).status === 200)
   const comProgresso = (await api('GET', `/amigos/${idAna}`, { token: bia.token })).json?.conquistas
-  conferir('a amiga vê o progresso no perfil', comProgresso?.contagem?.peoes === 37 && comProgresso?.contagem?.xeques === 9 && Number.isInteger(comProgresso?.contagem?.convites), JSON.stringify(comProgresso))
+  conferir('a amiga vê o progresso no perfil', comProgresso?.contagem?.peoes === 37 && comProgresso?.contagem?.xeques === 9 && comProgresso?.contagem?.ascensoes === 4 && Number.isInteger(comProgresso?.contagem?.convites), JSON.stringify(comProgresso))
   const menor = (await progresso(ana.token, { ...contada, peoes: 5, torres: 20 })).json?.contagem
   conferir('um aparelho com menos partidas não apaga o que já foi contado', menor?.peoes === 37 && menor?.torres === 20, JSON.stringify(menor))
   for (const [nome, contagem] of [
@@ -629,6 +629,8 @@ try {
   conferir('a torre não tem o retalhamento', (await personalizar({ peca: 'r', parte: 'golpe', opcao: 'retalhamento' })).status === 422)
   conferir('a rainha equipa o Puxão Universal', (await personalizar({ peca: 'q', parte: 'golpe', opcao: 'puxao' })).json?.personalizacao?.q?.golpe === 'puxao')
   conferir('o Puxão é só da rainha', (await personalizar({ peca: 'k', parte: 'golpe', opcao: 'puxao' })).status === 422 && (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'puxao' })).status === 422)
+  conferir('o peão equipa a Dempsey Roll', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'dempsey' })).json?.personalizacao?.p?.golpe === 'dempsey')
+  conferir('a Dempsey Roll é só do peão', (await personalizar({ peca: 'q', parte: 'golpe', opcao: 'dempsey' })).status === 422)
   conferir('habilidade inventada não entra', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'voo' })).status === 422)
   const semElmo = (await personalizar({ peca: 'p', parte: 'cabeca', opcao: 'padrao' })).json?.personalizacao
   conferir('voltar ao padrão apaga a escolha e mantém as outras', semElmo?.p?.cabeca === undefined && semElmo?.p?.arma === 'espada', JSON.stringify(semElmo))

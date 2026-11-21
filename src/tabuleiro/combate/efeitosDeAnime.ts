@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { spriteDeBrilho } from './poderes'
 
 // Os efeitos de anime (pedido do usuário: seguir a mecânica de movimento das animações de anime). No anime o movimento é
 // desenhado de pose em pose: as poses-chave ficam paradas um instante (às vezes tremendo, "em dois": 12 desenhos por
@@ -181,4 +182,22 @@ export function criarLeque(cena: THREE.Object3D, cor: THREE.ColorRepresentation,
       )
     },
   }
+}
+
+/** Um ponto do rastro de luz (o oito da Dempsey Roll, a imagem que fica atrás do que passa rápido): acende e some. */
+export function rastroDeBrilho(cena: THREE.Object3D, ponto: THREE.Vector3, cor: THREE.ColorRepresentation, tamanho: number, ms = 220) {
+  const sprite = spriteDeBrilho(cor, tamanho, 0.8)
+  sprite.position.copy(ponto)
+  cena.add(sprite)
+  animar(
+    ms,
+    (u) => {
+      sprite.material.opacity = 0.8 * (1 - u)
+      sprite.scale.setScalar(tamanho * (1 - 0.5 * u))
+    },
+    () => {
+      sprite.removeFromParent()
+      sprite.material.dispose()
+    },
+  )
 }

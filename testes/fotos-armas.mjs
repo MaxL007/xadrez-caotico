@@ -115,7 +115,7 @@ try {
   await fotografar('golpe-peao', { pgn: '1. e4 d5', de: 'e4', para: 'd5', alvo: 'd5', golpe: 'socos', camera: [3.4, -30, 72], vestir: {}, momentos: [['soco', 160, 'peao-voando.png'], ['soco', 520, 'peao-no-chao.png']] })
   // o Puxão em poses-chave (a mecânica do anime): a base de luta, o impulso, o voo, a pegada, a hélice, o alto, a pancada,
   // o quadro de impacto (em negativo), a pose depois do golpe e a peça afundando
-  await fotografar('puxao', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', alvo: 'g6', camera: [4.4, -45, 62], vestir: { q: { golpe: 'puxao' } }, momentos: [['puxao:brilho', 40, 'puxao-base.png'], ['puxao:estala', 80, 'puxao-impulso.png'], ['puxao:arrasta', 450, 'puxao-voando.png'], ['puxao:agarra', 30, 'puxao-pegada.png'], ['puxao:gira', 60, 'puxao-helice.png'], ['puxao:gira', 200, 'puxao-helice-2.png'], ['puxao:gira', 360, 'puxao-no-alto.png'], ['puxao:gira', 510, 'puxao-pancada.png'], ['marreta:impacto', 30, 'puxao-impacto.png'], ['marreta:impacto', 300, 'puxao-depois-do-golpe.png'], ['marreta:impacto', 700, 'puxao-engolindo.png']] })
+  await fotografar('puxao', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', alvo: 'g6', camera: [4.4, -45, 62], vestir: { q: { golpe: 'puxao' } }, momentos: [['anime:brilho', 40, 'puxao-base.png'], ['anime:estala', 80, 'puxao-impulso.png'], ['puxao:arrasta', 450, 'puxao-voando.png'], ['puxao:agarra', 30, 'puxao-pegada.png'], ['puxao:gira', 60, 'puxao-helice.png'], ['puxao:gira', 200, 'puxao-helice-2.png'], ['puxao:gira', 360, 'puxao-no-alto.png'], ['puxao:gira', 510, 'puxao-pancada.png'], ['marreta:impacto', 30, 'puxao-impacto.png'], ['marreta:impacto', 300, 'puxao-depois-do-golpe.png'], ['marreta:impacto', 700, 'puxao-engolindo.png']] })
   // de lado e baixo: o voo com o peito na frente, a hélice e a pancada; de cima: a cratera com a peça deitada de costas
   await fotografar('puxao-de-lado', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', alvo: 'g6', camera: [3.6, 0, 78], vestir: { q: { golpe: 'puxao' } }, momentos: [['puxao:arrasta', 600, 'puxao-de-lado-voando.png'], ['puxao:gira', 120, 'puxao-de-lado-helice.png'], ['puxao:gira', 360, 'puxao-de-lado-no-alto.png'], ['marreta:impacto', 250, 'puxao-de-lado-golpe.png']] })
   await fotografar('puxao-de-cima', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', alvo: 'g6', camera: [3.4, -45, 22], vestir: { q: { golpe: 'puxao' } }, momentos: [['marreta:impacto', 350, 'puxao-de-cima.png']] })
@@ -138,6 +138,32 @@ try {
     camera: [3.6, -35, 62],
     vestir: { q: { cabeca: 'elmo', ombros: 'espinhos', maos: 'garras', arma: 'lua' } },
     momentos: [['equipamento:surge', 350, 'promocao-rainha-surgem.png'], ['encaixe', 0, 'promocao-rainha-encaixe.png'], ['encaixe', 900, 'promocao-rainha-vestida.png']],
+  })
+  // a Dempsey Roll (peão com os punhos): a guarda com o brilho, os ganchos, o oito, a parada, a carga e o golpe final
+  await fotografar('dempsey', {
+    ...PEAO,
+    camera: [3.6, -35, 70],
+    vestir: { p: { golpe: 'dempsey' } },
+    momentos: [
+      ['anime:brilho', 30, 'dempsey-guarda.png'],
+      ['dempsey:gancho', 0, 'dempsey-gancho-1.png'],
+      ['dempsey:gancho', 330, 'dempsey-oito.png'],
+      ['anime:estala', 60, 'dempsey-parada.png'],
+      ['anime:estala', 560, 'dempsey-carga.png'],
+      ['dempsey:final', 0, 'dempsey-final.png'],
+      ['dempsey:final', 260, 'dempsey-voando.png'],
+      ['dempsey:final', 760, 'dempsey-no-chao.png'],
+    ],
+  })
+  await fotografar('dempsey-de-lado', { ...PEAO, camera: [3, 50, 78], vestir: { p: { golpe: 'dempsey' } }, momentos: [['dempsey:gancho', 120, 'dempsey-de-lado-gancho.png'], ['dempsey:gancho', 520, 'dempsey-de-lado-oito.png']] })
+  // a ascensão com o foco: começa de longe (como na partida) e a câmera fecha na peça, que vira de frente pra ela
+  await fotografar('ascensao', {
+    ...PROMOCAO,
+    promocao: 'q',
+    camera: [9, -15, 50],
+    alvo: 'e5',
+    vestir: { q: { cabeca: 'elmo', ombros: 'espinhos', maos: 'garras', arma: 'lua' } },
+    momentos: [['promocao', 1000, 'ascensao-subindo.png'], ['equipamento:surge', 120, 'ascensao-de-frente.png'], ['encaixe', 0, 'ascensao-encaixe.png'], ['ascensao:pose', 60, 'ascensao-pose.png'], ['ascensao:pose', 1700, 'ascensao-volta.png']],
   })
   await fotografar('promocao-cavalo', {
     ...PROMOCAO,

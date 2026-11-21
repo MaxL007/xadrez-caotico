@@ -13,6 +13,7 @@ import { PainelDeLances } from './PainelDeLances'
 import { atualizarLutas, desfazerPosesDasLutas } from './combate/lutaSemArma'
 import { atualizarPuxoes, desfazerPosesDosPuxoes } from './combate/puxaoUniversal'
 import { atualizarNocautes, desfazerPosesDosNocautes } from './combate/nocaute'
+import { atualizarDempseys, desfazerPosesDasDempseys } from './combate/dempseyRoll'
 import { definirMenosMovimento, menosMovimento, type SensacaoDaPartida } from './sensacao/golpeQuePesa'
 import { passarQuadro } from './sensacao/relogioDoJogo'
 import { aplicarInercia, desfazerInercia } from './sensacao/inercia'
@@ -41,6 +42,7 @@ import { andamentoNovo, type PecaPromocao } from './fluxo/andamento'
 import { garantirBilhete } from '../conta/bilhete'
 import { instalarGanchosDeTeste, vestimentaDeTeste } from './ganchosDeTeste'
 import { criarLanceAnimado } from './fluxo/lanceAnimado'
+import { cenaDaPrevia, vestimentaDaPrevia } from './fluxo/previaDaLoja'
 import { criarPartidaOnline } from './fluxo/partidaOnline'
 import { EscolhaDoNovoJogo } from './EscolhaDoNovoJogo'
 import { MenuDoAdversario } from './MenuDoAdversario'
@@ -143,6 +145,9 @@ export function ChessBoard3D() {
     receberFimDaSala: (resultado: ResultadoDaSala, motivo: string) => void
     /** Partida blitz: desconta o tempo de quem tem a vez e devolve o que o relógio mostra (null sem relógio). */
     andarRelogio: () => MostradorDoRelogio | null
+    /** A prévia da Loja: a captura com a arma ou a habilidade, no tabuleiro da tela inicial (ver fluxo/previaDaLoja.ts). */
+    verEmAcao: (item: string) => void
+    pularPrevia: () => void
   } | null>(null)
   // o relógio da partida blitz contra a máquina; null nas partidas sem relógio
   const relogioRef = useRef<RelogioDeXadrez | null>(null)
@@ -161,6 +166,8 @@ export function ChessBoard3D() {
   const [revancheFalhou, setRevancheFalhou] = useState(false)
   // a tela inicial por cima do tabuleiro, ou a partida
   const [tela, setTela] = useState<'menu' | 'jogo'>('menu')
+  /** O item da Loja em prévia no tabuleiro (o menu fica escondido enquanto isso). */
+  const [previa, setPrevia] = useState<string | null>(null)
   const [statusTexto, setStatusTexto] = useState('')
   const [historico, setHistorico] = useState<string[]>([])
   const [partidasEmAndamento, setPartidasEmAndamento] = useState<PartidaXadrez[]>([])
@@ -290,6 +297,8 @@ export function ChessBoard3D() {
     const pieceMeshBySquare = new Map<string, THREE.Group>()
     // geração do tabuleiro, lances rodando, fila da sala, comemoração e empate (ver fluxo/andamento.ts)
     const andamento = andamentoNovo()
+    /** Na prévia da Loja, o que as peças vestem (o item no lugar); fora dela, null. */
+    let escolhasDaPrevia: Record<string, Record<string, string>> | null = null
     function novoTabuleiro() {
       resolverPromocaoRef.current?.(null)
       andamento.geracao++
@@ -334,6 +343,17 @@ export function ChessBoard3D() {
         window.setTimeout(() => (renderer.domElement.style.filter = ''), ms)
       },
       socoNaCamera: (graus, ms) => vista.socoNaCamera(graus, ms),
+      focarNaAscensao: (ponto) => {
+        vista.focarNaPeca(ponto)
+        abafarAmbiente('ascensao', true)
+        setVinhetaDaLuta(0.55)
+      },
+      soltarFoco: () => {
+        vista.voltarDaLuta()
+        abafarAmbiente('ascensao', false)
+        setVinhetaDaLuta(null)
+      },
+      rumoDaCamera: (ponto) => Math.atan2(camera.position.x - ponto.x, camera.position.z - ponto.z),
     }
     // as linhas de foco do anime: riscos escuros vindo das bordas da tela pro ponto do golpe, redesenhados em dois (a cada
     // 83 ms, outros riscos), sumindo no fim
@@ -420,7 +440,7 @@ export function ChessBoard3D() {
     /** `porParteEm`: a peça nova dessa casa sai com cada equipamento numa malha própria (a da promoção, que recebe
      * os equipamentos voando). */
     function sincronizarPecas(recriar = false, porParteEm?: string) {
-      definirVestimenta({ cor: corHumanoRef.current, escolhas: vestimentaDeTeste ?? personalizacaoAtual().escolhas })
+      definirVestimenta({ cor: corHumanoRef.current, escolhas: escolhasDaPrevia ?? vestimentaDeTeste ?? personalizacaoAtual().escolhas })
       if (recriar) {
         // inclusive as que estavam caindo/sumindo de uma captura em andamento
         piecesGroup.clear()
@@ -865,6 +885,19 @@ export function ChessBoard3D() {
     }
     renderer.domElement.addEventListener('click', onClick)
 
+    /** A prévia acabou (ou foi pulada): o tabuleiro volta pra posição de início e a câmera pra tela inicial. */
+    function encerrarPrevia() {
+      if (!escolhasDaPrevia) return
+      escolhasDaPrevia = null
+      chessRef.current.reset()
+      novoTabuleiro()
+      sincronizarPecas(true)
+      limparDestaques()
+      setHistorico([])
+      vista.irParaVistaDoMenu()
+      setPrevia(null)
+    }
+
     acoesRef.current = {
       // carrega uma partida salva (PGN) ou começa uma nova (pgn vazio) — usado tanto pra
       // retomar a partida em andamento ao abrir quanto pra começar uma partida nova depois
@@ -899,6 +932,37 @@ export function ChessBoard3D() {
         atualizarStatusTexto()
         if (!chess.isGameOver() && chess.turn() !== corHumanoRef.current) maquina.jogarLanceDaMaquina()
       },
+      verEmAcao(item) {
+        const cenaDaLoja = cenaDaPrevia(item)
+        if (!cenaDaLoja || andamento.lancesEmAndamento > 0) return
+        setPrevia(item)
+        escolhasDaPrevia = vestimentaDaPrevia(item, personalizacaoAtual().escolhas)
+        const chess = chessRef.current
+        try {
+          chess.loadPgn(cenaDaLoja.pgn)
+        } catch {
+          chess.reset()
+        }
+        partidaAtualRef.current = null
+        corHumanoRef.current = 'w'
+        selecionadaRef.current = null
+        destinosRef.current = []
+        novoTabuleiro()
+        sincronizarPecas(true)
+        limparDestaques()
+        const geracao = andamento.geracao
+        const de = squareToPos(cenaDaLoja.de)
+        const para = squareToPos(cenaDaLoja.para)
+        const chega = vista.irParaAcao(new THREE.Vector3((de.x + para.x) / 2, 0.45, (de.z + para.z) / 2), THREE.MathUtils.degToRad(cenaDaLoja.lado))
+        // a câmera chega, e a peça ataca; no fim, um instante pra ver a peça vitoriosa e volta pra Loja
+        window.setTimeout(() => {
+          if (geracao !== andamento.geracao) return
+          executarLanceComAnimacao({ from: cenaDaLoja.de, to: cenaDaLoja.para }, () => {
+            window.setTimeout(() => geracao === andamento.geracao && encerrarPrevia(), 900)
+          })
+        }, chega + 150)
+      },
+      pularPrevia: () => encerrarPrevia(),
       carregarSala: () => online.carregarSala(),
       receberEstadoDaSala: (estado) => online.receberEstadoDaSala(estado),
       receberLanceDaSala: (lance) => online.receberLanceDaSala(lance),
@@ -1074,6 +1138,7 @@ export function ChessBoard3D() {
       desfazerPosturas()
       desfazerPosesDosNocautes()
       desfazerPosesDosPuxoes()
+      desfazerPosesDasDempseys()
       desfazerPosesDasLutas()
       for (const peca of piecesGroup.children) {
         if (!congelado) (peca.userData.mixer as THREE.AnimationMixer | undefined)?.update(delta)
@@ -1081,6 +1146,7 @@ export function ChessBoard3D() {
       }
       atualizarMarretadas(agoraDoCorpo)
       atualizarLutas(agoraDoCorpo)
+      atualizarDempseys(agoraDoCorpo)
       atualizarPuxoes(agoraDoCorpo)
       atualizarNocautes(agoraDoCorpo)
       atualizarPosturas(agora)
@@ -1302,8 +1368,23 @@ export function ChessBoard3D() {
           className={ocupaATela ? 'relative h-full w-full touch-none' : 'relative w-full aspect-[4/3] sm:aspect-video rounded-xl overflow-hidden border border-ink-100 touch-none'}
         />
 
+        {tela === 'menu' && previa && (
+          // a prévia da Loja: o que está passando e o botão de pular
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+            <p className="rounded-lg bg-[#1c120a]/85 px-3 py-1.5 text-sm font-semibold text-[#f5e6c8] shadow" data-previa={previa}>
+              ▶ {t('loja.previa')} · {t(`personalizacao.opcao.${previa.split(':')[2]}` as ChaveTexto)}
+            </p>
+            <button type="button" onClick={() => acoesRef.current?.pularPrevia()} className="pointer-events-auto rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow">
+              {t('loja.pular')}
+            </button>
+          </div>
+        )}
+        {tela === 'menu' && previa && <Vinheta luta={vinhetaDaLuta} xeque={false} calma={config.menosMovimento || menosMovimento()} />}
+
         {tela === 'menu' && (
           <MenuXadrez
+            escondido={previa !== null}
+            onVerEmAcao={(item) => acoesRef.current?.verEmAcao(item)}
             t={t}
             config={config}
             onConfig={mudarConfig}

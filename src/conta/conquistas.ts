@@ -4,11 +4,12 @@ import type { Dificuldade } from '../jogo/engine'
 import { resultadoDaPartida, type PartidaXadrez } from '../dados/xadrezRepo'
 import catalogo from '../catalogos/conquistas.json'
 
-// Conquistas e óticoins. Só contam as partidas contra a máquina: as com amigos ficam de fora. Capturas, xeques, roques
-// e vitórias saem das partidas salvas na conta; os convites aceitos, o servidor conta. Cada conquista paga uma vez só,
+// Conquistas e óticoins. Só contam as partidas contra a máquina: as com amigos ficam de fora. Capturas, xeques, roques,
+// ascensões (as promoções de quem joga) e vitórias saem das partidas salvas na conta; os convites aceitos, o servidor
+// conta. Cada conquista paga uma vez só,
 // e quem guarda o que já foi pago é o servidor.
 
-export type Medida = 'peoes' | 'torres' | 'cavalos' | 'bispos' | 'rainhas' | 'roques' | 'xeques' | 'vitorias' | 'convites'
+export type Medida = 'peoes' | 'torres' | 'cavalos' | 'bispos' | 'rainhas' | 'roques' | 'xeques' | 'ascensoes' | 'vitorias' | 'convites'
 export type Nivel = 'basicas' | 'intermediarias' | 'avancadas'
 
 export interface Conquista {
@@ -25,7 +26,7 @@ export const CONQUISTAS = catalogo.conquistas as Conquista[]
 export type Contagem = Record<Medida, number>
 
 const CAPTURADA: Record<string, Medida> = { p: 'peoes', r: 'torres', n: 'cavalos', b: 'bispos', q: 'rainhas' }
-const vazia = (): Contagem => ({ peoes: 0, torres: 0, cavalos: 0, bispos: 0, rainhas: 0, roques: 0, xeques: 0, vitorias: 0, convites: 0 })
+const vazia = (): Contagem => ({ peoes: 0, torres: 0, cavalos: 0, bispos: 0, rainhas: 0, roques: 0, xeques: 0, ascensoes: 0, vitorias: 0, convites: 0 })
 
 // refazer uma partida custa: cada uma é contada uma vez só, enquanto não muda
 const contadas = new Map<string, Contagem>()
@@ -44,6 +45,8 @@ function contarPartida(partida: PartidaXadrez): Contagem {
       if (capturada) contagem[capturada]++
       if (/[kq]/.test(lance.flags)) contagem.roques++
       if (/[+#]$/.test(lance.san)) contagem.xeques++
+      // a ascensão: o peão que chega na última casa e vira outra peça
+      if (lance.flags.includes('p')) contagem.ascensoes++
     }
   } catch {
     // partida com PGN estragado não conta

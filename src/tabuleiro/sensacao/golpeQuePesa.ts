@@ -35,6 +35,12 @@ export interface SensacaoDaPartida {
   quadroDeImpacto: (ms: number) => void
   /** O soco da câmera: o campo de visão abre (`graus` positivo) ou fecha e volta em `ms`. */
   socoNaCamera: (graus: number, ms: number) => void
+  /** A ascensão: a câmera fecha na peça em `ponto` (o corpo dela), a borda escurece e o ambiente abaixa. */
+  focarNaAscensao: (ponto: THREE.Vector3) => void
+  /** A ascensão acabou: tudo volta ao normal. */
+  soltarFoco: () => void
+  /** O rumo (giro em volta do eixo vertical) de uma peça em `ponto` olhando pra câmera. */
+  rumoDaCamera: (ponto: THREE.Vector3) => number
 }
 
 // --- o peso -------------------------------------------------------------------------------------------------------

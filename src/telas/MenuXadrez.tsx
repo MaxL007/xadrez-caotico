@@ -252,6 +252,8 @@ export function MenuXadrez({
   montarVitrine,
   montarExpositor,
   onImportou,
+  escondido = false,
+  onVerEmAcao,
 }: {
   t: Traduzir
   config: ConfigXadrez
@@ -270,6 +272,10 @@ export function MenuXadrez({
   /** O equipamento sozinho, pro expositor de cada quadrado da Personalização. */
   montarExpositor: (tipo: string, parte: string, opcao: string) => THREE.Object3D | null
   onImportou: () => void
+  /** A prévia da Loja está passando no tabuleiro: o menu some, sem perder onde estava (a Loja reabre no item). */
+  escondido?: boolean
+  /** "Ver em ação": a prévia do item da Loja no tabuleiro. */
+  onVerEmAcao: (item: string) => void
 }) {
   const sessao = useSessao()
   const { amigos, atualizar: atualizarAmigos } = useAmigos()
@@ -393,7 +399,7 @@ export function MenuXadrez({
   useFecharComEsc(voltar, painel !== 'inicio' && !mostrandoCodigo)
 
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_center,rgba(10,6,3,0.72)_0%,rgba(10,6,3,0.28)_42%,rgba(10,6,3,0)_70%)] p-4">
+    <div className={`absolute inset-0 z-10 items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_center,rgba(10,6,3,0.72)_0%,rgba(10,6,3,0.28)_42%,rgba(10,6,3,0)_70%)] p-4 ${escondido ? 'hidden' : 'flex'}`}>
       {painel === 'inicio' && (
         // no celular em pé o tabuleiro fica de lado, numa faixa no meio: o título vai logo acima dele e os botões em grade
         // logo abaixo. Na tela muito baixa, o título vai pro canto pra não cobrir as peças
@@ -545,6 +551,8 @@ export function MenuXadrez({
               saldo={conquistas?.oticoins ?? null}
               onSaldo={(oticoins) => setConquistas((atual) => atual && { ...atual, oticoins })}
               montarExpositor={montarExpositor}
+              situacao={conquistas}
+              onVerEmAcao={onVerEmAcao}
             />
           )}
           {painel === 'personalizacao' && <PainelPersonalizacao t={t} montarVitrine={montarVitrine} montarExpositor={montarExpositor} />}

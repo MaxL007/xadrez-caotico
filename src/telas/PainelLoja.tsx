@@ -4,16 +4,22 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { ChaveTexto, Traduzir } from '../textos/idiomas'
 import { desenhoDosPaineis } from '../jogo/configXadrez'
 import { urlDoAvatar } from '../conta/aparencia'
-import { comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Peca } from '../conta/personalizacao'
+import { acessoDaOpcao, comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Peca } from '../conta/personalizacao'
+import { CONQUISTAS, type SituacaoDasConquistas } from '../conta/conquistas'
+import { nomeDaConquista } from './PainelConquistas'
+import { temPrevia } from '../tabuleiro/fluxo/previaDaLoja'
 import { ErroDoServidor } from '../dados/servidor'
 import { Oticoin } from './ElementosDoJogador'
 import { criarExpositor, desenharNoExpositor, noSuporte } from '../tabuleiro/pecas/expositor'
-import { HABILIDADES } from '../conta/habilidades'
+import { HABILIDADES, textoDoQueFaz } from '../conta/habilidades'
 
 // A Loja tem três abas: Armaduras, peça por peça; Armas e Habilidades especiais, cada uma numa lista só, separada pela
 // peça que usa. A compra vale só pra aquela peça (o item é 'peça:parte:opção'): por isso o cajado e o cristal aparecem
 // uma vez em cada peça que os usa. Cada equipamento aparece em 3D num expositor (a habilidade, pelo símbolo dela);
 // tocar abre ele grande, pra girar com o dedo.
+// As armas e as habilidades têm a prévia ("Ver em ação"): a captura de verdade no tabuleiro, com o item na peça de quem
+// joga. Aberto grande, o item diz o que faz, como sair (o preço e, na arma, a conquista que também libera, com o
+// progresso) e, pra quem ainda não tem as óticoins, as conquistas mais perto de sair: a vontade de jogar mais.
 
 type MontarExpositor = (tipo: string, parte: string, opcao: string) => THREE.Object3D | null
 type Aba = 'armaduras' | 'armas' | 'habilidades'
@@ -162,16 +168,53 @@ function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor:
   return { vistasRef, giroManualRef }
 }
 
+/** As conquistas que ainda não saíram, das mais perto do fim pras mais longe (as que já começaram primeiro). */
+function maisPerto(situacao: SituacaoDasConquistas, quantas: number) {
+  return CONQUISTAS.filter((c) => !situacao.recebidas.includes(c.id) && situacao.contagem[c.medida] < c.meta)
+    .map((c) => ({ conquista: c, atual: situacao.contagem[c.medida] }))
+    .sort((a, b) => b.atual / b.conquista.meta - a.atual / a.conquista.meta || a.conquista.meta - b.conquista.meta)
+    .slice(0, quantas)
+}
+
+/** Uma conquista com a barra de progresso e o prêmio. */
+function BarraDaConquista({ t, nome, atual, meta, oticoins }: { t: Traduzir; nome: string; atual: number; meta: number; oticoins?: number }) {
+  return (
+    <div className="space-y-1" data-progresso-conquista>
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="min-w-0 truncate font-semibold">{nome}</span>
+        <span className="flex shrink-0 items-center gap-1 text-[#c9b48a]">
+          {t('loja.progresso', { atual: Math.min(atual, meta), meta })}
+          {oticoins !== undefined && (
+            <>
+              <span aria-hidden="true">·</span>+{oticoins}
+              <Oticoin tamanho={13} />
+            </>
+          )}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-[#1c120a]">
+        <div className="h-full rounded-full bg-gradient-to-r from-[#c9a24a] to-[#f0d58c]" style={{ width: `${Math.round((Math.min(atual, meta) / meta) * 100)}%` }} />
+      </div>
+    </div>
+  )
+}
+
 export function PainelLoja({
   t,
   saldo,
   onSaldo,
   montarExpositor,
+  situacao = null,
+  onVerEmAcao,
 }: {
   t: Traduzir
   saldo: number | null
   onSaldo: (saldo: number) => void
   montarExpositor: MontarExpositor
+  /** O progresso das conquistas: a arma que também sai por conquista e as que estão mais perto. */
+  situacao?: SituacaoDasConquistas | null
+  /** A prévia no tabuleiro (as armas e as habilidades). */
+  onVerEmAcao?: (item: string) => void
 }) {
   const personalizacao = usePersonalizacao()
   const [aba, setAba] = useState<Aba>('armaduras')
@@ -182,6 +225,8 @@ export function PainelLoja({
    * estava aberto. */
   const [rolarAte, setRolarAte] = useState<string | null>(null)
   const [comprando, setComprando] = useState(false)
+  /** O item cuja prévia a pessoa acabou de ver: o convite pra comprar fica em destaque. */
+  const [acabouDeVer, setAcabouDeVer] = useState<string | null>(null)
   const [erro, setErro] = useState<ChaveTexto | null>(null)
   const raizRef = useRef<HTMLDivElement>(null)
   const arrasteRef = useRef<{ x: number; giro: number } | null>(null)
@@ -221,6 +266,71 @@ export function PainelLoja({
   function abrir(item: string) {
     giroManualRef.current = null
     setAberto(item)
+  }
+
+  /** A prévia no tabuleiro; na volta, a Loja está no item, com o convite em destaque. */
+  function verEmAcao(item: string) {
+    if (!onVerEmAcao) return
+    abrir(item)
+    setAcabouDeVer(item)
+    onVerEmAcao(item)
+  }
+
+  function botaoVerEmAcao(item: string, grande = false) {
+    if (!onVerEmAcao || !temPrevia(item)) return null
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          verEmAcao(item)
+        }}
+        className={
+          grande
+            ? 'flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#c9a24a] to-[#e6c675] px-4 py-2.5 text-sm font-bold text-[#1c120a] shadow transition hover:brightness-110'
+            : 'mt-1 w-full rounded-lg bg-[#c9a24a]/15 px-2 py-1 text-[0.7rem] font-semibold text-[#e6c675] transition hover:bg-[#c9a24a]/30'
+        }
+        data-ver-em-acao={item}
+      >
+        ▶ {t('loja.verEmAcao')}
+      </button>
+    )
+  }
+
+  /** O que o item faz, como sair e, se faltar óticoins, as conquistas mais perto: só nas armas e habilidades. */
+  function comoConseguir(item: string, preco: number) {
+    const { peca: p, parte, opcao } = partesDoItem(item)
+    if (parte !== 'arma' && parte !== 'golpe') return null
+    const liberado = opcaoLiberada(personalizacao, p, parte, opcao)
+    const acesso = acessoDaOpcao(p, parte, opcao)
+    const conquistaDaArma = acesso.tipo === 'loja' && acesso.conquista ? CONQUISTAS.find((c) => c.id === acesso.conquista) : undefined
+    const falta = saldo != null ? preco - saldo : null
+    const perto = situacao && !liberado && (falta === null || falta > 0) ? maisPerto(situacao, 3) : []
+    return (
+      <div className="space-y-3" data-como-conseguir>
+        <p className="text-xs leading-relaxed text-[#e9dcc0]">{t(parte === 'golpe' ? textoDoQueFaz(opcao) : (`loja.acao.${opcao}` as ChaveTexto))}</p>
+        {!liberado && acabouDeVer === item && (
+          <p className="rounded-lg border border-[#e6c675] bg-[#c9a24a]/15 px-3 py-2 text-center text-sm font-semibold text-[#f5e6c8] shadow-[0_0_18px_rgba(230,198,117,0.35)]" data-gostou>
+            {t('loja.gostou', { n: preco })}
+          </p>
+        )}
+        {!liberado && conquistaDaArma && (
+          <div className="space-y-1.5 rounded-lg bg-[#2a1c10] p-2.5">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[#c9b48a]">{t('loja.deGraca')}</p>
+            <BarraDaConquista t={t} nome={nomeDaConquista(t, conquistaDaArma)} atual={situacao?.contagem[conquistaDaArma.medida] ?? 0} meta={conquistaDaArma.meta} />
+          </div>
+        )}
+        {!liberado && saldo == null && <p className="text-xs text-[#c9b48a]">{t('loja.contaParaJuntar')}</p>}
+        {perto.length > 0 && (
+          <div className="space-y-2 rounded-lg bg-[#2a1c10] p-2.5" data-mais-perto>
+            <p className="text-xs text-[#e9dcc0]">{falta !== null ? t('loja.faltam', { n: falta }) : t('loja.juntar')}</p>
+            {perto.map(({ conquista, atual }) => (
+              <BarraDaConquista key={conquista.id} t={t} nome={nomeDaConquista(t, conquista)} atual={atual} meta={conquista.meta} oticoins={conquista.oticoins} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   function irPara(destino: AbaPorPeca, p: Peca) {
@@ -277,6 +387,7 @@ export function PainelLoja({
           )}
         </button>
         <div className="mt-1.5">{botaoDeCompra(item, preco)}</div>
+        {botaoVerEmAcao(item)}
       </div>
     )
   }
@@ -381,6 +492,8 @@ export function PainelLoja({
             </div>
             {botaoDeCompra(aberto, precoAberto)}
           </div>
+          {botaoVerEmAcao(aberto, true)}
+          {comoConseguir(aberto, precoAberto)}
         </div>
       ) : aba !== 'armaduras' ? (
         <div className="space-y-5">

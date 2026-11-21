@@ -16,6 +16,8 @@ export interface DadosDaHabilidade {
   /** A arma que tem de estar na mão pra habilidade sair (sem ela, vale com qualquer arma ou nenhuma): o nome da opção
    * da arma, o aviso da Personalização quando ela não está na mão e o complemento na Loja ("com a katana"). */
   arma?: { opcao: string; aviso: ChaveTexto; naLoja: ChaveTexto }
+  /** Luta com as mãos: vai até a vítima sem sacar a arma (a katana fica na bainha), e vale com qualquer arma. */
+  maosLivres?: boolean
 }
 
 export const HABILIDADES: Record<string, DadosDaHabilidade> = {
@@ -23,6 +25,8 @@ export const HABILIDADES: Record<string, DadosDaHabilidade> = {
   retalhamento: { peca: 'p', alcance: 'corpoACorpo', arma: { opcao: 'katana', aviso: 'personalizacao.habilidade.semKatana', naLoja: 'loja.comAKatana' } },
   // a rainha puxa a peça pela gravidade até a mão e esmaga no chão; vale com ou sem arma
   puxao: { peca: 'q', alcance: 'aDistancia' },
+  // o peão boxeador: o oito da Dempsey Roll, ganchos dos dois lados e o gancho final que arremessa; com os punhos
+  dempsey: { peca: 'p', alcance: 'corpoACorpo', maosLivres: true },
 }
 
 /** Todas as habilidades do catálogo, peça por peça (sem o "nenhuma"). */

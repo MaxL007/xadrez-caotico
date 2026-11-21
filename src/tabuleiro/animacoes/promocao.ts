@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { escolhaDaParte, partesDaPeca, type Peca } from '../../conta/personalizacao'
 import { tocarSom } from '../../som/sons'
 import { esconderCavaleiro } from '../combate/efeitosDasArmas'
+import { faisca } from '../combate/efeitosDeAnime'
 import { spriteDeBrilho } from '../combate/poderes'
 import { cajadoQueVoa, pecasDoEquipamento, vestirPeca, type MateriaisDaPeca, type PedacoQueVoa } from '../pecas/equipamentos'
 import { ESCALA_POR_TIPO } from '../pecas/geometricas'
@@ -235,6 +236,7 @@ export function encaixarEquipamentos(e: Encaixe) {
         voo.brilho.removeFromParent()
         voo.brilho.material.dispose()
         tocarSom('encaixe')
+        faisca(cena, alvo.clone(), e.cor, 0.45, 220)
         const resto = (faltam.get(voo.parte) ?? 1) - 1
         faltam.set(voo.parte, resto)
         if (resto === 0) mostrar(voo.parte)

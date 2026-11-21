@@ -87,7 +87,9 @@ export function instalarGanchosDeTeste(dependencias: DependenciasDosTestes) {
     /** Lance ou máquina ainda em andamento. */
     ocupado: () => vezDaMaquinaRef.current || andamento.lancesEmAndamento > 0,
     /** Lado da câmera (z positivo = brancas perto da tela) e se ela ainda está girando. */
-    camera: () => ({ z: camera.position.z, girando: vista.girando(), coordenadaA: labelsGroup.children[0].position.z, distancia: camera.position.distanceTo(controls.target), distanciaIdeal: vista.distanciaQueEnquadra() }),
+    camera: () => ({ z: camera.position.z, girando: vista.girando(), coordenadaA: labelsGroup.children[0].position.z, distancia: camera.position.distanceTo(controls.target), distanciaIdeal: vista.distanciaQueEnquadra(), centro: controls.target.toArray() }),
+    /** Como se a pessoa encostasse na câmera (no celular, todo toque conta): o 'start' dos controles. */
+    pegarCamera: () => controls.dispatchEvent({ type: 'start' }),
     /** Onde a casa aparece no tabuleiro, em pixels da janela. */
     casaNaTela: (casa: string) => {
       const { x, z } = squareToPos(casa)

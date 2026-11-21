@@ -10,7 +10,10 @@ import { depoisDoCongelamento, type SensacaoDaPartida } from '../sensacao/golpeQ
 import { despedacar, rachadurasNoTabuleiro, rastroDeCorte, tremerTabuleiro } from './efeitosDasArmas'
 import { massaDaPeca } from '../sensacao/realismo'
 import { abrirCratera, afundarNaCratera } from './cratera'
-import { faisca } from './efeitosDeAnime'
+import { faisca, rastroDeBrilho } from './efeitosDeAnime'
+import { dempseyRoll } from './dempseyRoll'
+import { nocautear } from './nocaute'
+import { congelar } from '../sensacao/relogioDoJogo'
 import { animarImpacto } from './golpes'
 import { ondaDaMarretada, poeiraDaPancada } from './marreta'
 import { puxaoUniversal } from './puxaoUniversal'
@@ -41,15 +44,49 @@ export interface CapturaComHabilidade {
   sensacao: SensacaoDaPartida
 }
 
-/** O retalhamento (peão de katana): uma série de cortes rápidos, cada um com o rastro, e a peça se desfaz em pedaços. */
+// --- o padrão de anime de toda habilidade (pedido do usuário: seguir um padrão) ---------------------------------------
+// 1. o começo: o brilho de anime ("tiin") num ponto de quem ataca (os olhos, a palma, a lâmina);
+// 2. o impulso, quando o golpe sai: o estalo, as linhas de foco e a câmera fechando um pouco;
+// 3. o golpe que decide: o quadro de impacto (a tela em negativo), as linhas de foco, a faísca e a câmera abrindo.
+// No meio, cada habilidade tem o que é dela; os efeitos ficam em efeitosDeAnime.ts e na SensacaoDaPartida.
+
+const corDoBrilho = (c: CapturaComHabilidade) => materiaisPorFaccao[c.corAtacante].brilho.color
+
+/** 1. O brilho de anime no começo. */
+function brilhoDeAnime(c: CapturaComHabilidade, ponto: THREE.Vector3, tamanho = 0.32) {
+  tocarSom('anime:brilho')
+  faisca(c.cena, ponto, corDoBrilho(c), tamanho * c.atacante.scale.x, 300)
+}
+
+/** 2. O impulso: o golpe saindo. */
+function impulsoDeAnime(c: CapturaComHabilidade, ponto: THREE.Vector3, tom = 1) {
+  tocarSom('anime:estala', 0, tom)
+  c.sensacao.linhasDeFoco(ponto, 220)
+  c.sensacao.socoNaCamera(-4, 300)
+}
+
+/** 3. O golpe que decide. */
+function impactoDeAnime(c: CapturaComHabilidade, ponto: THREE.Vector3) {
+  c.sensacao.quadroDeImpacto(90)
+  c.sensacao.linhasDeFoco(ponto, 320)
+  c.sensacao.socoNaCamera(5, 420)
+  faisca(c.cena, ponto, 0xffffff, 0.7 * c.vitima.scale.x, 260)
+}
+
+/** O meio do corpo de uma peça (no tamanho dela). */
+const meioDo = (peca: THREE.Object3D, altura = 0.45) => peca.position.clone().add(new THREE.Vector3(0, altura * peca.scale.y, 0))
+
+/** O retalhamento (peão de katana): o brilho na lâmina e um instante parado, uma série de cortes rápidos (cada um com o
+ * rastro e a faísca) e, com a katana já na bainha, o golpe que decide: a peça se desfaz em pedaços. */
 function retalhar(c: CapturaComHabilidade) {
   const cortes = 4
   let feitos = 0
-  const corDoCorte = materiaisPorFaccao[c.corAtacante].brilho.color
+  const corDoCorte = corDoBrilho(c)
   const proximo = () => {
     if (!c.vigente() || !sequenciaRPGValida(c.atacante, c.senha)) return
     if (feitos === cortes) {
       tocarSom('retalho:pedacos')
+      impactoDeAnime(c, meioDo(c.vitima))
       const ms = c.sentirImpacto(1, true)
       depoisDoCongelamento(ms, () => {
         if (!c.vigente()) return
@@ -60,16 +97,21 @@ function retalhar(c: CapturaComHabilidade) {
       return
     }
     feitos++
+    if (feitos === 1) impulsoDeAnime(c, meioDo(c.vitima))
     const golpes = clipesRPGComPrefixo(c.atacante, 'Attack')
     const tocou = golpes.length > 0 && tocarClipeRPGUmaVez(c.atacante, golpes[(feitos - 1) % golpes.length], { entrada: 0.06, voltarAoParado: false, velocidade: 2.3, aoTerminar: proximo })
     window.setTimeout(() => {
       if (!c.vigente()) return
       tocarSom('retalho:corte')
       rastroDeCorte(c.cena, c.vitima, corDoCorte)
+      faisca(c.cena, meioDo(c.vitima, 0.35 + 0.1 * feitos), corDoCorte, 0.35 * c.vitima.scale.x, 160)
     }, 170)
     if (!tocou) window.setTimeout(proximo, 300)
   }
-  proximo()
+  // o brilho na lâmina e o instante parado antes de o primeiro corte sair
+  const lamina = c.atacante.getObjectByName('EspadaLamina')
+  brilhoDeAnime(c, lamina ? lamina.getWorldPosition(new THREE.Vector3()) : meioDo(c.atacante, 0.62))
+  window.setTimeout(proximo, 220)
 }
 
 /** O Puxão Universal (rainha), na mecânica do anime: a base de luta, o brilho e o impulso da mão; a peça vem voando até a
@@ -80,34 +122,24 @@ function puxar(c: CapturaComHabilidade) {
   novaSequenciaRPG(c.vitima)
   mostrarEspadaRPG(c.vitima, false)
   tocarSom('puxao:chama')
-  const cor = materiaisPorFaccao[c.corAtacante].brilho.color
+  const cor = corDoBrilho(c)
   const tamanho = c.atacante.scale.x
   puxaoUniversal(c.atacante, c.vitima, c.cena, cor, c.vigente, {
-    aoBrilhar: (mao) => {
-      tocarSom('puxao:brilho')
-      faisca(c.cena, mao, cor, 0.32 * tamanho, 300)
-    },
-    aoEmpurrar: (mao) => {
-      tocarSom('puxao:estala')
-      c.sensacao.linhasDeFoco(mao, 220)
-      c.sensacao.socoNaCamera(-4, 300)
-    },
+    aoBrilhar: (mao) => brilhoDeAnime(c, mao),
+    aoEmpurrar: (mao) => impulsoDeAnime(c, mao),
     aoPuxar: () => tocarSom('puxao:arrasta'),
     aoAgarrar: (mao) => {
       tocarSom('puxao:agarra')
       faisca(c.cena, mao, cor, 0.6 * tamanho)
     },
     aoGirar: () => tocarSom('puxao:gira'),
-    aoBaixar: () => tocarSom('puxao:estala', 0, 0.75),
+    aoBaixar: () => tocarSom('anime:estala', 0, 0.75),
     aoEsmagar: ({ meio, rumo, comprimento, meiaGrossura }) => {
       // a pancada pesa o que a peça pesa: rachaduras, tremor e cratera crescem com a massa dela
       const massa = massaDaPeca(c.vitima.userData.tipo)
       tocarSom('marreta:impacto')
       tocarSom('esmagado', 0.05)
-      // o golpe mais forte do anime: a tela em negativo por um instante, as linhas de foco e a câmera abrindo
-      c.sensacao.quadroDeImpacto(90)
-      c.sensacao.linhasDeFoco(meio, 320)
-      c.sensacao.socoNaCamera(5, 420)
+      impactoDeAnime(c, meio)
       animarImpacto(c.cena, meio.x, meio.z)
       ondaDaMarretada(c.cena, meio.x, meio.z, cor)
       // rentes ao tampo: no buraco aparece o fundo da cratera, não as rachaduras por cima dele
@@ -128,8 +160,52 @@ function puxar(c: CapturaComHabilidade) {
   })
 }
 
+/** A Dempsey Roll (peão, com os punhos): o brilho nos olhos na guarda, o oito com o rastro de luz e os ganchos (cada um
+ * mais agudo, com faísca e um tranco curto), a parada brusca, a carga e o gancho final, que arremessa a vítima pela
+ * força (ver dempseyRoll.ts e nocaute.ts). */
+function dempsey(c: CapturaComHabilidade) {
+  const cor = corDoBrilho(c)
+  const tamanho = c.atacante.scale.x
+  const tipoVitima = String(c.vitima.userData.tipo ?? 'p')
+  dempseyRoll(c.atacante, c.vitima, c.vigente, {
+    aoEntrar: (olhos) => brilhoDeAnime(c, olhos, 0.28),
+    aoBalancar: () => tocarSom('dempsey:balanco'),
+    // o rastro do oito: a cor da facção forte e mais demorado, pra ficar o desenho do ∞ no ar
+    aoRolar: (cabeca) => rastroDeBrilho(c.cena, cabeca, cor, 0.3 * tamanho, 380),
+    aoGancho: (numero, queixo) => {
+      tocarSom('dempsey:gancho', 0, 1 + 0.05 * numero)
+      if (numero % 2 === 1) tocarSom(`dor:${tipoVitima}`, 0.03)
+      faisca(c.cena, queixo, 0xffffff, 0.32 * c.vitima.scale.x, 170)
+      congelar(22 + 4 * numero)
+    },
+    aoParar: (queixo) => impulsoDeAnime(c, queixo, 0.8),
+    aoCarregar: (punho) => brilhoDeAnime(c, punho, 0.45),
+    aoGolpeFinal: (queixo, direcao) => {
+      tocarSom('dempsey:final')
+      impactoDeAnime(c, queixo)
+      c.sentirImpacto(1.3, true)
+      nocautear(
+        c.cena,
+        c.vitima,
+        { direcao, forca: 2.2, massaDeQuemBate: massaDaPeca(c.atacante.userData.tipo), massaDaVitima: massaDaPeca(tipoVitima), altura: 0.65 },
+        c.vitima.parent?.children ?? [],
+        c.vigente,
+        {
+          aoPousar: (onde, massa) => {
+            tocarSom(`queda:${tipoVitima}`)
+            animarImpacto(c.cena, onde.x, onde.z)
+            tremerTabuleiro(c.cena, 0.015 + 0.006 * massa, 220)
+          },
+          aoTerminar: c.fim,
+        },
+      )
+      c.comemorarAliadas()
+    },
+  })
+}
+
 /** A captura de cada habilidade, pelo nome dela no catálogo. */
-export const CAPTURAS: Record<string, (c: CapturaComHabilidade) => void> = { retalhamento: retalhar, puxao: puxar }
+export const CAPTURAS: Record<string, (c: CapturaComHabilidade) => void> = { retalhamento: retalhar, puxao: puxar, dempsey }
 
 /** O que falta em cada habilidade do catálogo: o cadastro, a peça certa, a animação, o símbolo, o preço na Loja e os
  * textos nos três idiomas. Vazio quando está tudo certo (o teste das armas confere). */

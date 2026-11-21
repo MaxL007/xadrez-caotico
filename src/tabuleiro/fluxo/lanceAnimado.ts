@@ -10,7 +10,7 @@ import { distanciaDaLuta, type GolpeSemArma, lutarSemArma, sortearGolpeSemArma }
 import { tocarSom } from '../../som/sons'
 import { type PartidaXadrez } from '../../dados/xadrezRepo'
 import { type Peca } from '../../conta/personalizacao'
-import { animarAscensao, animarPetalas } from '../animacoes/cerimonias'
+import { animarAscensao, animarPetalas, virarSuave } from '../animacoes/cerimonias'
 import { cavaloChegaEMontam, daMontaria, desfazerEquipamentos, doCavaleiro, encaixarEquipamentos, esconderPartes, partesVestidas, peaoCavaleiro } from '../animacoes/promocao'
 import { animarComemoracao, voltarAoDescanso } from '../animacoes/gestos'
 import { animarPosicao, animarPosicaoRPG, deslocarRPG, pararRPG, pecaSaltaRPG, rumoEntre, virarRPG } from '../animacoes/movimento'
@@ -203,6 +203,37 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         const vestidas = partesVestidas(tipoNovo, escolhas)
         const materiais = materiaisDaPeca(lance.color)
         const destino = squareToPosPeca(casaDestino)
+        // o foco da ascensão: a câmera fecha na peça; no clarão a peça nova vira de frente pra câmera (as linhas de foco
+        // do anime) e recebe os equipamentos olhando pra quem joga; no último encaixe, a pose: brilho e faísca, e ela
+        // volta a olhar pra frente
+        const corpoDaPeca = new THREE.Vector3(destino.x, 0.75, destino.z)
+        sensacao.focarNaAscensao(corpoDaPeca)
+        let focoSolto = false
+        const soltarFoco = () => {
+          if (focoSolto) return
+          focoSolto = true
+          sensacao.soltarFoco()
+        }
+        const olharPraCamera = (peca: THREE.Object3D) => {
+          sensacao.linhasDeFoco(corpoDaPeca, 420)
+          faisca(scene, corpoDaPeca.clone().setY(1.25), corDoBrilho, 0.9, 380)
+          virarSuave(peca, sensacao.rumoDaCamera(peca.position), 450)
+        }
+        /** A pose do fim: o brilho na peça completa, um instante parada de frente, e volta a olhar pro rumo dela. */
+        const poseFinal = (peca: THREE.Object3D, rumo: number, depois: () => void) => {
+          if (!vigente()) {
+            soltarFoco()
+            depois()
+            return
+          }
+          tocarSom('ascensao:pose')
+          faisca(scene, corpoDaPeca, corDoBrilho, 1.3, 420)
+          sensacao.linhasDeFoco(corpoDaPeca, 300)
+          window.setTimeout(() => {
+            soltarFoco()
+            virarSuave(peca, rumo, 450, depois)
+          }, 420)
+        }
         if (tipoNovo === 'n' && modelosRPG.n && modelosRPG.p) {
           let cavalo: THREE.Group | undefined
           let peao: THREE.Group | null = null
@@ -220,11 +251,13 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
               peao.position.set(destino.x, 0.05, destino.z)
               esconderPartes(peao, doCavaleiro(vestidas))
               piecesGroup.add(peao)
+              olharPraCamera(peao)
               return peao
             },
             () => {
               const peaoQueMonta = peao
               if (!vigente() || !cavalo || !peaoQueMonta) {
+                soltarFoco()
                 terminouUma()
                 return
               }
@@ -237,24 +270,28 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
                 materiais,
                 cor: corDoBrilho,
                 continua: vigente,
+                // a pose de frente pra câmera e, solto o foco (o cavalo vem de longe), o cavalo chega pra ele montar
                 aoTerminar: () =>
-                  cavaloChegaEMontam({
-                    cena: scene,
-                    cavalo: cavaloDaCasa,
-                    peao: peaoQueMonta,
-                    destino,
-                    partesDaMontaria: daMontaria(vestidas),
-                    materiais,
-                    cor: corDoBrilho,
-                    continua: vigente,
-                    aoTerminar: terminouUma,
-                  }),
+                  poseFinal(peaoQueMonta, peaoQueMonta.rotation.y, () =>
+                    cavaloChegaEMontam({
+                      cena: scene,
+                      cavalo: cavaloDaCasa,
+                      peao: peaoQueMonta,
+                      destino,
+                      partesDaMontaria: daMontaria(vestidas),
+                      materiais,
+                      cor: corDoBrilho,
+                      continua: vigente,
+                      aoTerminar: terminouUma,
+                    }),
+                  ),
               })
             },
           )
           return
         }
         let pecaNova: THREE.Object3D | undefined
+        let rumoDaPecaNova = 0
         animarAscensao(
           scene,
           meshMovendo,
@@ -263,15 +300,30 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             if (!vigente()) return undefined
             sincronizarPecas(false, casaDestino)
             pecaNova = pieceMeshBySquare.get(casaDestino)
-            if (pecaNova) esconderPartes(pecaNova, vestidas, tipoNovo)
+            if (pecaNova) {
+              esconderPartes(pecaNova, vestidas, tipoNovo)
+              rumoDaPecaNova = pecaNova.rotation.y
+              olharPraCamera(pecaNova)
+            }
             return pecaNova
           },
           () => {
-            if (!vigente() || !pecaNova) {
+            const completa = pecaNova
+            if (!vigente() || !completa) {
+              soltarFoco()
               terminouUma()
               return
             }
-            encaixarEquipamentos({ cena: scene, peca: pecaNova, tipo: tipoNovo, partes: vestidas, materiais, cor: corDoBrilho, continua: vigente, aoTerminar: terminouUma })
+            encaixarEquipamentos({
+              cena: scene,
+              peca: completa,
+              tipo: tipoNovo,
+              partes: vestidas,
+              materiais,
+              cor: corDoBrilho,
+              continua: vigente,
+              aoTerminar: () => poseFinal(completa, rumoDaPecaNova, terminouUma),
+            })
           },
         )
       })
@@ -509,6 +561,17 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
           if (!vigente()) return
           pararRPG(atacante)
           CAPTURAS[habilidade](comHabilidade())
+        })
+        return
+      }
+
+      // a habilidade de mãos livres (a Dempsey Roll): vai até a vítima sem sacar a arma, no alcance dos socos
+      if (habilidade && HABILIDADES[habilidade].maosLivres) {
+        voltarAoDescanso(atacante)
+        chegarPerto(distanciaDaLuta('socos', atacante, vitima), () => {
+          if (!vigente()) return
+          pararRPG(atacante)
+          antecipar(atacante, { x: posVitima.x - atacante.position.x, z: posVitima.z - atacante.position.z }, () => CAPTURAS[habilidade](comHabilidade()))
         })
         return
       }

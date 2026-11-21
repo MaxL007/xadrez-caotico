@@ -513,18 +513,44 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { ataque: 0.6, dur: 0.28, vol: 0.24, freq: 300, ate: 2600, q: 1.3 })
     return 0.95
   },
+  // a ascensão completa: o brilho de anime e um acorde que sobe
+  'ascensao:pose': (s) => {
+    sino(s, 1568, 0.9, 0.05)
+    sino(s, 1976, 0.9, 0.04, 0.05)
+    sino(s, 2349, 1.0, 0.04, 0.1)
+    sino(s, 3136, 0.7, 0.03, 0.16)
+    sopro(s, { ataque: 0.04, dur: 0.4, vol: 0.06, freq: 4000, ate: 8000, q: 2 })
+    return 1.1
+  },
   // o brilho de anime na palma: um "tiin" agudo e limpo
-  'puxao:brilho': (s) => {
+  'anime:brilho': (s) => {
     sino(s, 2960, 0.55, 0.05)
     sino(s, 4440, 0.4, 0.025, 0.01)
     tom(s, { tipo: 'triangle', freq: 1480, ate: 2960, ataque: 0.005, dur: 0.12, vol: 0.02 })
     return 0.6
   },
   // o impulso (e a pancada, mais grave): o ar estalando com a mão saindo de uma vez
-  'puxao:estala': (s) => {
+  'anime:estala': (s) => {
     sopro(s, { ataque: 0.01, dur: 0.16, vol: 0.2, freq: 900, ate: 3600, q: 1.2 })
     sopro(s, { inicio: 0.03, dur: 0.03, vol: 0.12, freq: 2600, q: 3 })
     return 0.3
+  },
+  // a Dempsey Roll: o vento do corpo a cada meia volta do oito, o gancho (seco, mais agudo a cada um) e o gancho final
+  'dempsey:balanco': (s) => {
+    sopro(s, { ataque: 0.03, dur: 0.11, vol: 0.12, freq: 420, ate: 1100, q: 1.8 })
+    return 0.2
+  },
+  'dempsey:gancho': (s) => {
+    pancada(s, 170, 70, 0.11, 0.5)
+    sopro(s, { dur: 0.05, vol: 0.16, freq: 1300, q: 1.6 })
+    return 0.2
+  },
+  'dempsey:final': (s) => {
+    sopro(s, { ataque: 0.02, dur: 0.12, vol: 0.2, freq: 600, ate: 2600, q: 1.2 })
+    pancada(s, 120, 40, 0.3, 0.75, 0.08)
+    pancada(s, 70, 32, 0.4, 0.5, 0.1)
+    sopro(s, { inicio: 0.08, dur: 0.12, vol: 0.18, freq: 900, q: 1.4 })
+    return 0.6
   },
   // a hélice: o vento de cada meia volta, zunindo
   'puxao:gira': (s) => {

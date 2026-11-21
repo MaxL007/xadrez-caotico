@@ -89,7 +89,9 @@ As pastas de `src` são por função:
 - Molduras estão trancadas: só a conta com `usuarios.tudo_liberado = 1` coloca uma, e o servidor confere
   (`moldura-bloqueada`). Liga-se direto no banco, nunca pelo site:
   `npx wrangler d1 execute xadrez-caotico --remote --command "UPDATE usuarios SET tudo_liberado = 1 WHERE nome_busca = '<nome>'"`.
-  Quem liga qual conta fica fora do repositório, que é público.
+  Quem liga qual conta fica fora do repositório, que é público. Pelo ID de jogador (o de 8 letras do perfil):
+  `... SET tudo_liberado = 1 WHERE id_jogador = '<ID>'`. A marca libera tudo: molduras, armaduras, montarias, armas e
+  habilidades (serve pra quem ajuda a testar o jogo).
 - `usuarios.avatar` é uma sugestão do jogo (`peao-brancas`) ou a foto (`foto:<versão>`), e `moldura` é só o id. As listas
   válidas ficam em `src/catalogos/aparencia.json`, que o Worker também importa: moldura nova entra ali e em `ANEL_DA_MOLDURA`.
 - A foto é recortada e reduzida no aparelho (`src/conta/foto.ts`) e fica na tabela `fotos`. O servidor só aceita JPEG até
@@ -164,6 +166,23 @@ As pastas de `src` são por função:
 
   As fotos de cada pose-chave saem de `SO=puxao,puxao-de-lado,puxao-de-cima,puxao-rainha node testes/fotos-armas.mjs`
   (a última compara a cratera da rainha com a do peão).
+- O peão tem a Dempsey Roll (`p:golpe:dempsey`, 300 óticoins; símbolo: a luva de boxe do desenho do usuário), o golpe do
+  boxe de Jack Dempsey que é o golpe final do Ippo em Hajime no Ippo. Luta com os punhos (`maosLivres` no cadastro): vai
+  até a vítima sem sacar a arma, no alcance dos socos, e vale com qualquer arma.
+  - Agachado na guarda alta, os olhos brilham ("tiin").
+  - O tronco descreve um oito deitado (∞), sen φ de lado e sen 2φ de cima pra baixo, avançando, com um rastro de luz na
+    cabeça; a cada ponta do balanço sai um gancho, esquerdo e direito alternados, cada vez mais rápido (três voltas, seis
+    ganchos). Cada gancho joga a cabeça da vítima pro lado (uma mola), com faísca, gemido e um tranco curto.
+  - No meio do oito, a parada brusca (a do Ippo depois do Sawamura), e a roda volta mais rápida.
+  - A carga parada, tremendo em dois, o brilho no punho direito, e o gancho final com o corpo todo: o quadro de impacto,
+    e a vítima sai voando pelo nocaute (força 2,2).
+
+  Fica em `combate/dempseyRoll.ts` (as duas peças, por cima do clipe, desfeito e refeito no laço como o puxão). As fotos
+  saem de `SO=dempsey,dempsey-de-lado node testes/fotos-armas.mjs`.
+- Toda habilidade segue o padrão de anime (`brilhoDeAnime`, `impulsoDeAnime` e `impactoDeAnime`, em
+  `combate/habilidades.ts`): o brilho com o "tiin" no começo (os olhos, a palma, a lâmina), o impulso quando o golpe sai
+  (estalo, linhas de foco, a câmera fechando) e, no golpe que decide, o quadro de impacto, as linhas de foco, a faísca e
+  a câmera abrindo. Os sons são `anime:brilho` e `anime:estala`. Uma habilidade nova chama os três.
 - Os efeitos de anime ficam em `src/tabuleiro/combate/efeitosDeAnime.ts` (`emDois`, `acaso` pro tremor desenho a
   desenho, `linhasDeVelocidade`, `faisca`, `criarLeque`, o borrão atrás do que gira) e, os de tela, na
   `SensacaoDaPartida` que o lance entrega a cada habilidade: `linhasDeFoco` (um canvas por cima do 3D, redesenhado em
@@ -172,10 +191,11 @@ As pastas de `src` são por função:
 - O realismo das ações (`src/tabuleiro/sensacao/realismo.ts`): `REALISMO` é a porcentagem de física de verdade (hoje
   70%; 100% seria um boneco de pano solto, 0% a peça dura de desenho animado), e menos movimento a reduz. `corpoLargado`
   põe a pose do corpo arrancado por cima do clipe (costas arqueadas, membros pra trás ou pra frente, abertos, tremulando)
-  e `massaDaPeca` dá o peso de cada peça. Por enquanto só o Puxão segue; uma ação nova usa os mesmos dois. A peça com
-  `userData.poseDeHabilidade` (as duas do Puxão) fica fora da inércia de quem anda.
+  e `massaDaPeca` dá o peso de cada peça. Seguem o Puxão, a Dempsey Roll e o nocaute dos golpes simples. A peça com
+  `userData.poseDeHabilidade` (as duas de uma habilidade, a vítima no ar) fica fora da inércia de quem anda e dos gestos.
 - As habilidades têm cadastro único: `src/conta/habilidades.ts` (`HABILIDADES`) diz de que peça é cada uma, se vai até
-  a vítima (`corpoACorpo`) ou não (`aDistancia`), e se pede uma arma na mão. A animação de cada uma fica em
+  a vítima (`corpoACorpo`) ou não (`aDistancia`), se pede uma arma na mão e se luta com as mãos (`maosLivres`: vai
+  até a vítima sem sacar a arma). A animação de cada uma fica em
   `src/tabuleiro/combate/habilidades.ts` (`CAPTURAS`): ela recebe a cena, as duas peças, `sentirImpacto` e `fim`. O lance
   animado acha a habilidade de quem captura (`habilidadeDaCaptura`) e chama a captura dela. A Personalização e a Loja
   leem o cadastro: a explicação, o aviso da arma e o complemento "com a katana".
@@ -186,8 +206,10 @@ As pastas de `src` são por função:
    `loja.<peça>["golpe:<nome>"]`. O servidor lê o catálogo, então publica o servidor junto (`wrangler deploy`).
 2. **Cadastro** em `src/conta/habilidades.ts`: a peça, o alcance e a arma exigida. Uma arma nova exigida pede dois
    textos: o aviso na Personalização e o complemento na Loja.
-3. **Animação** em `CAPTURAS` (`combate/habilidades.ts`): no acerto, `c.sentirImpacto()` e, depois do congelamento,
-   `c.fim()` quando a vítima já saiu. Uma pose do corpo própria segue o puxão:
+3. **Animação** em `CAPTURAS` (`combate/habilidades.ts`): o padrão de anime (`brilhoDeAnime` no começo,
+   `impulsoDeAnime` quando o golpe sai, `impactoDeAnime` no golpe que decide); no acerto, `c.sentirImpacto()` e, depois do
+   congelamento, `c.fim()` quando a vítima já saiu (ou `nocautear`, que chama `fim`). Uma pose do corpo própria segue o
+   puxão e a Dempsey Roll:
    - um módulo em `combate/`;
    - o começo marcado em `agoraDoJogo()`;
    - desfazer e atualizar no laço do ChessBoard3D.
@@ -245,6 +267,14 @@ As pastas de `src` são por função:
   montado por `montarExpositor` (`tabuleiro/pecas/vitrine.ts`) e `equipamentoSozinho` (equipamentos.ts). A katana e o cajado de sempre
   são recortados do modelo. A Loja usa o mesmo expositor: um canvas por cima dela desenha cada cartão no seu retângulo,
   e tocar no cartão abre o equipamento grande, pra girar.
+- A prévia da Loja ("Ver em ação", pedido do usuário pra dar vontade de comprar): cada arma e habilidade tem o botão, no
+  cartão e no item aberto. O menu some (fica montado, escondido, pra Loja voltar no item), o tabuleiro da tela inicial
+  carrega uma posição pronta pra peça do item (`tabuleiro/fluxo/previaDaLoja.ts`, `CENAS`), veste a peça de quem joga com
+  o item por cima do que ela já usa (`vestimentaDaPrevia`; a habilidade que pede arma vem com ela) e joga a captura de
+  verdade, com a câmera de perto (`vista.irParaAcao`). Sem partida (nada salvo) e sem resposta da máquina; "Pular" volta
+  na hora. De volta, o item aberto diz o que faz (`loja.acao.<arma>` ou o texto da habilidade), "Gostou? É seu por N",
+  a conquista que também libera a arma, com a barra de progresso, e, pra quem não tem as óticoins, as três conquistas
+  mais perto de sair (`maisPerto`), pra dar vontade de jogar mais.
 - A Loja tem três abas: Armaduras, peça por peça, com atalhos no fim pras armas e habilidades daquela peça; Armas e
   Habilidades, cada uma numa lista só separada por peça, cada cartão com o retrato e o nome de quem usa. Cajado e
   cristal aparecem em cada peça que os usa, porque a compra é por peça; o retalhamento fica em Habilidades, com o
@@ -262,8 +292,10 @@ As pastas de `src` são por função:
 - A óticoin é uma moeda 3D com o peão de um lado e o rei do outro: `node scripts/gerar-oticoin.mjs` gera em
   `public/oticoin` a fileira de quadros do giro e os dois lados parados, que o componente `Oticoin` mostra.
 - Catálogo em `src/catalogos/conquistas.json`, também lido pelo Worker. Só contam partidas contra a máquina; as com amigos
-  ficam de fora. Capturas, xeques, roques e vitórias saem das partidas salvas (`contarPartidas`); convites aceitos, o
-  servidor conta.
+  ficam de fora. Capturas, xeques, roques, ascensões (as promoções de quem joga, pelo `p` nas flags do lance) e vitórias
+  saem das partidas salvas (`contarPartidas`); convites aceitos, o servidor conta. Ascensões: 20 pagam 10, 50 pagam 25 e
+  200 pagam 100 (pedido do usuário). Uma medida nova entra no progresso guardado (`POST /conquistas/progresso` exige
+  todas as medidas do catálogo): o site antigo em cache tem o progresso recusado em silêncio até atualizar.
 - Vitória contra a máquina paga pela dificuldade: 1 no fácil, 2 no intermediário, 3 no difícil (`POST /vitorias/receber`,
   tabela `vitorias_pagas`). O servidor confere a partida salva na conta (terminada, vencida, com dificuldade) e paga cada
   uma uma vez só. A blitz paga igual. O aparelho manda ao abrir o menu, as mais antigas primeiro.
@@ -444,6 +476,20 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
   montaria e o peão monta (`montarNoCavalo`): pé no estribo e mãos na sela, impulso, a perna direita passa por cima da
   garupa, senta. Os pontos saem dos ossos do cavaleiro escondido; no fim ele volta e o peão sai, e o cavalo vira pro
   inimigo. A pose vai por cima do clipe com `animacoes/posturas.ts`, como a luta sem arma.
+- O foco da ascensão (pedido do usuário): a câmera fecha na peça (`vista.focarNaPeca`, 95% do caminho e 40% da distância,
+  na altura do corpo), a borda escurece e o ambiente abaixa (`sensacao.focarNaAscensao`). No clarão, a peça nova vira de
+  frente pra câmera (`virarSuave` até `rumoDaCamera`), com linhas de foco e faísca, e recebe os equipamentos olhando pra
+  quem joga, cada encaixe com uma faísca. No fim, a pose (`ascensao:pose`, brilho e linhas de foco), o foco solto e a
+  peça volta a olhar pro rumo dela. No cavalo, a pose vem antes de o cavalo chegar. Fotos:
+  `SO=ascensao node testes/fotos-armas.mjs`.
+
+## Câmera
+
+- A tela inicial e a partida nova olham sempre pro meio do tabuleiro (`CENTRO` em `vistaDaCamera.ts`): o giro da câmera
+  leva o centro de volta. Antes o centro ficava preso perto da última luta quando a pessoa encostava na câmera no meio
+  da aproximação (no celular, todo toque conta), e o tabuleiro aparecia torto até na tela inicial (bug visto pelo
+  usuário). Pegando a câmera no meio da luta, o centro desliza de volta (`recentrar`) sem mexer no giro nem no zoom.
+  `testar-golpe-que-pesa` confere os dois.
 
 ## Tela de partida
 

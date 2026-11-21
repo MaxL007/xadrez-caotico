@@ -108,8 +108,13 @@ try {
     partida('roque', '1. e4 d5 2. exd5 Qxd5 3. Nc3 Qa5 4. Nf3 Nf6 5. d4 c6 6. Bc4 Bf5 7. O-O e6 8. Bd2 Bb4 9. a3 Bxc3 10. Bxc3', 'w', 'EM_ANDAMENTO'),
     partida('de-pretas', '1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bxc6 dxc6', 'b', 'FINALIZADA', 'A máquina venceu (você desistiu)'),
   ])
-  const esperado = { peoes: 2, torres: 0, cavalos: 0, bispos: 2, rainhas: 0, roques: 1, xeques: 1, vitorias: 1, convites: 0 }
+  const esperado = { peoes: 2, torres: 0, cavalos: 0, bispos: 2, rainhas: 0, roques: 1, xeques: 1, ascensoes: 0, vitorias: 1, convites: 0 }
   conferir('as conquistas contam capturas, xeques, roques e vitórias só de quem joga', JSON.stringify(contagem) === JSON.stringify(esperado), JSON.stringify(contagem))
+  // a ascensão (a promoção) conta pra quem jogou o peão, não pra máquina
+  const comAscensao = '1. h4 g5 2. hxg5 h6 3. gxh6 Nf6 4. h7 Ng8 5. hxg8=Q'
+  const deBrancas = await h(ana, 'contarConquistas', [partida('ascensao-b', comAscensao, 'w', 'EM_ANDAMENTO')])
+  const dePretas = await h(ana, 'contarConquistas', [partida('ascensao-p', comAscensao, 'b', 'EM_ANDAMENTO')])
+  conferir('as conquistas contam as ascensões de quem joga', deBrancas.ascensoes === 1 && dePretas.ascensoes === 0, `${deBrancas.ascensoes} / ${dePretas.ascensoes}`)
   conferir('as partidas finalizadas saíram da tela inicial', (await ana.getByText('Partidas finalizadas').count()) === 0)
   await botao(ana, 'Perfil').click()
   await ana.getByText('Entre na sua conta para ter ID').waitFor()
@@ -176,8 +181,10 @@ try {
   await ana.locator('[data-habilidades-da-peca="p"]').waitFor()
   const habilidadesNaLoja = await ana.locator('[data-loja] [data-item]').evaluateAll((cartoes) => cartoes.map((c) => c.dataset.item))
   conferir(
-    'a aba Habilidades vende o retalhamento do peão, com o preço e o aviso da katana, e o Puxão Universal da rainha por 500',
-    habilidadesNaLoja.join(',') === 'p:golpe:retalhamento,q:golpe:puxao' &&
+    'a aba Habilidades vende o retalhamento do peão, com o preço e o aviso da katana, a Dempsey Roll do peão por 300 e o Puxão Universal da rainha por 500',
+    habilidadesNaLoja.join(',') === 'p:golpe:retalhamento,p:golpe:dempsey,q:golpe:puxao' &&
+      (await ana.locator('[data-item="p:golpe:dempsey"]').innerText()).includes('300') &&
+      (await ana.locator('[data-item="p:golpe:dempsey"] [data-peca-da-arma]').innerText()) === 'Peão' &&
       (await ana.locator('[data-item="q:golpe:puxao"]').innerText()).includes('500') &&
       (await ana.locator('[data-item="q:golpe:puxao"] [data-peca-da-arma]').innerText()) === 'Rainha' &&
       (await ana.locator('[data-item="p:golpe:retalhamento"]').innerText()).includes('80') &&
@@ -271,11 +278,11 @@ try {
   await ana.locator('[data-perfil]').getByText('Joga desde').waitFor()
   conferir('o perfil mostra o ID e desde quando joga', true)
   conferir('o perfil do amigo também tem a bolinha verde', (await ana.locator('[data-perfil] [data-online="sim"]').count()) === 1)
-  await ana.locator('[data-perfil]').getByRole('tab', { name: /^Conquistas \(\d+\/22\)$/ }).click()
+  await ana.locator('[data-perfil]').getByRole('tab', { name: /^Conquistas \(\d+\/25\)$/ }).click()
   await ana.locator('[data-conquistas="amigo"]').waitFor()
   conferir(
     'o perfil do amigo mostra as conquistas dele, com o progresso e sem o saldo',
-    (await ana.locator('[data-conquistas="amigo"] [data-conquista]').count()) === 22 && (await ana.locator('[data-conquistas="amigo"] [data-saldo]').count()) === 0,
+    (await ana.locator('[data-conquistas="amigo"] [data-conquista]').count()) === 25 && (await ana.locator('[data-conquistas="amigo"] [data-saldo]').count()) === 0,
   )
   await ana.locator('[data-perfil]').getByRole('tab', { name: 'Perfil', exact: true }).click()
   await foto(ana, 'amigos-perfil.png')
@@ -363,7 +370,7 @@ try {
   conferir('o perfil mostra o saldo de óticoins', (await ana.locator('[data-saldo-perfil]').innerText()).includes('5 óticoins'), await ana.locator('[data-saldo-perfil]').innerText())
   await ana.getByRole('tab', { name: /^Conquistas/ }).click()
   await ana.locator('[data-conquista="convite-1"]').getByText('✓', { exact: false }).waitFor()
-  conferir('as conquistas aparecem nos três níveis, com a do convite recebida', (await ana.locator('[data-nivel]').count()) === 3 && (await ana.locator('[data-conquista]').count()) === 22)
+  conferir('as conquistas aparecem nos três níveis, com a do convite recebida', (await ana.locator('[data-nivel]').count()) === 3 && (await ana.locator('[data-conquista]').count()) === 25)
   await ana.getByRole('tab', { name: 'Perfil', exact: true }).click()
   conferir('o perfil mostra o nome e o ID', (await ana.locator('[data-meu-id]').innerText()) === idAna && (await ana.getByText(nomeAna, { exact: true }).count()) >= 1)
   await ana.locator('[data-historico]').getByText(`Contra ${nomeBia}`).waitFor()

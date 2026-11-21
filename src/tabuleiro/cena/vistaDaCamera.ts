@@ -50,8 +50,13 @@ export function criarVistaDaCamera(
     phi: number
     theta: number
   }
-  let giroCamera: { de: PoseCamera; para: PoseCamera; inicio: number; coordenadasViradas: boolean } | null = null
+  let giroCamera: { de: PoseCamera; para: PoseCamera; alvoDe: THREE.Vector3; alvoPara: THREE.Vector3; inicio: number; coordenadasViradas: boolean } | null = null
   let emMenu = true
+  /** O meio do tabuleiro, na altura do corpo das peças: a tela inicial e a partida nova sempre olham pra cá, mesmo que a
+   * pessoa tenha arrastado o tabuleiro com dois dedos ou que a câmera da luta tenha ficado no meio do caminho. */
+  const CENTRO = controls.target.clone()
+  /** O centro voltando pra onde estava antes da luta, sem mexer no giro nem no zoom de quem pegou a câmera. */
+  let recentrar: { de: THREE.Vector3; para: THREE.Vector3; inicio: number } | null = null
 
   function poseAtualDaCamera(): PoseCamera {
     const s = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target))
@@ -67,11 +72,15 @@ export function criarVistaDaCamera(
     if (!giroCamera) controls.enabled = !emMenu && opcoes.telaMovel()
   }
 
-  function levarCameraPara(para: PoseCamera, instantaneo = false) {
+  /** Leva a câmera até a pose `para`, olhando pra `alvo` (o meio do tabuleiro, fora a prévia da Loja). */
+  function levarCameraPara(para: PoseCamera, instantaneo = false, alvo = CENTRO) {
     const de = poseAtualDaCamera()
-    const distancia = Math.abs(diferencaAngular(de.theta, para.theta)) + Math.abs(de.phi - para.phi) + Math.abs(de.raio - para.raio)
+    const alvoDe = controls.target.clone()
+    const distancia = Math.abs(diferencaAngular(de.theta, para.theta)) + Math.abs(de.phi - para.phi) + Math.abs(de.raio - para.raio) + alvoDe.distanceTo(alvo)
+    recentrar = null
     // quem pediu menos movimento no sistema vai direto pro fim
     if (instantaneo || distancia < 0.001 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      controls.target.copy(alvo)
       colocarCamera(para)
       virarCoordenadas(ladoDaCamera)
       giroCamera = null
@@ -79,7 +88,7 @@ export function criarVistaDaCamera(
       return
     }
     tocarSom('giro')
-    giroCamera = { de, para, inicio: performance.now(), coordenadasViradas: false }
+    giroCamera = { de, para, alvoDe, alvoPara: alvo.clone(), inicio: performance.now(), coordenadasViradas: false }
     controls.enabled = false
   }
 
@@ -88,6 +97,8 @@ export function criarVistaDaCamera(
     const { de, para } = giroCamera
     const t = Math.min(1, (agora - giroCamera.inicio) / GIRO_CAMERA_MS)
     const suave = t * t * (3 - 2 * t)
+    // o centro volta pro meio do tabuleiro junto com o giro
+    controls.target.copy(giroCamera.alvoDe).lerp(giroCamera.alvoPara, suave)
     colocarCamera({
       raio: de.raio + (para.raio - de.raio) * suave,
       phi: de.phi + (para.phi - de.phi) * suave,
@@ -104,13 +115,16 @@ export function criarVistaDaCamera(
     }
   }
 
-  /** A distância em que o tabuleiro cabe inteiro, olhando dessa inclinação e desse lado. */
+  /** A distância em que o tabuleiro cabe inteiro, olhando dessa inclinação e desse lado, com o centro no meio dele. */
   function raioQueEnquadra(phi: number, theta: number): number {
     const posicao = camera.position.clone()
     const orientacao = camera.quaternion.clone()
+    const alvo = controls.target.clone()
+    controls.target.copy(CENTRO)
     colocarCamera({ raio: distanciaPadrao, phi, theta })
     camera.lookAt(controls.target)
     const raio = distanciaQueEnquadra()
+    controls.target.copy(alvo)
     camera.position.copy(posicao)
     camera.quaternion.copy(orientacao)
     camera.updateMatrixWorld()
@@ -142,6 +156,16 @@ export function criarVistaDaCamera(
     )
   }
 
+  /** A prévia da Loja: a câmera sai da tela inicial e vem de perto até `ponto` (onde a captura acontece), de lado e
+   * um pouco de cima; a volta é `irParaVistaDoMenu`. Devolve quantos ms a câmera leva pra chegar. */
+  function irParaAcao(ponto: THREE.Vector3, theta: number, raio = 4.4): number {
+    desfazerAproximacao()
+    emMenu = false
+    definirLadoDaCamera(1)
+    levarCameraPara({ raio, phi: THREE.MathUtils.degToRad(57), theta }, false, ponto)
+    return giroCamera ? GIRO_CAMERA_MS : 0
+  }
+
   // --- a câmera na luta ("o golpe que pesa"): na captura, chega um pouco mais perto de onde a luta acontece (mais
   // quanto mais pesa o golpe) e volta sozinha no fim; no xeque, encosta um instante no rei ameaçado. Se a pessoa mexe
   // na câmera no meio, ela fica onde a pessoa deixou
@@ -159,11 +183,24 @@ export function criarVistaDaCamera(
   const VOLTA_MS = 900
   let aproximacao: Aproximacao | null = null
   let voltaDoRei: number | undefined
+  const RECENTRA_MS = 450
   controls.addEventListener('start', () => {
-    // a pessoa pegou a câmera: ela manda
+    // a pessoa pegou a câmera: ela manda no giro e no zoom, mas o centro volta pro lugar (no celular todo toque conta
+    // como pegar a câmera, e o centro ficava preso perto da luta, com o tabuleiro torto até na tela inicial)
+    if (aproximacao) recentrar = { de: controls.target.clone(), para: aproximacao.alvoAntes.clone(), inicio: performance.now() }
     aproximacao = null
     window.clearTimeout(voltaDoRei)
   })
+  function atualizarRecentrar(agora: number) {
+    if (!recentrar) return
+    const t = Math.min(1, (agora - recentrar.inicio) / RECENTRA_MS)
+    const suave = t * t * (3 - 2 * t)
+    const antes = controls.target.clone()
+    controls.target.copy(recentrar.de).lerp(recentrar.para, suave)
+    // a câmera anda junto com o centro: o tabuleiro desliza de volta sem girar
+    camera.position.add(controls.target.clone().sub(antes))
+    if (t >= 1) recentrar = null
+  }
 
   function irAte(para: { alvo: THREE.Vector3; raio: number }, duracao: number, voltando: boolean) {
     const de = { alvo: controls.target.clone(), raio: camera.position.distanceTo(controls.target) }
@@ -172,14 +209,26 @@ export function criarVistaDaCamera(
     aproximacao = { alvoAntes, raioAntes, de, para, inicio: performance.now(), duracao, voltando }
   }
 
-  /** A captura começou em `ponto`: a câmera chega perto (`peso` de 0 a 1). */
-  function aproximarDaLuta(ponto: THREE.Vector3, peso: number) {
+  /** Leva o centro uma `fracao` do caminho até `ponto` (e até a altura dele, com `naAltura`) e a distância pra
+   * `fatorDoRaio` da de antes; volta com `voltarDaLuta`. */
+  function focar(ponto: THREE.Vector3, fracao: number, fatorDoRaio: number, naAltura: boolean, ms = CHEGA_MS) {
     if (emMenu || giroCamera || menosMovimento()) return
     window.clearTimeout(voltaDoRei)
+    recentrar = null
     const alvoAntes = aproximacao?.alvoAntes ?? controls.target.clone()
     const raioAntes = aproximacao?.raioAntes ?? camera.position.distanceTo(controls.target)
-    const alvo = alvoAntes.clone().lerp(new THREE.Vector3(ponto.x, alvoAntes.y, ponto.z), 0.3 + 0.2 * peso)
-    irAte({ alvo, raio: Math.max(controls.minDistance, raioAntes * (0.9 - 0.12 * peso)) }, CHEGA_MS, false)
+    const alvo = alvoAntes.clone().lerp(new THREE.Vector3(ponto.x, naAltura ? ponto.y : alvoAntes.y, ponto.z), fracao)
+    irAte({ alvo, raio: Math.max(controls.minDistance, raioAntes * fatorDoRaio) }, ms, false)
+  }
+
+  /** A captura começou em `ponto`: a câmera chega perto (`peso` de 0 a 1). */
+  function aproximarDaLuta(ponto: THREE.Vector3, peso: number) {
+    focar(ponto, 0.3 + 0.2 * peso, 0.9 - 0.12 * peso, false)
+  }
+
+  /** A ascensão: o foco todo na peça, bem de perto, na altura do corpo dela. */
+  function focarNaPeca(ponto: THREE.Vector3) {
+    focar(ponto, 0.95, 0.4, true, 900)
   }
 
   /** A luta acabou: a câmera volta pra onde estava. */
@@ -226,8 +275,10 @@ export function criarVistaDaCamera(
 
   function atualizarAproximacao(agora: number) {
     atualizarSoco(agora)
+    atualizarRecentrar(agora)
     if (!aproximacao) return
     if (giroCamera || emMenu) {
+      // o giro (tela inicial, partida nova) já leva o centro de volta pro meio
       aproximacao = null
       return
     }
@@ -301,11 +352,13 @@ export function criarVistaDaCamera(
     atualizarGiroCamera,
     atualizarAproximacao,
     aproximarDaLuta,
+    focarNaPeca,
     voltarDaLuta,
     socoNaCamera,
     encostarNoRei,
     virarCameraPara,
     irParaVistaDoMenu,
+    irParaAcao,
     distanciaQueEnquadra,
     onResize,
     emMenu: () => emMenu,

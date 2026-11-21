@@ -15,13 +15,16 @@
     { "id": "bispos-180", "nivel": "basicas", "medida": "bispos", "meta": 180, "oticoins": 24 },
     { "id": "roque-1", "nivel": "basicas", "medida": "roques", "meta": 1, "oticoins": 5 },
     { "id": "convite-1", "nivel": "basicas", "medida": "convites", "meta": 1, "oticoins": 5 },
+    { "id": "ascensoes-20", "nivel": "basicas", "medida": "ascensoes", "meta": 20, "oticoins": 10 },
     { "id": "rainhas-25", "nivel": "intermediarias", "medida": "rainhas", "meta": 25, "oticoins": 10 },
     { "id": "rainhas-50", "nivel": "intermediarias", "medida": "rainhas", "meta": 50, "oticoins": 20 },
     { "id": "rainhas-150", "nivel": "intermediarias", "medida": "rainhas", "meta": 150, "oticoins": 60 },
+    { "id": "ascensoes-50", "nivel": "intermediarias", "medida": "ascensoes", "meta": 50, "oticoins": 25 },
     { "id": "xeques-100", "nivel": "avancadas", "medida": "xeques", "meta": 100, "oticoins": 40 },
     { "id": "peoes-1000", "nivel": "avancadas", "medida": "peoes", "meta": 1000, "oticoins": 50 },
     { "id": "vitorias-200", "nivel": "avancadas", "medida": "vitorias", "meta": 200, "oticoins": 100 },
     { "id": "rainhas-500", "nivel": "avancadas", "medida": "rainhas", "meta": 500, "oticoins": 200 },
-    { "id": "convites-50", "nivel": "avancadas", "medida": "convites", "meta": 50, "oticoins": 80 }
+    { "id": "convites-50", "nivel": "avancadas", "medida": "convites", "meta": 50, "oticoins": 80 },
+    { "id": "ascensoes-200", "nivel": "avancadas", "medida": "ascensoes", "meta": 200, "oticoins": 100 }
   ]
 }

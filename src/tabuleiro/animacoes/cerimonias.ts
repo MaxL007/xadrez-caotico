@@ -114,6 +114,22 @@ const DURACAO_SUBIDA_ASCENSAO_MS = 1700
 const DURACAO_DESCIDA_ASCENSAO_MS = 900
 const ALTURA_ASCENSAO = 0.45
 
+/** Gira a peça até o rumo `alvo` (pelo lado mais curto) em `ms`, de uma vez e assentando; `depois` no fim. */
+export function virarSuave(peca: THREE.Object3D, alvo: number, ms: number, depois?: () => void) {
+  const inicial = peca.rotation.y
+  let giro = alvo - inicial
+  while (giro > Math.PI) giro -= Math.PI * 2
+  while (giro < -Math.PI) giro += Math.PI * 2
+  const inicio = performance.now()
+  const passo = (agora: number) => {
+    const t = Math.min(1, (agora - inicio) / ms)
+    peca.rotation.y = inicial + giro * (1 - Math.pow(1 - t, 3))
+    if (t < 1) requestAnimationFrame(passo)
+    else depois?.()
+  }
+  requestAnimationFrame(passo)
+}
+
 /**
  * `aoClarao` troca a peça (o peão vira a nova) e devolve a peça nova — que desce de volta pra casa;
  * `aoTerminar` roda quando ela pousa.

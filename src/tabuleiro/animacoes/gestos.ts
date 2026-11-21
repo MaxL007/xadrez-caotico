@@ -16,6 +16,8 @@ export function atualizarGestoRPG(mesh: THREE.Object3D, agora: number) {
   const ocupada =
     meshesEmGesto.has(mesh) ||
     estaLutando(mesh) ||
+    // no meio de uma habilidade (quem faz e quem apanha) ou de um nocaute
+    Boolean(mesh.userData.poseDeHabilidade) ||
     Boolean((mesh.userData.espadaRPG as EspadaRPG | undefined)?.fora) ||
     Object.entries(acoes).some(([nome, acao]) => nome !== 'Parado' && acao.enabled && acao.isScheduled() && acao.getEffectiveWeight() > 0.01)
   if (ocupada) return

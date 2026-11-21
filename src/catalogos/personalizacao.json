@@ -86,7 +86,8 @@
   "habilidades": {
     "p": [
       "nenhuma",
-      "retalhamento"
+      "retalhamento",
+      "dempsey"
     ],
     "q": [
       "nenhuma",
@@ -137,7 +138,8 @@
       "botas:ferro": 25,
       "arma:katana": 35,
       "arma:espada": 30,
-      "golpe:retalhamento": 80
+      "golpe:retalhamento": 80,
+      "golpe:dempsey": 300
     },
     "r": {
       "cabeca:elmo": 30,

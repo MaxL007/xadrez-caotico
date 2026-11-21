@@ -95,6 +95,60 @@ try {
   conferir('quem bate grunhe e quem apanha geme', luta.tocados.includes('voz:q') && luta.tocados.includes('dor:p'), luta.tocados.join(' '))
   conferir('o tom dos golpes volta ao normal no fim', luta.depois.golpe.tomDosGolpes === 1)
 
+  // =================== o tabuleiro volta pro centro ===================
+  // no celular todo toque conta como pegar a câmera: pegando no meio da aproximação da luta, o centro ficava perto da
+  // luta, e o tabuleiro aparecia torto até na tela inicial
+  await h(page, 'vestirParaTeste', {})
+  await h(page, 'forcarGolpeSemArma', 'socos')
+  await h(page, 'carregarTeste', RAINHA_TOMA_PEAO.pgn, 'w', 'facil')
+  await esperarParar(page)
+  await page.waitForTimeout(1500)
+  const centroAntes = (await h(page, 'camera')).centro
+  await h(page, 'jogar', RAINHA_TOMA_PEAO.de, RAINHA_TOMA_PEAO.para)
+  await page.waitForFunction(() => window.__sonsTocados.includes('passo:q'), null, { timeout: 20000, polling: 50 })
+  await page.waitForTimeout(500)
+  const centroNaLuta = (await h(page, 'camera')).centro
+  await h(page, 'pegarCamera')
+  await esperarParar(page)
+  const distanciaDoCentro = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+  const centroNaPartida = (await h(page, 'camera')).centro
+  conferir(
+    'pegando a câmera no meio da luta, o centro volta pro lugar',
+    distanciaDoCentro(centroNaLuta, centroAntes) > 0.05 && distanciaDoCentro(centroNaPartida, centroAntes) < 0.01,
+    `${centroAntes.map((n) => n.toFixed(2))} → ${centroNaLuta.map((n) => n.toFixed(2))} → ${centroNaPartida.map((n) => n.toFixed(2))}`,
+  )
+  await page.getByRole('button', { name: 'Menu', exact: true }).click()
+  await page.waitForTimeout(2500)
+  const noMenu = await h(page, 'camera')
+  conferir('a tela inicial olha pro meio do tabuleiro', Math.hypot(noMenu.centro[0], noMenu.centro[2]) < 0.01, noMenu.centro.map((n) => n.toFixed(3)).join(','))
+
+  // =================== a prévia da Loja ===================
+  // "Ver em ação": o menu some, a captura com o item roda no tabuleiro, e a Loja volta aberta no item, com o convite
+  await h(page, 'vestirParaTeste', null)
+  await page.getByRole('button', { name: 'Loja', exact: true }).click()
+  await page.getByRole('tab', { name: 'Habilidades', exact: true }).click()
+  await page.evaluate(() => (window.__sonsTocados.length = 0))
+  await page.locator('[data-ver-em-acao="p:golpe:dempsey"]').first().click()
+  await page.locator('[data-previa="p:golpe:dempsey"]').waitFor({ timeout: 10000 })
+  const menuEscondido = (await page.locator('[data-loja]').isVisible()) === false
+  await page.locator('[data-previa]').waitFor({ state: 'detached', timeout: 45000 })
+  const sonsDaPrevia = await page.evaluate(() => [...window.__sonsTocados])
+  await page.locator('[data-item-aberto="p:golpe:dempsey"]').waitFor({ timeout: 10000 })
+  conferir('a prévia esconde o menu e roda a Dempsey Roll no tabuleiro', menuEscondido && sonsDaPrevia.includes('dempsey:gancho') && sonsDaPrevia.includes('dempsey:final'), sonsDaPrevia.join(' '))
+  conferir(
+    'depois da prévia a Loja volta no item, com o que ele faz e o convite pra comprar',
+    (await page.locator('[data-gostou]').count()) === 1 && (await page.locator('[data-como-conseguir]').innerText()).includes('oito'),
+  )
+  conferir('e o tabuleiro volta pra tela inicial, sem partida', (await h(page, 'cena')).menu && (await h(page, 'partidaAtual')) === null && (await h(page, 'problemasDoTabuleiro')).length === 0, JSON.stringify(await h(page, 'problemasDoTabuleiro')))
+  // pular no meio também volta
+  await page.getByRole('tab', { name: 'Armas', exact: true }).click()
+  await page.locator('[data-ver-em-acao="r:arma:marreta"]').first().click()
+  await page.locator('[data-previa="r:arma:marreta"]').waitFor({ timeout: 10000 })
+  await page.getByRole('button', { name: 'Pular', exact: true }).click()
+  await page.locator('[data-item-aberto="r:arma:marreta"]').waitFor({ timeout: 10000 })
+  conferir('pulando a prévia, volta na hora', (await page.locator('[data-previa]').count()) === 0 && (await h(page, 'problemasDoTabuleiro')).length === 0)
+  await page.getByRole('button', { name: 'Voltar', exact: true }).click()
+
   // =================== xeque no rei de quem joga ===================
   await h(page, 'carregarTeste', '1. e4 e5 2. f3 Qh4+', 'w', 'facil')
   await page.locator('[data-vinheta="xeque"]').waitFor({ timeout: 15000 })

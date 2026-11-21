@@ -87,20 +87,24 @@ function retalhamento(): THREE.Group {
 // finos nas pontas) e, em volta, quatro pares de arcos (em cima, embaixo, à esquerda e à direita), como ondas sendo
 // puxadas pro centro. Os pontos são do desenho (1920 px de lado), cada traço de pincel com as pontas redondas.
 
-const ESCALA_DO_DESENHO = 1 / 1060
-const CENTRO_DO_DESENHO = new THREE.Vector2(822, 857)
-const doDesenho = ([x, y]: [number, number]) => new THREE.Vector2((x - CENTRO_DO_DESENHO.x) * ESCALA_DO_DESENHO, -(y - CENTRO_DO_DESENHO.y) * ESCALA_DO_DESENHO)
+/** Onde fica o meio de cada desenho (em px) e quanto um px vale no símbolo. */
+interface Quadro {
+  centro: THREE.Vector2
+  escala: number
+}
+const QUADRO_DO_PUXAO: Quadro = { centro: new THREE.Vector2(822, 857), escala: 1 / 1060 }
+const doDesenho = (quadro: Quadro) => ([x, y]: [number, number]) => new THREE.Vector2((x - quadro.centro.x) * quadro.escala, -(y - quadro.centro.y) * quadro.escala)
 
 /** Um traço de pincel: a linha suave pelos pontos do desenho, com a grossura (em px do desenho, uma só ou uma por
  * ponto) e as duas pontas redondas. */
-function traco(pontos: [number, number][], grossura: number | number[]): THREE.Shape {
-  const curva = new THREE.SplineCurve(pontos.map(doDesenho))
+function traco(pontos: [number, number][], grossura: number | number[], quadro: Quadro = QUADRO_DO_PUXAO): THREE.Shape {
+  const curva = new THREE.SplineCurve(pontos.map(doDesenho(quadro)))
   const larguraEm = (u: number) => {
-    if (typeof grossura === 'number') return grossura * ESCALA_DO_DESENHO
+    if (typeof grossura === 'number') return grossura * quadro.escala
     const onde = u * (grossura.length - 1)
     const i = Math.min(grossura.length - 2, Math.floor(onde))
     const resto = onde - i
-    return (grossura[i] * (1 - resto) + grossura[i + 1] * resto) * ESCALA_DO_DESENHO
+    return (grossura[i] * (1 - resto) + grossura[i + 1] * resto) * quadro.escala
   }
   const passos = 48
   const esquerda: THREE.Vector2[] = []
@@ -173,7 +177,39 @@ function puxao(): THREE.Group {
   return emblema
 }
 
-const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao }
+// --- a Dempsey Roll, do desenho do usuário: a luva de boxe de lado, com o X no dorso, o polegar à direita e o punho em
+// faixas, e embaixo o traço em espiral do movimento (o oito da roda). Os pontos são do desenho (1920 px de lado).
+
+const QUADRO_DA_LUVA: Quadro = { centro: new THREE.Vector2(960, 985), escala: 1 / 900 }
+const GROSSURA_DA_LUVA = 72
+
+function dempsey(): THREE.Group {
+  const emblema = new THREE.Group()
+  const tracos: [number, number][][] = [
+    // o corpo da luva: do punho, subindo pela esquerda, por cima e descendo pela direita até a dobra do polegar
+    [[715, 1025], [680, 960], [645, 862], [625, 780], [645, 715], [705, 660], [795, 598], [885, 550], [978, 528], [1062, 543], [1130, 590], [1175, 665], [1192, 745], [1185, 822], [1150, 900], [1062, 964]],
+    // o polegar
+    [[1165, 735], [1218, 745], [1245, 800], [1285, 862], [1290, 925], [1258, 990], [1208, 1030], [1165, 1036]],
+    // o X no dorso
+    [[835, 775], [882, 806], [932, 828], [990, 808]],
+    [[958, 742], [905, 798], [868, 880]],
+    // o punho: as faixas de cima e de baixo e os lados
+    [[775, 1032], [880, 1030], [980, 1032], [1062, 1028], [1100, 1018]],
+    [[725, 1085], [728, 1150]],
+    [[785, 1167], [900, 1173], [1010, 1176], [1120, 1148]],
+    [[1130, 1062], [1112, 1125]],
+    // o oito do movimento, embaixo
+    [[855, 1255], [770, 1268], [690, 1300], [640, 1345], [632, 1390], [690, 1428], [840, 1445], [990, 1430], [1120, 1400], [1185, 1365], [1140, 1340], [1000, 1330], [870, 1335], [748, 1345]],
+  ]
+  for (const pontos of tracos) {
+    const parte = new THREE.Mesh(extrudar(traco(pontos, GROSSURA_DA_LUVA, QUADRO_DA_LUVA), 24), acoEscuro)
+    parte.castShadow = true
+    emblema.add(parte)
+  }
+  return emblema
+}
+
+const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao, dempsey }
 
 /** O símbolo da habilidade, ou null pra opção sem símbolo. */
 export function emblemaDaHabilidade(opcao: string): THREE.Group | null {
