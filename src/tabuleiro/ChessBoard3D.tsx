@@ -14,6 +14,8 @@ import { atualizarLutas, desfazerPosesDasLutas } from './combate/lutaSemArma'
 import { atualizarPuxoes, desfazerPosesDosPuxoes } from './combate/puxaoUniversal'
 import { atualizarNocautes, desfazerPosesDosNocautes } from './combate/nocaute'
 import { atualizarDempseys, desfazerPosesDasDempseys } from './combate/dempseyRoll'
+import { atualizarEmpurroes, desfazerPosesDosEmpurroes } from './combate/empurraoUniversal'
+import { atualizarLancas, desfazerPosesDasLancas } from './combate/lancaDoCavalo'
 import { desesmaecer, esmaecer } from './cena/esmaecer'
 import { definirMenosMovimento, menosMovimento, type SensacaoDaPartida } from './sensacao/golpeQuePesa'
 import { passarQuadro } from './sensacao/relogioDoJogo'
@@ -54,7 +56,7 @@ import { criarPartidaContraMaquina, PAUSA_MAQUINA_MS } from './fluxo/partidaCont
 
 
 /** Na escolha da habilidade da captura, um sinal pra cada uma (a do catálogo sem sinal fica com o brilho). */
-const ICONE_DA_HABILIDADE: Record<string, string> = { retalhamento: '⚔️', puxao: '🌀', dempsey: '🥊' }
+const ICONE_DA_HABILIDADE: Record<string, string> = { retalhamento: '⚔️', puxao: '🌀', dempsey: '🥊', empurrao: '💨' }
 
 const PECAS_PROMOCAO: { peca: PecaPromocao; nome: ChaveTexto; branca: string; preta: string }[] = [
   { peca: 'q', nome: 'promocao.rainha', branca: '♕', preta: '♛' },
@@ -334,7 +336,7 @@ export function ChessBoard3D() {
       comecarLuta: (area, peso, tom) => {
         // o golpe inteiro à vista: a câmera olha de lado pras duas peças, e as outras que ainda ficarem no caminho
         // esmaecem até a luta acabar
-        esmaecer(vista.enquadrarLuta(area.pontos, area.rumo, piecesGroup.children.filter((peca) => !area.envolvidas.includes(peca))))
+        esmaecer(vista.enquadrarLuta(area.pontos, area.rumo, piecesGroup.children.filter((peca) => !area.envolvidas.includes(peca)), area.comeco))
         abafarAmbiente('luta', true)
         definirTomDosGolpes(tom)
         setVinhetaDaLuta(peso)
@@ -1171,6 +1173,8 @@ export function ChessBoard3D() {
       desfazerInercia()
       desfazerPosturas()
       desfazerPosesDosNocautes()
+      desfazerPosesDosEmpurroes()
+      desfazerPosesDasLancas()
       desfazerPosesDosPuxoes()
       desfazerPosesDasDempseys()
       desfazerPosesDasLutas()
@@ -1182,6 +1186,8 @@ export function ChessBoard3D() {
       atualizarLutas(agoraDoCorpo)
       atualizarDempseys(agoraDoCorpo)
       atualizarPuxoes(agoraDoCorpo)
+      atualizarLancas(agoraDoCorpo)
+      atualizarEmpurroes(agoraDoCorpo)
       atualizarNocautes(agoraDoCorpo)
       atualizarPosturas(agora)
       // a inércia é a última pose: o tronco inclinando ao andar e balançando ao parar

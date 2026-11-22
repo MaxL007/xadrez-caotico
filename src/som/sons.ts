@@ -608,6 +608,41 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { inicio: 1.3, ataque: 0.05, dur: 0.6, vol: 0.2, freq: 2200, ate: 380, q: 1.5 })
     return 2.2
   },
+  // o Empurrão Universal: o ar sendo sugado pra bolha entre as palmas, girando e subindo por quase um segundo, com um
+  // grave que cresce por baixo
+  'empurrao:carrega': (s) => {
+    sopro(s, { ataque: 0.7, dur: 0.22, vol: 0.2, freq: 260, ate: 1500, q: 1.6, sustenta: 0.8 })
+    sopro(s, { inicio: 0.15, ataque: 0.55, dur: 0.2, vol: 0.09, freq: 2400, ate: 900, q: 4 })
+    tom(s, { freq: 62, ate: 118, ataque: 0.7, dur: 0.25, vol: 0.1 })
+    tom(s, { tipo: 'triangle', freq: 330, ate: 660, ataque: 0.6, dur: 0.25, vol: 0.018 })
+    return 0.95
+  },
+  // as palmas saindo: o ar inteiro empurrado de uma vez
+  'empurrao:solta': (s) => {
+    sopro(s, { ataque: 0.015, dur: 0.22, vol: 0.5, freq: 520, ate: 2600, q: 1 })
+    tom(s, { freq: 140, ate: 60, ataque: 0.005, dur: 0.2, vol: 0.34 })
+    return 0.3
+  },
+  // a bolha estourando no peito: o estrondo grave, o vento abrindo e o assobio da peça indo embora
+  'empurrao:estouro': (s) => {
+    pancada(s, 96, 34, 0.42, 0.6)
+    sopro(s, { dur: 0.05, vol: 0.16, freq: 2200, q: 2 })
+    sopro(s, { inicio: 0.02, ataque: 0.02, dur: 0.5, vol: 0.24, filtro: 'lowpass', freq: 1400, ate: 260, q: 0.8 })
+    sopro(s, { inicio: 0.15, ataque: 0.1, dur: 0.7, vol: 0.1, freq: 1500, ate: 420, q: 1.4 })
+    return 0.9
+  },
+  // a lança entrando no peito: o tranco seco e o rasgo curto
+  'lanca:perfura': (s) => {
+    pancada(s, 180, 70, 0.12, 0.55)
+    sopro(s, { dur: 0.08, vol: 0.3, freq: 950, ate: 600, q: 3 })
+    return 0.2
+  },
+  // a lança saindo: um arrasto que desce
+  'lanca:puxa': (s) => {
+    sopro(s, { ataque: 0.02, dur: 0.16, vol: 0.55, freq: 1300, ate: 500, q: 2.2 })
+    tom(s, { freq: 210, ate: 120, ataque: 0.01, dur: 0.12, vol: 0.16 })
+    return 0.25
+  },
   // lança: o tranco do cavaleiro e o estalo da madeira da lança
   'golpe:lanca': (s) => {
     sopro(s, { ataque: 0.04, dur: 0.18, vol: 0.18, freq: 700, ate: 2600, q: 1.4 })

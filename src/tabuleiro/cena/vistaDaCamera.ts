@@ -186,6 +186,8 @@ export function criarVistaDaCamera(
     inicio: number
     duracao: number
     voltando: boolean
+    /** Acompanhando quem ataca: de `para` (o caminho inteiro à vista) até `perto` (só o golpe), conforme `progresso`. */
+    acompanhar?: { perto: PontoDeVista; progresso: () => number }
   }
   const CHEGA_MS = 650
   const VOLTA_MS = 900
@@ -237,14 +239,25 @@ export function criarVistaDaCamera(
    * cabem na tela, com folga pros botões. Vale ver só as duas peças: devolve as `obstaculos` (as outras peças) que
    * ainda ficam no caminho, pra esmaecer.
    */
-  function enquadrarLuta(pontos: THREE.Vector3[], rumo: THREE.Vector3, obstaculos: THREE.Object3D[]): THREE.Object3D[] {
-    if (emMenu || giroCamera || menosMovimento() || pontos.length === 0) return []
+  function enquadrarLuta(
+    pontosDoGolpe: THREE.Vector3[],
+    rumo: THREE.Vector3,
+    obstaculos: THREE.Object3D[],
+    comeco?: { pontos: THREE.Vector3[]; progresso: () => number },
+  ): THREE.Object3D[] {
+    if (emMenu || giroCamera || menosMovimento() || pontosDoGolpe.length === 0) return []
     window.clearTimeout(voltaDoRei)
     recentrar = null
     const antes = aproximacao?.antes ?? pontoDeVistaAtual()
-    const caixa = new THREE.Box3().setFromPoints(pontos)
-    const alvo = caixa.getCenter(new THREE.Vector3())
-    alvo.y = THREE.MathUtils.clamp(alvo.y, 0.3, 0.8)
+    // quem ataca ainda vai até a vítima: o ponto de vista é escolhido pro caminho inteiro (de onde ela sai até o golpe),
+    // e a câmera vai fechando no golpe conforme ela chega (pedido do usuário)
+    const pontos = comeco ? [...pontosDoGolpe, ...comeco.pontos] : pontosDoGolpe
+    const centroDe = (pts: THREE.Vector3[]) => {
+      const centro = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3())
+      centro.y = THREE.MathUtils.clamp(centro.y, 0.3, 0.8)
+      return centro
+    }
+    let alvo = centroDe(pontos)
     // a linha da luta, no chão: o ponto de vista de lado olha atravessado pra ela
     const linha = new THREE.Vector3(rumo.x, 0, rumo.z)
     const temLinha = linha.lengthSq() > 1e-6
@@ -253,14 +266,14 @@ export function criarVistaDaCamera(
     const teste = new THREE.PerspectiveCamera(camera.fov, camera.aspect, camera.near, camera.far)
     const posicao = new THREE.Vector3()
     /** A menor distância em que todos os pontos ficam dentro da tela, com folga. */
-    const raioQueCabe = (phi: number, theta: number) => {
+    const raioQueCabe = (phi: number, theta: number, pts = pontos) => {
       for (let raio = DISTANCIA_MINIMA_DA_LUTA; raio < 24; raio += 0.2) {
         posicao.setFromSphericalCoords(raio, phi, theta).add(alvo)
         teste.position.copy(posicao)
         teste.lookAt(alvo)
         teste.updateMatrixWorld()
         // a folga: os botões em cima e a situação embaixo
-        if (pontos.every((p) => {
+        if (pts.every((p) => {
           const naTela = p.clone().project(teste)
           return naTela.z < 1 && Math.abs(naTela.x) <= FOLGA_DA_LUTA.lados && naTela.y <= FOLGA_DA_LUTA.cima && naTela.y >= -FOLGA_DA_LUTA.baixo
         })) return raio
@@ -313,7 +326,14 @@ export function criarVistaDaCamera(
     }
     if (!melhor) return []
     const giroDaCamera = Math.abs(diferencaAngular(poseAtualDaCamera().theta, melhor.pose.theta))
-    irAte({ alvo, pose: melhor.pose }, CHEGA_MS + 260 * giroDaCamera, false)
+    const longe: PontoDeVista = { alvo: alvo.clone(), pose: melhor.pose }
+    irAte(longe, CHEGA_MS + 260 * giroDaCamera, false)
+    if (comeco && aproximacao) {
+      // o golpe sozinho, do mesmo lado e na mesma altura: é onde a câmera chega quando quem ataca chega
+      alvo = centroDe(pontosDoGolpe)
+      const raio = Math.max(controls.minDistance, raioQueCabe(melhor.pose.phi, melhor.pose.theta, pontosDoGolpe))
+      aproximacao.acompanhar = { perto: { alvo: alvo.clone(), pose: { ...melhor.pose, raio } }, progresso: comeco.progresso }
+    }
     return melhor.tampam
   }
 
@@ -377,7 +397,18 @@ export function criarVistaDaCamera(
       aproximacao = null
       return
     }
-    const { de, para } = aproximacao
+    const { de, acompanhar } = aproximacao
+    let { para } = aproximacao
+    if (acompanhar && !aproximacao.voltando) {
+      // acompanhando quem ataca: do caminho inteiro até o golpe, conforme ela chega perto da vítima
+      const p = THREE.MathUtils.clamp(acompanhar.progresso(), 0, 1)
+      const k = p * p * (3 - 2 * p)
+      const { perto } = acompanhar
+      para = {
+        alvo: para.alvo.clone().lerp(perto.alvo, k),
+        pose: { raio: para.pose.raio + (perto.pose.raio - para.pose.raio) * k, phi: para.pose.phi + (perto.pose.phi - para.pose.phi) * k, theta: para.pose.theta },
+      }
+    }
     const t = Math.min(1, (agora - aproximacao.inicio) / aproximacao.duracao)
     const suave = t * t * (3 - 2 * t)
     controls.target.copy(de.alvo).lerp(para.alvo, suave)

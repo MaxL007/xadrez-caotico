@@ -149,6 +149,19 @@ export function instalarGanchosDeTeste(dependencias: DependenciasDosTestes) {
     /** A katana está na mão de alguma peça? (a que ficou fora, de um gesto cortado pelo lance) */
     katanasNaMao: () => piecesGroup.children.filter((peca) => (peca.userData.espadaRPG as { fora?: boolean } | undefined)?.fora).length,
     /** Tira a katana da bainha do peão da casa, como um gesto com ela que o lance cortou no meio. */
+    /** Vigia a peça da casa até ela sair do tabuleiro: por onde passou, a cada 40 ms, em `window.__pecaVigiada` (o
+     * Empurrão a joga pra fora, o cavalo a joga longe, a lança a derruba ali mesmo). */
+    vigiarPeca: (casa: string) => {
+      const peca = pieceMeshBySquare.get(casa)
+      const caminho: number[][] = []
+      ;(window as unknown as { __pecaVigiada?: number[][] }).__pecaVigiada = caminho
+      if (!peca) return false
+      const olhar = window.setInterval(() => {
+        caminho.push([peca.position.x, peca.position.y, peca.position.z])
+        if (!peca.parent || caminho.length > 1500) window.clearInterval(olhar)
+      }, 40)
+      return true
+    },
     sacarKatanaParaTeste: (casa: string) => {
       const peca = pieceMeshBySquare.get(casa)
       if (peca) mostrarEspadaRPG(peca, true)

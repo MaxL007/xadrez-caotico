@@ -36,11 +36,12 @@ As pastas de `src` são por função:
     (o que as peças de quem joga vestem), `equipamentos.ts` (armaduras e armas em malha com esqueleto), `ossos.ts` (o
     IK de dois ossos), `expositor.ts`, `vitrine.ts` e `emblemas.ts` (os símbolos das habilidades).
   - `tabuleiro/animacoes/`: `movimento.ts` (andar, correr, virar, o salto do cavalo), `gestos.ts` (gestos, gesto
-    amigável, comemoração, recusa e descanso), `queda.ts` (a vítima caindo, arremessada, sumindo) e `cerimonias.ts`
+    amigável, comemoração, recusa e descanso), `queda.ts` (a vítima sumindo) e `cerimonias.ts`
     (pétalas da honra e ascensão da promoção).
   - `tabuleiro/combate/`: `golpes.ts` (a espada do peão, o alcance, o impacto), `poderes.ts` (orbe, raio, onda),
     `marreta.ts` (marreta, machado e maça, com a peça presa), `efeitosDasArmas.ts` (os efeitos de cada arma) e
-    `lutaSemArma.ts` (socos e chute).
+    `lutaSemArma.ts` (socos e chute), `nocaute.ts` (a vítima jogada pela força), `lancaDoCavalo.ts` (a estocada da
+    lança) e as habilidades (`habilidades.ts`, com um módulo pra cada uma que tem pose própria).
 - `telas/`: `MenuXadrez.tsx` (tela inicial e painéis), `PasseioInicial.tsx` (o passeio da primeira vez),
   `PainelPrivacidade.tsx` (texto em `textos/privacidade.ts`), `AdversarioAutomatico.tsx`, `PainelConta.tsx`, `PainelAmigos.tsx`, `PainelPerfil.tsx`,
   `PainelConquistas.tsx`, `PainelLoja.tsx`, `PainelPersonalizacao.tsx`, `QrCode.tsx` e `ui/`. `ElementosDoJogador.tsx`
@@ -194,6 +195,10 @@ As pastas de `src` são por função:
   - A vítima reage (`posarVitima`, pedido do usuário): no aquecimento levanta a guarda cobrindo o rosto, treme, recua uns
     passos e a cabeça acompanha o balanço; cada gancho joga a cabeça pro lado (uma mola) e o corpo gira junto, a guarda
     cai, ela cambaleia pro lado do golpe e os joelhos vão cedendo; depois do terceiro, tonta, o tronco roda devagar.
+  - O impacto de cada gancho (pedido do usuário: no anime, o golpe é na cabeça): a faísca, o anel de impacto abrindo,
+    o estouro de riscos e os respingos voando pra onde a cabeça vai (`anelDeImpacto`, `estouroDeRiscos` e
+    `respingos`, em `efeitosDeAnime.ts`). No instante do acerto, a cabeça vai pra trás de uma vez, com o pescoço e o
+    peito: chega em uns 20 ms, segura e volta em uns 170 ms (`ultimoGancho`).
 
   O símbolo é a segunda versão do desenho do usuário (21/11): duas luvas de boxe de frente, cada uma com o ∞ no dorso.
   É desenho de contorno, então cada parte preta sai da imagem com os buracos brancos de dentro (o contorno seguido pixel
@@ -209,7 +214,8 @@ As pastas de `src` são por função:
   `combate/habilidades.ts`): o brilho com o "tiin" no começo (os olhos, a palma, a lâmina), o impulso quando o golpe sai
   (estalo, linhas de foco, a câmera fechando) e, no golpe que decide, o quadro de impacto, as linhas de foco, a faísca e
   a câmera abrindo. Os sons são `anime:brilho` e `anime:estala`. Uma habilidade nova chama os três.
-- Os efeitos de anime ficam em `src/tabuleiro/combate/efeitosDeAnime.ts` (`emDois`, `acaso` pro tremor desenho a
+- Os efeitos de anime ficam em `src/tabuleiro/combate/efeitosDeAnime.ts` (cada um já sai no tamanho do começo: sem
+  isso, o primeiro quadro mostrava a faísca e o anel no tamanho 1, um clarão enorme) (`emDois`, `acaso` pro tremor desenho a
   desenho, `linhasDeVelocidade`, `faisca`, `criarLeque`, o borrão atrás do que gira) e, os de tela, na
   `SensacaoDaPartida` que o lance entrega a cada habilidade: `linhasDeFoco` (um canvas por cima do 3D, redesenhado em
   dois), `quadroDeImpacto` (filtro de negativo no canvas; nada com "menos movimento") e `socoNaCamera` (o campo de visão
@@ -219,17 +225,29 @@ As pastas de `src` são por função:
   põe a pose do corpo arrancado por cima do clipe (costas arqueadas, membros pra trás ou pra frente, abertos, tremulando)
   e `massaDaPeca` dá o peso de cada peça. Seguem o Puxão, a Dempsey Roll e o nocaute dos golpes simples. A peça com
   `userData.poseDeHabilidade` (as duas de uma habilidade, a vítima no ar) fica fora da inércia de quem anda e dos gestos.
-- O Empurrão Universal (ideia do usuário, 21/11, ainda não é habilidade do jogo) já tem o símbolo pronto em `EMBLEMAS`
-  (`empurrao`): a imagem dele é de mangá (retícula, gradiente, brilho), então foi redesenhada em traço cheio de aço com
-  a mesma composição e as proporções medidas nela. A bolha de vento é uma meia cúpula no chão, com o núcleo de luz e os
-  raios; em volta, cinco setas pra fora (165°, 128°, 90°, 52° e 15°), os riscos de velocidade e as faíscas. A ideia, do
-  bilhete dele: a peça vai até a casa da outra e, as duas no mesmo lugar, carrega a habilidade como uma bolha de vento e
-  repele a peça capturada pra fora do tabuleiro. Faltam a peça e o preço (o bilhete diz 1500 ou 500 óticoins).
+- A rainha tem também o Empurrão Universal (`q:golpe:empurrao`, 500 óticoins; a ideia, o bilhete e o símbolo são do
+  usuário, 21/11). Luta com as mãos (`maosLivres`): vai até a vítima sem sacar a arma, e vale com qualquer arma. Do
+  bilhete: a peça vai até a casa da outra e, as duas no mesmo lugar, carrega a habilidade como uma bolha de vento e
+  repele a peça capturada pra fora do tabuleiro. De pose em pose, como o Puxão:
+  - ela recolhe as palmas na frente do peito, uma de frente pra outra, e desce o corpo; o brilho de anime entre elas;
+  - a carga (quase 1 s): a bolha nasce entre as palmas e cresce, com três anéis de vento girando e o ar sugado (riscos
+    que nascem em volta e correm pra ela), e a rainha treme em dois. A vítima sente o vento: se inclina pra trás com os
+    braços na frente do rosto, escorrega um pouco e treme;
+  - as palmas saem de uma vez (o impulso) e a bolha voa até o peito da vítima;
+  - o estouro, o golpe que decide: a bolha abre em volta dela e some, com o anel, os riscos, a onda no chão e a poeira,
+    e a vítima voa alto, por cima de tudo, até passar da beira e cair na mesa (`nocautear` com `foraDoTabuleiro`);
+  - a rainha fica um instante com as palmas pra frente e volta.
+
+  Fica em `combate/empurraoUniversal.ts`; os sons são `empurrao:carrega`, `empurrao:solta` e `empurrao:estouro`. O
+  símbolo (`EMBLEMAS.empurrao`): a imagem do usuário é de mangá (retícula, gradiente, brilho), então foi redesenhada em
+  traço cheio de aço, com a mesma composição e as proporções medidas nela. A bolha de vento é uma meia cúpula no chão,
+  com o núcleo de luz e os raios; em volta, cinco setas pra fora (165°, 128°, 90°, 52° e 15°), os riscos de velocidade
+  e as faíscas. Fotos: `SO=empurrao,empurrao-de-lado node testes/fotos-armas.mjs`.
 - Os blocos de habilidade (pedido do usuário): até três habilidades na mesma peça, e na captura quem joga escolhe qual
   usar.
   - O 1º bloco é grátis; o 2º custa 50 e o 3º, 70 óticoins, uma vez por peça (`peça:bloco:2`, `peça:bloco:3`, preços em
     `blocosDeHabilidade` no catálogo).
-  - Um bloco só é vendido quando a peça tem habilidades pra ele: hoje o peão tem o 2º e ninguém tem o 3º. O 3º pede o 2º
+  - Um bloco só é vendido quando a peça tem habilidades pra ele: hoje o peão e a rainha têm o 2º, e ninguém tem o 3º. O 3º pede o 2º
     antes (`falta-o-bloco-anterior`).
   - Cada bloco é uma parte da peça: `golpe`, `golpe2` e `golpe3`, com as mesmas opções. O servidor confere o bloco
     comprado (`bloco-bloqueado`) e a habilidade comprada (a parte `golpe` do catálogo vale pros três). A mesma
@@ -310,6 +328,20 @@ As pastas de `src` são por função:
   toca quando ela bate no chão, não no golpe. As duas peças em pose ganham `userData.poseDeHabilidade`, que tira a
   inércia. As fotos saem de `SO=golpe,chute-rainha,golpe-peao,socos,chute node testes/fotos-armas.mjs`. A queda antiga
   (tombar no lugar, `animarQuedaEDesaparecimento`) saiu do código.
+- O cavalo (pedido do usuário):
+  - sem a lança, salta até a casa e, ainda no ar, quando a frente dele encosta na vítima (o `alcance` do salto, em
+    `movimento.ts`), as patas da frente acertam o peito dela. A vítima, que vira pra ele ao ver o salto, voa pela força
+    (`nocautear`, força 1,9, a massa do cavalo contra a dela) pro lado do salto, e ele pousa na casa. O salto anda no
+    relógio do jogo: no congelamento do impacto, o cavalo para no ar junto. O arremesso antigo (`arremessarPeca`) saiu;
+  - com a lança, o golpe é outro. A vítima vira pro cavalo, e ele vem a galope em linha reta (a caminhada mais rápida,
+    no ritmo do galope: `deslocarRPG` com `galope`) até o alcance da lança (`paradaDaLanca`: a lança vai ao longo do
+    antebraço e, mirada no peito, a ponta corre na linha do cotovelo ao peito). Ali ele recua um palmo mirando o
+    antebraço no peito e investe; a ponta entra (o anel, os riscos e os respingos), e a vítima fica presa, curvada
+    sobre a lança, tremendo em dois. Ele recua puxando a lança, e ela desaba pra frente ali mesmo e some
+    (`combate/lancaDoCavalo.ts`; sons `golpe:lanca`, `lanca:perfura` e `lanca:puxa`). Ele anda o resto até a casa:
+    o cavalo só salta acima de 1,5 casa (`SALTO_MINIMO`).
+
+  Fotos: `SO=lanca,enquadra-lanca,cavalo node testes/fotos-armas.mjs`.
 - O ataque da captura segue a arma (`src/tabuleiro/combate/efeitosDasArmas.ts`, cada um com som próprio em `sons.ts`):
   retalhamento da katana (vários cortes e a peça em pedaços, só pra quem comprou), marreta (rachaduras desenhadas a cada
   pancada e o tabuleiro tremendo), machado (a peça cortada ao meio por plano de recorte; a metade de cima é cópia pelo
@@ -561,6 +593,11 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
   ainda ficam no caminho esmaecem até a luta acabar (`cena/esmaecer.ts`, cópias dos materiais). Vale ver só as duas
   peças. A volta devolve o giro, a altura e o zoom de antes. Fotos da vista de jogo de sempre:
   `SO=enquadra-puxao,enquadra-retalho,enquadra-torre,enquadra-bispo node testes/fotos-armas.mjs` (`camera: null`).
+- A câmera chega junto com quem ataca (pedido do usuário). Quem vai até a vítima sai de longe: a câmera escolhe o ponto
+  de vista contando o lugar de onde a peça sai, começa mostrando o caminho todo e vai fechando no golpe conforme ela
+  chega perto (`comeco` em `areaDaLuta`, com o quanto do caminho já andou; `acompanhar` na aproximação). Parada a
+  peça, o enquadramento é o do golpe. O cavalo de lança para mais longe (`parada`), e no Empurrão a área inclui o
+  começo do voo pra fora do tabuleiro (`praFora`).
 - A tela inicial e a partida nova olham sempre pro meio do tabuleiro (`CENTRO` em `vistaDaCamera.ts`): o giro da câmera
   leva o centro de volta. Antes o centro ficava preso perto da última luta quando a pessoa encostava na câmera no meio
   da aproximação (no celular, todo toque conta), e o tabuleiro aparecia torto até na tela inicial (bug visto pelo

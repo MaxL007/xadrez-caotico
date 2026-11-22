@@ -54,7 +54,8 @@ async function andarAte(condicao, arg, maximo, oQue) {
 }
 const livre = () => andarAte(() => !window.__xadrez.ocupado(), null, 90000, 'fim do lance')
 
-/** `momentos`: [som, ms depois do som, arquivo]. O som fica registrado quando é pedido, mesmo que toque mais tarde. */
+/** `momentos`: [som, ms depois do som, arquivo]. O som fica registrado quando é pedido, mesmo que toque mais tarde; sem
+ * som (null), os ms contam do lance (o caminho até a vítima, que não tem som próprio). */
 /** `alvo`: a casa pra onde a câmera olha (sem ele, a da captura). */
 async function fotografar(nome, { pgn, vestir, golpe = null, de, para, promocao = null, camera, alvo = null, momentos }) {
   if (so && !so.includes(nome)) return
@@ -76,7 +77,7 @@ async function fotografar(nome, { pgn, vestir, golpe = null, de, para, promocao 
   for (const [som, espera, arquivo] of momentos) {
     if (som !== somAnterior) antes = 0
     somAnterior = som
-    await andarAte((som) => window.__sonsTocados.includes(som), som, 30000, `${nome}: som ${som}`)
+    if (som) await andarAte((som) => window.__sonsTocados.includes(som), som, 30000, `${nome}: som ${som}`)
     if (espera > antes + 17) await page.clock.runFor(espera - antes - 17)
     antes = espera
     await page.evaluate(() => (window.__semDesenho = false))
@@ -123,7 +124,40 @@ try {
   // a cratera cresce com o peso: a rainha esmagando a rainha
   await fotografar('puxao-rainha', { pgn: '1. e4 e5 2. Qh5 Qh4', de: 'h5', para: 'h4', camera: [4.4, -45, 62], vestir: { q: { golpe: 'puxao' } }, momentos: [['marreta:impacto', 350, 'puxao-cratera-rainha.png']] })
   await fotografar('lua', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', camera: [6.5, 40, 62], vestir: { q: { arma: 'lua' } }, momentos: [['tornado', 700, 'lua.png'], ['tornado', 1600, 'lua-arremesso.png']] })
-  await fotografar('lanca', { pgn: '1. Nc3 d5', de: 'c3', para: 'd5', camera: [4.6, 35, 50], vestir: { n: { arma: 'lanca' } }, momentos: [['salto:n', 0, 'lanca.png']] })
+  // o cavalo de lança: a galope até o alcance, a ponta no peito, a vítima presa, a lança saindo e ela desabando; e, pela
+  // vista de jogo, a câmera chegando perto conforme o cavalo chega perto
+  const CAVALO = { pgn: '1. Nc3 d5', de: 'c3', para: 'd5' }
+  await fotografar('lanca', {
+    ...CAVALO,
+    camera: [4, 80, 70],
+    vestir: { n: { arma: 'lanca' } },
+    momentos: [[null, 500, 'lanca-galope.png'], ['golpe:lanca', 0, 'lanca-perfura.png'], ['golpe:lanca', 250, 'lanca-presa.png'], ['lanca:puxa', 80, 'lanca-puxa.png'], ['lanca:puxa', 350, 'lanca-caindo.png']],
+  })
+  await fotografar('enquadra-lanca', { ...CAVALO, camera: null, vestir: { n: { arma: 'lanca' } }, momentos: [[null, 250, 'enquadra-lanca-saindo.png'], [null, 700, 'enquadra-lanca-chegando.png'], ['golpe:lanca', 100, 'enquadra-lanca-perfura.png']] })
+  // o cavalo sem lança: o salto, as patas no peito ainda no ar, a vítima voando pro lado do salto e no chão
+  await fotografar('cavalo', {
+    ...CAVALO,
+    camera: [4.4, 80, 66],
+    vestir: {},
+    momentos: [['salto:n', 450, 'cavalo-no-ar.png'], ['golpe:n', 0, 'cavalo-patas-no-peito.png'], ['golpe:n', 220, 'cavalo-vitima-voando.png'], ['queda:p', 120, 'cavalo-vitima-no-chao.png']],
+  })
+  // o Empurrão Universal: as palmas recolhidas com o brilho, a bolha crescendo (o ar sugado, a vítima contra o vento),
+  // as palmas saindo, o estouro no peito e a peça voando pra fora do tabuleiro
+  const EMPURRAO = { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', vestir: { q: { golpe: 'empurrao' } } }
+  await fotografar('empurrao', {
+    ...EMPURRAO,
+    camera: null,
+    momentos: [
+      ['anime:brilho', 30, 'empurrao-recolhe.png'],
+      ['empurrao:carrega', 350, 'empurrao-carga.png'],
+      ['empurrao:carrega', 800, 'empurrao-carga-cheia.png'],
+      ['empurrao:solta', 50, 'empurrao-palmas.png'],
+      ['empurrao:estouro', 30, 'empurrao-estouro.png'],
+      ['empurrao:estouro', 450, 'empurrao-voando.png'],
+      ['empurrao:estouro', 1100, 'empurrao-longe.png'],
+    ],
+  })
+  await fotografar('empurrao-de-lado', { ...EMPURRAO, alvo: 'g6', camera: [3.4, 10, 80], momentos: [['empurrao:carrega', 700, 'empurrao-de-lado-carga.png'], ['empurrao:solta', 40, 'empurrao-de-lado-palmas.png'], ['empurrao:estouro', 60, 'empurrao-de-lado-estouro.png'], ['empurrao:estouro', 350, 'empurrao-de-lado-voando.png']] })
   // sem arma: os socos e o chute
   const DE_LADO = [3, -40, 74]
   await fotografar('socos', { ...PEAO, camera: DE_LADO, vestir: {}, golpe: 'socos', momentos: [['soco:jab', 0, 'socos-jab.png'], ['soco', 0, 'socos-direto.png'], ['soco', 350, 'socos-queda.png']] })
@@ -159,7 +193,8 @@ try {
       ['dempsey:final', 800, 'dempsey-no-chao.png'],
     ],
   })
-  await fotografar('dempsey-de-lado', { ...PEAO, camera: [3, 50, 78], vestir: { p: { golpe: 'dempsey' } }, momentos: [['dempsey:balanco', 600, 'dempsey-de-lado-aquecimento.png'], ['dempsey:gancho', 120, 'dempsey-de-lado-gancho.png'], ['dempsey:gancho', 700, 'dempsey-de-lado-oito.png']] })
+  // o gancho na cabeça: o impacto (anel, riscos, respingos) e a cabeça jogada pra trás
+  await fotografar('dempsey-de-lado', { ...PEAO, camera: [3, 50, 78], vestir: { p: { golpe: 'dempsey' } }, momentos: [['dempsey:balanco', 600, 'dempsey-de-lado-aquecimento.png'], ['dempsey:gancho', 30, 'dempsey-de-lado-impacto.png'], ['dempsey:gancho', 120, 'dempsey-de-lado-gancho.png'], ['dempsey:gancho', 700, 'dempsey-de-lado-oito.png']] })
   // o enquadramento automático da luta, da vista de jogo de sempre (sem câmera posta à mão): o golpe inteiro tem de
   // aparecer, mesmo do outro lado do tabuleiro e no meio das outras peças
   await fotografar('enquadra-puxao', { pgn: '1. e4 e5 2. Qh5 Nc6', de: 'h5', para: 'f7', camera: null, vestir: { q: { golpe: 'puxao' } }, momentos: [['puxao:arrasta', 120, 'enquadra-puxao-resiste.png'], ['puxao:gira', 200, 'enquadra-puxao-helice.png'], ['marreta:impacto', 300, 'enquadra-puxao-cratera.png']] })

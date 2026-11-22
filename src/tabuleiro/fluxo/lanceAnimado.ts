@@ -11,11 +11,12 @@ import { tocarSom } from '../../som/sons'
 import { type PartidaXadrez } from '../../dados/xadrezRepo'
 import { type Peca } from '../../conta/personalizacao'
 import { animarAscensao, animarPetalas, virarSuave } from '../animacoes/cerimonias'
+import { estocarComLanca, paradaDaLanca } from '../combate/lancaDoCavalo'
 import { cavaloChegaEMontam, daMontaria, desfazerEquipamentos, doCavaleiro, encaixarEquipamentos, esconderPartes, partesVestidas, peaoCavaleiro } from '../animacoes/promocao'
 import { animarComemoracao, voltarAoDescanso } from '../animacoes/gestos'
 import { animarPosicao, animarPosicaoRPG, deslocarRPG, pararRPG, pecaSaltaRPG, rumoEntre, virarRPG } from '../animacoes/movimento'
-import { arremessarPeca, prepararParaSumir } from '../animacoes/queda'
-import { faisca } from '../combate/efeitosDeAnime'
+import { prepararParaSumir } from '../animacoes/queda'
+import { anelDeImpacto, estouroDeRiscos, faisca, respingos } from '../combate/efeitosDeAnime'
 import { nocautear, sacudir } from '../combate/nocaute'
 import { massaDaPeca } from '../sensacao/realismo'
 import { congelar } from '../sensacao/relogioDoJogo'
@@ -388,8 +389,16 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       // Jogam a vítima pela força os golpes simples e a Dempsey Roll; as armas com efeito próprio, não
       const habilidadeDeLonge = habilidade ? HABILIDADES[habilidade].alcance === 'aDistancia' : false
       const deLonge = habilidade ? habilidadeDeLonge : ehRPG && armaDoAtacante !== 'nenhuma' && ['b', 'q', 'k'].includes(tipoAtacante)
-      const comEfeitoProprio = ['marreta', 'machado', 'maca', 'cetro', 'lua'].includes(armaDoAtacante) || habilidade === 'retalhamento' || habilidade === 'puxao'
-      sensacao.comecarLuta(areaDaLuta(atacante, vitima, deLonge, !comEfeitoProprio, habilidade === 'puxao'), peso, tomDaTroca(andamento.capturasSeguidas))
+      // o cavalo de lança vem a galope e para no alcance dela (pedido do usuário): espeta pelo peito, puxa, e a vítima cai
+      const comLanca = tipoAtacante === 'n' && ehRPG && armaDoAtacante === 'lanca' && !habilidade
+      const paradaDoCavalo = comLanca ? paradaDaLanca(atacante, vitima) : undefined
+      const comEfeitoProprio =
+        ['marreta', 'machado', 'maca', 'cetro', 'lua'].includes(armaDoAtacante) || habilidade === 'retalhamento' || habilidade === 'puxao' || comLanca
+      sensacao.comecarLuta(
+        areaDaLuta(atacante, vitima, deLonge, !comEfeitoProprio, { alto: habilidade === 'puxao', parada: paradaDoCavalo, praFora: habilidade === 'empurrao' }),
+        peso,
+        tomDaTroca(andamento.capturasSeguidas),
+      )
       let lutaAcabou = false
       /** O golpe acertou: congela um instante, treme e solta as vozes (`fator` multiplica o peso). Devolve os ms do
        * congelamento, que a queda da vítima espera. */
@@ -415,7 +424,77 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         }
       }
 
-      // cavalo: salta até a casa e pousa com as patas em cima da vítima, que sai voando longe
+      // o cavalo de lança: a vítima vê o cavalo vindo e vira pra ele; ele vem a galope até o alcance da lança, mira e
+      // investe, a ponta entra no peito, ela fica presa tremendo, ele puxa a lança, e ela desaba pra frente e some
+      // (lancaDoCavalo.ts e nocaute.ts)
+      if (comLanca) {
+        voltarAoDescanso(atacante)
+        novaSequenciaRPG(atacante)
+        const de = { x: atacante.position.x, z: atacante.position.z }
+        const distancia = Math.hypot(posVitima.x - de.x, posVitima.z - de.z)
+        const fracao = Math.max(0, (distancia - (paradaDoCavalo ?? 0.9)) / distancia)
+        const ate = { x: de.x + (posVitima.x - de.x) * fracao, z: de.z + (posVitima.z - de.z) * fracao }
+        virarSuave(vitima, rumoEntre(posVitima, de), 450)
+        virarRPG(atacante, rumoEntre(de, posVitima), () => {
+          if (!vigente()) return
+          deslocarRPG(
+            atacante,
+            de,
+            ate,
+            () => {
+              if (!vigente()) return
+              pararRPG(atacante)
+              const cor = materiaisPorFaccao[corAtacante].brilho.color
+              estocarComLanca(atacante, vitima, vigente, {
+                aoPerfurar: (ponta, rumo) => {
+                  tocarSom('golpe:lanca')
+                  tocarSom('lanca:perfura')
+                  faisca(scene, ponta, 0xffffff, 0.4 * vitima.scale.x, 200)
+                  anelDeImpacto(scene, ponta, rumo, cor, 0.22 * vitima.scale.x)
+                  estouroDeRiscos(scene, ponta, 9, 0.14 * vitima.scale.x, cor)
+                  respingos(scene, ponta, rumo, 0.009 * vitima.scale.x)
+                  sensacao.linhasDeFoco(ponta, 260)
+                  impacto()
+                  comemorarAliadas()
+                },
+                aoPuxar: () => {
+                  tocarSom('lanca:puxa')
+                  // sem a lança segurando, o corpo desaba pra frente, pro lado do cavalo (que segura o tombo: cai ali)
+                  nocautear(
+                    scene,
+                    vitima,
+                    {
+                      direcao: { x: atacante.position.x - vitima.position.x, z: atacante.position.z - vitima.position.z },
+                      forca: 0.3,
+                      massaDeQuemBate: massaDaPeca('n'),
+                      massaDaVitima: massaDaPeca(tipoVitima),
+                      altura: 0.5,
+                    },
+                    piecesGroup.children,
+                    vigente,
+                    {
+                      aoPousar: (onde, massa) => {
+                        tocarSom(`queda:${tipoVitima}`)
+                        animarImpacto(scene, onde.x, onde.z)
+                        tremerTabuleiro(scene, 0.012 + 0.005 * massa, 200)
+                      },
+                      aoTerminar: () => {
+                        removerVitima()
+                        seguirParaDestino()
+                      },
+                    },
+                  )
+                },
+              })
+            },
+            true,
+          )
+        })
+        return
+      }
+
+      // cavalo: salta até a casa e, ainda no ar, as patas da frente acertam o peito da vítima (que vira pra ele ao ver o
+      // salto): a força do cavalo a joga longe, pela física das massas (nocaute.ts), e ele pousa na casa dela
       if (tipoAtacante === 'n' && ehRPG && pecaSaltaRPG(atacante)) {
         const de = { x: atacante.position.x, z: atacante.position.z }
         // o lance só termina com o cavalo pousado E a vítima já fora de cena — antes a vez passava
@@ -429,6 +508,8 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             terminar()
           }
         }
+        const direcaoDoSalto = { x: posVitima.x - de.x, z: posVitima.z - de.z }
+        virarSuave(vitima, rumoEntre(posVitima, de), 450)
         animarPosicaoRPG(
           atacante,
           de,
@@ -438,19 +519,43 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             chegou(atacante, casaOrigem, casaDestino)
             umaParte()
           },
-          () => {
-            tocarSom('golpe:n')
-            if (atacante.userData.arma === 'lanca') tocarSom('golpe:lanca')
-            tocarSom('voo:vitima')
-            animarImpacto(scene, posVitima.x, posVitima.z)
-            depoisDoCongelamento(impacto(), () => {
+          undefined,
+          {
+            // a frente do cavalo (o peito e as patas dianteiras) encostando na frente da vítima
+            distancia: 0.38 * atacante.scale.x + 0.1 * vitima.scale.x,
+            aoAlcancar: () => {
               if (!vigente()) return
-              arremessarPeca(vitima, { x: posVitima.x - de.x, z: posVitima.z - de.z }, () => {
-                removerVitima()
-                umaParte()
-              })
-            })
-            comemorarAliadas()
+              tocarSom('golpe:n')
+              tocarSom('voo:vitima')
+              const rumo = new THREE.Vector3(direcaoDoSalto.x, 0, direcaoDoSalto.z).normalize()
+              const peito = vitima.position.clone().add(new THREE.Vector3(0, 0.55 * vitima.scale.y, 0)).addScaledVector(rumo, -0.08 * vitima.scale.x)
+              const praOndeVai = rumo.clone().setY(0.3).normalize()
+              faisca(scene, peito, 0xffffff, 0.5 * vitima.scale.x)
+              anelDeImpacto(scene, peito, praOndeVai, materiaisPorFaccao[corAtacante].brilho.color, 0.3 * vitima.scale.x, 260)
+              animarImpacto(scene, posVitima.x, posVitima.z)
+              impacto()
+              const massaDaVitima = massaDaPeca(tipoVitima)
+              nocautear(
+                scene,
+                vitima,
+                { direcao: direcaoDoSalto, forca: 1.9, massaDeQuemBate: massaDaPeca('n'), massaDaVitima, altura: 0.55 },
+                piecesGroup.children,
+                vigente,
+                {
+                  aoPousar: (onde, massa) => {
+                    tocarSom(`queda:${tipoVitima}`)
+                    animarImpacto(scene, onde.x, onde.z)
+                    tremerTabuleiro(scene, 0.015 + 0.006 * massa, 220)
+                  },
+                  aoTerminar: () => {
+                    removerVitima()
+                    umaParte()
+                  },
+                },
+              )
+              if (1.9 * Math.pow(massaDaPeca('n') / massaDaVitima, 0.35) > 1.2) sensacao.socoNaCamera(2.5, 280)
+              comemorarAliadas()
+            },
           },
         )
         return

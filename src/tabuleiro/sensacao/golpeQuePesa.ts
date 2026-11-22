@@ -30,14 +30,25 @@ export interface AreaDaLuta {
   /** De quem ataca pra vítima, no chão: a câmera olha de lado pra essa linha. */
   rumo: THREE.Vector3
   envolvidas: THREE.Object3D[]
+  /** Quem ataca de perto ainda vai até a vítima: o corpo dela onde sai, e quanto do caminho já andou (0 a 1). A câmera
+   * começa mostrando o caminho e vai fechando no golpe. */
+  comeco?: { pontos: THREE.Vector3[]; progresso: () => number }
 }
 
 /**
  * Os pontos de uma captura que têm de aparecer: as duas peças inteiras (do chão ao alto), o lugar onde quem bate de perto
- * para e, quando o golpe joga a vítima, onde ela cai. `deLonge`: o golpe não sai do lugar (poderes, Puxão); `alto`: o
- * golpe sobe acima de quem ataca (a hélice do Puxão).
+ * para e, quando o golpe joga a vítima, onde ela cai. `deLonge`: o golpe não sai do lugar (poderes, Puxão). No `jeito`:
+ * `alto`, o golpe sobe acima de quem ataca (a hélice do Puxão); `parada`, a que distância da vítima quem vai até ela
+ * para (o cavalo de lança para no alcance dela); `praFora`, a vítima voa alto pra fora do tabuleiro (o Empurrão).
  */
-export function areaDaLuta(atacante: THREE.Object3D, vitima: THREE.Object3D, deLonge: boolean, joga: boolean, alto = false): AreaDaLuta {
+export function areaDaLuta(
+  atacante: THREE.Object3D,
+  vitima: THREE.Object3D,
+  deLonge: boolean,
+  joga: boolean,
+  jeito: { alto?: boolean; parada?: number; praFora?: boolean } = {},
+): AreaDaLuta {
+  const distanciaDaParada = jeito.parada ?? 0.45
   const alturaDe = (peca: THREE.Object3D) => Math.max(0.5, new THREE.Box3().setFromObject(peca).max.y)
   const a = new THREE.Vector3(atacante.position.x, 0, atacante.position.z)
   const v = new THREE.Vector3(vitima.position.x, 0, vitima.position.z)
@@ -51,12 +62,24 @@ export function areaDaLuta(atacante: THREE.Object3D, vitima: THREE.Object3D, deL
   // de longe, quem ataca fica onde está; de perto, a luta é na casa da vítima: quem bate para na frente dela (a câmera
   // espera ele lá, em vez de mostrar o caminho)
   if (deLonge) pontos.push(...corpo(a, alturaA))
-  else pontos.push(...corpo(v.clone().addScaledVector(rumo, -0.45), alturaA))
+  else pontos.push(...corpo(v.clone().addScaledVector(rumo, -distanciaDaParada), alturaA))
   // a vítima jogada pela força cai uma casa adiante
   if (joga) pontos.push(v.clone().addScaledVector(rumo, 0.9).setY(0.3))
   // a hélice do Puxão: a vítima gira presa na mão erguida, acima da rainha e pra trás dela
-  if (alto) pontos.push(a.clone().addScaledVector(rumo, 0.35).setY(alturaA * 2.1), a.clone().addScaledVector(rumo, -0.45).setY(alturaA * 1.2))
-  return { pontos, rumo, envolvidas: [atacante, vitima] }
+  if (jeito.alto) pontos.push(a.clone().addScaledVector(rumo, 0.35).setY(alturaA * 2.1), a.clone().addScaledVector(rumo, -0.45).setY(alturaA * 1.2))
+  // o Empurrão: o começo do voo, alto, pra fora do tabuleiro (o resto do voo sai da tela, como no anime)
+  if (jeito.praFora) pontos.push(v.clone().addScaledVector(rumo, 1.3).setY(alturaV * 1.6))
+  // de perto: a câmera acompanha quem ataca, do lugar de onde sai até parar na frente da vítima
+  const parada = v.clone().addScaledVector(rumo, -distanciaDaParada)
+  const caminho = a.distanceTo(parada)
+  const comeco =
+    deLonge || caminho < 0.3
+      ? undefined
+      : {
+          pontos: corpo(a, alturaA),
+          progresso: () => 1 - new THREE.Vector3(atacante.position.x, 0, atacante.position.z).distanceTo(parada) / caminho,
+        }
+  return { pontos, rumo, envolvidas: [atacante, vitima], comeco }
 }
 
 export interface SensacaoDaPartida {
@@ -93,6 +116,7 @@ const PESO_DA_ARMA: Record<string, number> = {
   maca: 1.2,
   retalhamento: 1.1,
   puxao: 1.25,
+  empurrao: 1.25,
 }
 
 /** De 0 a 1: o peso do golpe pela importância da peça capturada (peão leve, dama forte) e pela arma de quem golpeia. */

@@ -95,7 +95,8 @@
     ],
     "q": [
       "nenhuma",
-      "puxao"
+      "puxao",
+      "empurrao"
     ]
   },
   "itens": {
@@ -196,7 +197,8 @@
       "arma:cajado": 35,
       "arma:cristal": 35,
       "arma:lua": 35,
-      "golpe:puxao": 500
+      "golpe:puxao": 500,
+      "golpe:empurrao": 500
     },
     "k": {
       "cabeca:elmo": 50,

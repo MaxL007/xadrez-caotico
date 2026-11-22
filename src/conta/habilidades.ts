@@ -27,6 +27,8 @@ export const HABILIDADES: Record<string, DadosDaHabilidade> = {
   puxao: { peca: 'q', alcance: 'aDistancia' },
   // o peão boxeador: o oito da Dempsey Roll, ganchos dos dois lados e o gancho final que arremessa; com os punhos
   dempsey: { peca: 'p', alcance: 'corpoACorpo', maosLivres: true },
+  // a rainha vai até a peça, carrega a bolha de vento entre as palmas e a repele pra fora do tabuleiro; com as mãos
+  empurrao: { peca: 'q', alcance: 'corpoACorpo', maosLivres: true },
 }
 
 /**

@@ -30,6 +30,8 @@ function animar(ms: number, passo: (u: number) => void, fim: () => void) {
     if (u < 1) requestAnimationFrame(quadro)
     else fim()
   }
+  // o primeiro quadro já sai no tamanho do começo: sem isso, o efeito aparecia um quadro no tamanho 1 (um clarão enorme)
+  passo(0)
   requestAnimationFrame(quadro)
 }
 
@@ -198,6 +200,81 @@ export function rastroDeBrilho(cena: THREE.Object3D, ponto: THREE.Vector3, cor: 
     () => {
       sprite.removeFromParent()
       sprite.material.dispose()
+    },
+  )
+}
+
+/** O anel de impacto do anime: uma onda que abre no ponto do golpe, de frente pra \`direcao\` dele, e some. */
+export function anelDeImpacto(cena: THREE.Object3D, ponto: THREE.Vector3, direcao: THREE.Vector3, cor: THREE.ColorRepresentation, tamanho: number, ms = 220) {
+  const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(cor).lerp(new THREE.Color(0xffffff), 0.6), transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+  const anel = new THREE.Mesh(new THREE.RingGeometry(0.78, 1, 32), material)
+  anel.position.copy(ponto)
+  anel.lookAt(ponto.clone().add(direcao))
+  cena.add(anel)
+  animar(
+    ms,
+    (u) => {
+      anel.scale.setScalar(tamanho * (0.25 + 1.1 * (1 - (1 - u) ** 2)))
+      material.opacity = 0.9 * (1 - u)
+    },
+    () => {
+      anel.removeFromParent()
+      anel.geometry.dispose()
+      material.dispose()
+    },
+  )
+}
+
+/** O estouro de riscos do anime no ponto do golpe: riscos finos saindo pra todo lado, rápidos, e somem. */
+export function estouroDeRiscos(cena: THREE.Object3D, ponto: THREE.Vector3, quantos: number, comprimento: number, cor: THREE.ColorRepresentation, ms = 180) {
+  const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(cor).lerp(new THREE.Color(0xffffff), 0.7), transparent: true, opacity: 0.95, depthWrite: false })
+  const riscos = Array.from({ length: quantos }, () => {
+    const rumo = new THREE.Vector3().randomDirection()
+    const risco = new THREE.Mesh(geometriaDaLinha, material)
+    risco.lookAt(rumo)
+    cena.add(risco)
+    return { risco, rumo, comprimento: comprimento * (0.6 + Math.random() * 0.6) }
+  })
+  animar(
+    ms,
+    (u) => {
+      for (const { risco, rumo, comprimento: c } of riscos) {
+        const saida = 0.25 + u * 1.1
+        risco.position.copy(ponto).addScaledVector(rumo, c * saida)
+        risco.lookAt(risco.position.clone().add(rumo))
+        risco.scale.set(0.006, 0.006, c * (1 - u * 0.6))
+      }
+      material.opacity = 0.95 * (1 - u)
+    },
+    () => {
+      for (const { risco } of riscos) risco.removeFromParent()
+      material.dispose()
+    },
+  )
+}
+
+/** Os respingos do rosto atingido (o suor do anime): gotas pequenas voando pra \`direcao\` do golpe e caindo. */
+export function respingos(cena: THREE.Object3D, ponto: THREE.Vector3, direcao: THREE.Vector3, tamanho: number, ms = 420) {
+  const material = new THREE.MeshBasicMaterial({ color: 0xeaf6ff, transparent: true, opacity: 0.9, depthWrite: false })
+  const geometria = new THREE.SphereGeometry(tamanho, 6, 4)
+  const gotas = Array.from({ length: 6 }, () => {
+    const gota = new THREE.Mesh(geometria, material)
+    gota.position.copy(ponto)
+    cena.add(gota)
+    const velocidade = direcao.clone().normalize().multiplyScalar(1.4 + Math.random()).add(new THREE.Vector3((Math.random() - 0.5) * 0.9, 0.4 + Math.random() * 0.8, (Math.random() - 0.5) * 0.9))
+    return { gota, velocidade }
+  })
+  animar(
+    ms,
+    (u) => {
+      const t = (u * ms) / 1000
+      for (const { gota, velocidade } of gotas) gota.position.copy(ponto).addScaledVector(velocidade, t).add(new THREE.Vector3(0, -4.9 * t * t, 0))
+      material.opacity = 0.9 * (1 - u)
+    },
+    () => {
+      for (const { gota } of gotas) gota.removeFromParent()
+      geometria.dispose()
+      material.dispose()
     },
   )
 }

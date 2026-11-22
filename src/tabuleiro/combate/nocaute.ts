@@ -41,6 +41,9 @@ export interface ForcaDoGolpe {
   massaDaVitima: number
   /** Onde o golpe pega, de 0 (os pés) a 1 (o alto da cabeça): no queixo 0,6, na barriga 0,42. */
   altura: number
+  /** O golpe que joga pra fora do tabuleiro (o Empurrão Universal): voa alto, por cima das outras peças, passa da beira
+   * e cai na mesa. */
+  foraDoTabuleiro?: boolean
 }
 
 interface AvisosDoNocaute {
@@ -140,9 +143,11 @@ export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: F
   // a força passa pra vítima conforme as massas: quem pesa mais arremessa mais longe, mas todo golpe derruba
   const razao = golpe.massaDeQuemBate / Math.max(0.5, golpe.massaDaVitima)
   let distancia = THREE.MathUtils.clamp(0.62 * golpe.forca * Math.pow(razao, 0.35), 0.35, 1.3)
-  // uma peça no caminho segura o voo antes dela
   const de = vitima.position.clone()
-  for (const outra of outras) {
+  // pra fora do tabuleiro: até passar da beira, e mais um pouco, por cima de tudo
+  if (golpe.foraDoTabuleiro) distancia = distanciaAteABeira(de, rumo) + 0.9
+  // uma peça no caminho segura o voo antes dela
+  for (const outra of golpe.foraDoTabuleiro ? [] : outras) {
     if (outra === vitima || !outra.visible) continue
     const ate = new THREE.Vector3(outra.position.x - de.x, 0, outra.position.z - de.z)
     const adiante = ate.dot(rumo)
@@ -175,7 +180,7 @@ export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: F
     chao,
     distancia,
     vooMs: (0.24 + 0.2 * distancia) * 1000 + (foraDoTabuleiro ? 180 : 0),
-    arco: 0.06 + 0.18 * Math.min(1, distancia) * Math.min(1.3, golpe.forca),
+    arco: golpe.foraDoTabuleiro ? 1.05 + 0.06 * distancia : 0.06 + 0.18 * Math.min(1, distancia) * Math.min(1.3, golpe.forca),
     pose: {
       pratras: 0.9 * frente.dot(rumo),
       deLado: 0.9 * esquerda.dot(rumo.clone().negate()),
@@ -190,6 +195,12 @@ export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: F
     continua,
     avisos,
   })
+}
+
+/** Quanto falta, de `de` no `rumo`, pra passar da beira do tabuleiro (moldura incluída). */
+function distanciaAteABeira(de: THREE.Vector3, rumo: THREE.Vector3): number {
+  const ate = (posicao: number, passo: number) => (Math.abs(passo) < 1e-6 ? Infinity : ((passo > 0 ? BEIRA_DO_TABULEIRO : -BEIRA_DO_TABULEIRO) - posicao) / passo)
+  return Math.max(0.5, Math.min(ate(de.x, rumo.x), ate(de.z, rumo.z)))
 }
 
 /** Pra qual lado a peça gira no ar (e quanto): o alto dela vai pro lado do golpe. */

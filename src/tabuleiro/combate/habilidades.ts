@@ -10,8 +10,9 @@ import { depoisDoCongelamento, type SensacaoDaPartida } from '../sensacao/golpeQ
 import { despedacar, rachadurasNoTabuleiro, rastroDeCorte, tremerTabuleiro } from './efeitosDasArmas'
 import { massaDaPeca } from '../sensacao/realismo'
 import { abrirCratera, afundarNaCratera } from './cratera'
-import { faisca, rastroDeBrilho } from './efeitosDeAnime'
+import { anelDeImpacto, estouroDeRiscos, faisca, rastroDeBrilho, respingos } from './efeitosDeAnime'
 import { dempseyRoll } from './dempseyRoll'
+import { empurraoUniversal } from './empurraoUniversal'
 import { nocautear, sacudir } from './nocaute'
 import { congelar } from '../sensacao/relogioDoJogo'
 import { animarImpacto } from './golpes'
@@ -177,17 +178,27 @@ function dempsey(c: CapturaComHabilidade) {
     aoRolar: (cabeca) => rastroDeBrilho(c.cena, cabeca, cor, 0.3 * tamanho, 380),
     // o aquecimento acabou: o estalo e as linhas de foco marcam o começo dos ganchos
     aoComecarOsGanchos: (queixo) => impulsoDeAnime(c, queixo),
-    aoGancho: (numero, queixo) => {
+    aoGancho: (numero, queixo, direcao) => {
       tocarSom('dempsey:gancho', 0, 1 + 0.05 * numero)
       if (numero % 2 === 1) tocarSom(`dor:${tipoVitima}`, 0.03)
-      faisca(c.cena, queixo, 0xffffff, 0.32 * c.vitima.scale.x, 170)
-      congelar(22 + 4 * numero)
+      // o impacto na cabeça: a faísca, o anel abrindo, o estouro de riscos e os respingos voando pra onde a cabeça vai
+      const tamanhoDaVitima = c.vitima.scale.x
+      faisca(c.cena, queixo, 0xffffff, 0.36 * tamanhoDaVitima, 170)
+      anelDeImpacto(c.cena, queixo, direcao, cor, 0.2 * tamanhoDaVitima)
+      estouroDeRiscos(c.cena, queixo, 7, 0.12 * tamanhoDaVitima, cor)
+      respingos(c.cena, queixo, direcao, 0.008 * tamanhoDaVitima)
+      c.sensacao.socoNaCamera(-1.2, 160)
+      congelar(26 + 4 * numero)
     },
     aoParar: (queixo) => impulsoDeAnime(c, queixo, 0.8),
     aoCarregar: (punho) => brilhoDeAnime(c, punho, 0.45),
     aoGolpeFinal: (queixo, direcao) => {
       tocarSom('dempsey:final')
       impactoDeAnime(c, queixo)
+      const praOndeVai = new THREE.Vector3(direcao.x, 0.35, direcao.z).normalize()
+      anelDeImpacto(c.cena, queixo, praOndeVai, cor, 0.42 * c.vitima.scale.x, 300)
+      estouroDeRiscos(c.cena, queixo, 12, 0.2 * c.vitima.scale.x, cor, 240)
+      respingos(c.cena, queixo, praOndeVai, 0.011 * c.vitima.scale.x, 520)
       c.sentirImpacto(1.3, true)
       nocautear(
         c.cena,
@@ -209,8 +220,58 @@ function dempsey(c: CapturaComHabilidade) {
   })
 }
 
+/** O Empurrão Universal (rainha, com as mãos; a ideia e o símbolo são do usuário): ela vai até a peça e, as duas no
+ * mesmo lugar, recolhe as palmas e carrega a bolha de vento entre elas (o brilho, o ar sugado, os anéis girando, a vítima
+ * se inclinando contra o vento); as palmas saem de uma vez (o impulso), a bolha estoura no peito da vítima (o golpe que
+ * decide, com a onda no chão e a poeira) e ela voa alto, por cima de tudo, pra fora do tabuleiro (ver
+ * empurraoUniversal.ts e nocaute.ts). */
+function empurrar(c: CapturaComHabilidade) {
+  const cor = corDoBrilho(c)
+  const tipoVitima = String(c.vitima.userData.tipo ?? 'p')
+  novaSequenciaRPG(c.vitima)
+  mostrarEspadaRPG(c.vitima, false)
+  empurraoUniversal(c.atacante, c.vitima, c.cena, cor, c.vigente, {
+    aoBrilhar: (palmas) => brilhoDeAnime(c, palmas, 0.4),
+    aoCarregar: () => tocarSom('empurrao:carrega'),
+    aoEmpurrar: (palmas) => {
+      tocarSom('empurrao:solta')
+      impulsoDeAnime(c, palmas)
+    },
+    aoEstourar: (ponto) => {
+      tocarSom('empurrao:estouro')
+      impactoDeAnime(c, ponto)
+      const direcao = { x: c.posVitima.x - c.atacante.position.x, z: c.posVitima.z - c.atacante.position.z }
+      const praOndeVai = new THREE.Vector3(direcao.x, 0, direcao.z).normalize().setY(0.45).normalize()
+      const tamanho = c.vitima.scale.x
+      anelDeImpacto(c.cena, ponto, praOndeVai, cor, 0.5 * tamanho, 320)
+      estouroDeRiscos(c.cena, ponto, 14, 0.24 * tamanho, cor, 260)
+      // o vento batendo no chão: a onda e a poeira em volta da vítima
+      ondaDaMarretada(c.cena, c.posVitima.x, c.posVitima.z, cor)
+      poeiraDaPancada(c.cena, c.posVitima.x, c.posVitima.z)
+      tremerTabuleiro(c.cena, 0.05, 260)
+      c.sentirImpacto(1.2, false)
+      nocautear(
+        c.cena,
+        c.vitima,
+        { direcao, forca: 2.5, massaDeQuemBate: massaDaPeca('q'), massaDaVitima: massaDaPeca(tipoVitima), altura: 0.5, foraDoTabuleiro: true },
+        [],
+        c.vigente,
+        {
+          aoPousar: (onde, massa) => {
+            tocarSom(`queda:${tipoVitima}`)
+            animarImpacto(c.cena, onde.x, onde.z)
+            tremerTabuleiro(c.cena, 0.01 + 0.004 * massa, 200)
+          },
+          aoTerminar: c.fim,
+        },
+      )
+      c.comemorarAliadas()
+    },
+  })
+}
+
 /** A captura de cada habilidade, pelo nome dela no catálogo. */
-export const CAPTURAS: Record<string, (c: CapturaComHabilidade) => void> = { retalhamento: retalhar, puxao: puxar, dempsey }
+export const CAPTURAS: Record<string, (c: CapturaComHabilidade) => void> = { retalhamento: retalhar, puxao: puxar, dempsey, empurrao: empurrar }
 
 /** O que falta em cada habilidade do catálogo: o cadastro, a peça certa, a animação, o símbolo, o preço na Loja e os
  * textos nos três idiomas. Vazio quando está tudo certo (o teste das armas confere). */

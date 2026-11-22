@@ -74,7 +74,7 @@ interface AvisosDaDempsey {
   /** O aquecimento acabou e os ganchos começam: o impulso de anime. */
   aoComecarOsGanchos: (ponto: THREE.Vector3) => void
   /** Um gancho acertou: `numero` de 0 a 5, `ponto` o queixo da vítima. */
-  aoGancho: (numero: number, ponto: THREE.Vector3) => void
+  aoGancho: (numero: number, ponto: THREE.Vector3, direcao: THREE.Vector3) => void
   /** A parada brusca no meio do oito. */
   aoParar: (ponto: THREE.Vector3) => void
   /** A carga antes do golpe final: o brilho no punho. */
@@ -119,6 +119,8 @@ interface Dempsey {
   meiasVoltas: number
   marcos: Set<string>
   vitimaSolta: boolean
+  /** Quando o último gancho acertou: a cabeça vai pra trás de uma vez e volta (como no anime, o golpe é na cabeça). */
+  ultimoGancho: number
   continua: () => boolean
   avisos: AvisosDaDempsey
 }
@@ -204,6 +206,7 @@ export function dempseyRoll(peca: THREE.Object3D, vitima: THREE.Object3D, contin
     meiasVoltas: 0,
     marcos: new Set(),
     vitimaSolta: false,
+    ultimoGancho: -Infinity,
     continua,
     avisos,
   })
@@ -368,6 +371,15 @@ function posarVitima(d: Dempsey, t: number, dt: number, agora: number) {
     // a cabeça acompanha o balanço de quem vai bater
     if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(CIMA, 0.35 * ladoDoOito(t) * guarda))
   }
+  // a cabeça jogada pra trás no instante do gancho: sobe rápido, segura um instante e volta (pedido do usuário)
+  const desdeOGancho = t - d.ultimoGancho
+  const praTras = desdeOGancho >= 0 ? (1 - Math.exp(-desdeOGancho / 22)) * Math.exp(-desdeOGancho / 170) * realismo() : 0
+  if (praTras > 0.001) {
+    const cabeca = ossoRPG(vitima, 'Head')
+    if (peito) girarOssoNoMundo(peito, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.22 * praTras))
+    if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.75 * praTras))
+    if (cabeca) girarOssoNoMundo(cabeca, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.5 * praTras))
+  }
   if (d.empurrao.lengthSq() > 0) {
     // girar em volta de (cima × empurrão) leva o alto da peça pro lado do empurrão
     const eixo = new THREE.Vector3().crossVectors(CIMA, d.empurrao).normalize()
@@ -415,9 +427,11 @@ function avisar(d: Dempsey, t: number) {
       d.balanco = 0
       d.velocidade = 8 + numero * 0.8
       d.recuo += 0.022
+      d.ultimoGancho = t
       // cambaleia pro lado do golpe e volta um pouco no seguinte
       d.deLado = -deQual * 0.04
-      d.avisos.aoGancho(numero, queixoNoMundo())
+      // pra onde a cabeça vai: pro lado do gancho e pra trás
+      d.avisos.aoGancho(numero, queixoNoMundo(), d.empurrao.clone().addScaledVector(d.zq, 0.9).normalize())
     }
     if (primeiraVez(d, 'parada', t, ROLA_DE + U_DA_PARADA * ROLA_MS)) d.avisos.aoParar(queixoNoMundo())
   }

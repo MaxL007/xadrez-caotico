@@ -36,11 +36,14 @@ const socou = ({ tocados }) => tocados.indexOf('soco:jab') >= 0 && tocados.index
 const chutou = ({ tocados }) => tocados.indexOf('chute:ar') >= 0 && tocados.indexOf('chute:ar') < tocados.indexOf('chute') && tocados.some((s) => s.startsWith('queda:'))
 
 /** Monta a posição com a peça de quem joga vestida, captura e devolve os sons tocados e o estado do tabuleiro. */
-async function capturar(nome, { pgn, vestir, de, para, promocao = null }) {
+/** `vigiar`: anota por onde a vítima passou (o `caminho` volta com o quanto ela andou, o mais longe do meio do
+ * tabuleiro e o mais baixo). */
+async function capturar(nome, { pgn, vestir, de, para, promocao = null, vigiar = false }) {
   await h('vestirParaTeste', vestir)
   await h('carregarTeste', pgn, 'w')
   await esperarParar()
   await limparSons()
+  if (vigiar) await h('vigiarPeca', para)
   await h('jogar', de, para)
   if (promocao) {
     await page.locator('[role=dialog] button').first().waitFor({ timeout: 20000 })
@@ -50,7 +53,19 @@ async function capturar(nome, { pgn, vestir, de, para, promocao = null }) {
   const tocados = await sons()
   const problemas = await h('problemasDoTabuleiro')
   const pecaNaCasa = (await h('fen')).split(' ')[0]
-  return { nome, tocados, problemas, pecaNaCasa }
+  let caminho = null
+  if (vigiar) {
+    const pontos = await page.evaluate(() => window.__pecaVigiada ?? [])
+    const [x0, , z0] = pontos[0] ?? [0, 0, 0]
+    caminho = {
+      andou: Math.max(0, ...pontos.map(([x, , z]) => Math.hypot(x - x0, z - z0))),
+      longe: Math.max(0, ...pontos.map(([x, , z]) => Math.max(Math.abs(x), Math.abs(z)))),
+      baixo: Math.min(...pontos.map(([, y]) => y)),
+      /** Pra que lado foi (o último ponto, em relação ao primeiro). */
+      rumo: pontos.length ? [pontos[pontos.length - 1][0] - x0, pontos[pontos.length - 1][2] - z0] : [0, 0],
+    }
+  }
+  return { nome, tocados, problemas, pecaNaCasa, caminho }
 }
 
 try {
@@ -180,14 +195,52 @@ try {
     naOrdem(puxaoComLua.tocados, PUXAO) && !ateAPancada(puxaoComLua.tocados).includes('tornado') && puxaoComLua.problemas.length === 0,
     `${puxaoComLua.tocados.join(' ')} | ${puxaoComLua.problemas.join('; ')}`,
   )
+  // o Empurrão Universal: a rainha vai até a peça, carrega a bolha de vento entre as palmas, empurra e a bolha estoura no
+  // peito dela, que voa por cima de tudo pra fora do tabuleiro e cai na mesa
+  const EMPURRAO = ['anime:brilho', 'empurrao:carrega', 'empurrao:solta', 'empurrao:estouro']
+  const ateOEstouro = (tocados) => tocados.slice(0, tocados.indexOf('empurrao:estouro'))
+  const empurrao = await capturar('empurrão universal', { ...COM_RAINHA, vestir: { q: { golpe: 'empurrao' } }, vigiar: true })
+  conferir(
+    'empurrão universal: o brilho, a carga da bolha, as palmas e o estouro — sem socos',
+    naOrdem(empurrao.tocados, EMPURRAO) && !ateOEstouro(empurrao.tocados).some((som) => som.startsWith('soco')) && empurrao.problemas.length === 0,
+    `${empurrao.tocados.join(' ')} | ${empurrao.problemas.join('; ')}`,
+  )
+  conferir('a peça empurrada voa pra fora do tabuleiro e cai na mesa', empurrao.caminho.longe > 4.7 && empurrao.caminho.baixo < -0.2, JSON.stringify(empurrao.caminho))
+  const empurraoComCajado = await capturar('empurrão com o cajado', { ...COM_RAINHA, vestir: { q: { arma: 'cajado', golpe: 'empurrao' } } })
+  conferir(
+    'com o cajado na mão, o empurrão continua valendo (sem o raio)',
+    naOrdem(empurraoComCajado.tocados, EMPURRAO) && !ateOEstouro(empurraoComCajado.tocados).includes('raio:q') && empurraoComCajado.problemas.length === 0,
+    `${empurraoComCajado.tocados.join(' ')} | ${empurraoComCajado.problemas.join('; ')}`,
+  )
   const lua = await capturar('lua', { ...COM_RAINHA, vestir: { q: { arma: 'lua' } } })
   conferir('lua: o tornado que arremessa a peça longe', lua.tocados.includes('tornado') && lua.problemas.length === 0, `${lua.tocados.join(' ')} | ${lua.problemas.join('; ')}`)
   const cetro = await capturar('cetro', { ...COM_REI, vestir: { k: { arma: 'cetro' } } })
   conferir('cetro: a gravidade que afunda a peça no chão', cetro.tocados.includes('gravidade') && cetro.problemas.length === 0, `${cetro.tocados.join(' ')} | ${cetro.problemas.join('; ')}`)
 
   // =================== cavalo ===================
-  const lanca = await capturar('lança', { pgn: '1. Nc3 d5', de: 'c3', para: 'd5', vestir: { n: { arma: 'lanca' } } })
-  conferir('lança: o golpe do cavaleiro com som próprio', lanca.tocados.includes('golpe:lanca') && lanca.problemas.length === 0, lanca.tocados.join(' '))
+  // com a lança: vem a galope (sem o salto), espeta o peito, puxa a lança e a vítima desaba ali mesmo
+  const COM_CAVALO = { pgn: '1. Nc3 d5', de: 'c3', para: 'd5' }
+  const lanca = await capturar('lança', { ...COM_CAVALO, vestir: { n: { arma: 'lanca' } }, vigiar: true })
+  const ordemDaLanca = ['golpe:lanca', 'lanca:perfura', 'lanca:puxa', 'queda:p']
+  conferir(
+    'lança: o cavalo vem a galope (sem saltar), espeta pelo peito, puxa a lança e a peça cai',
+    naOrdem(lanca.tocados, ordemDaLanca) && !lanca.tocados.includes('salto:n') && lanca.problemas.length === 0,
+    `${lanca.tocados.join(' ')} | ${lanca.problemas.join('; ')}`,
+  )
+  conferir('a peça espetada desaba ali mesmo, sem voar', lanca.caminho.andou < 0.5, JSON.stringify(lanca.caminho))
+  // sem a lança: o salto, e as patas acertam o peito ainda no ar; a força joga a vítima longe, pro lado do salto
+  const salto = await capturar('cavalo', { ...COM_CAVALO, vestir: {}, vigiar: true })
+  const rumoDoSalto = salto.caminho ? salto.caminho.rumo[0] * 1 + salto.caminho.rumo[1] * -2 : 0
+  conferir(
+    'cavalo: as patas acertam o peito no ar, antes do pouso, e a vítima voa pro lado do salto',
+    salto.tocados.indexOf('golpe:n') >= 0 &&
+      salto.tocados.indexOf('golpe:n') < salto.tocados.indexOf('pouso:n') &&
+      salto.tocados.includes('queda:p') &&
+      salto.caminho.andou > 0.3 &&
+      salto.problemas.length === 0,
+    `${salto.tocados.join(' ')} | ${JSON.stringify(salto.caminho)} | ${salto.problemas.join('; ')}`,
+  )
+  console.log('  (o rumo da vítima do salto, no sentido de c3 pra d5:', rumoDoSalto.toFixed(2), ')')
 
   // =================== promoção com equipamentos ===================
   // o peão captura o cavalo em g8 e promove: os equipamentos surgem e se prendem na peça nova; no cavalo, vão pro

@@ -843,9 +843,12 @@ try {
   conferir('e o retalhamento da katana', (await comprar('p:golpe:retalhamento')).status === 402)
   const semSaldoProPuxao = await comprar('q:golpe:puxao')
   conferir('o Puxão Universal está à venda (sem saldo, não compra)', semSaldoProPuxao.status === 402, JSON.stringify(semSaldoProPuxao.json))
+  conferir('o Empurrão Universal também (sem saldo, não compra)', (await comprar('q:golpe:empurrao')).status === 402)
+  conferir('o Empurrão é só da rainha', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'empurrao' }, bia.token)).status === 422)
   conferir('a arma que já saiu pela conquista não precisa ser comprada', (await comprar('p:arma:katana')).status === 409)
   conferir('o 2º bloco de habilidade do peão está à venda (sem saldo, não compra)', (await comprar('p:bloco:2')).status === 402)
-  conferir('sem habilidades pra ele, o bloco não é vendido: o 3º do peão e o 2º da rainha', (await comprar('p:bloco:3')).status === 422 && (await comprar('q:bloco:2')).status === 422)
+  conferir('sem habilidades pra ele, o bloco não é vendido: o 3º do peão e o da rainha', (await comprar('p:bloco:3')).status === 422 && (await comprar('q:bloco:3')).status === 422)
+  conferir('com o Empurrão, a rainha tem duas habilidades: o 2º bloco dela é vendido', (await comprar('q:bloco:2')).status === 402)
   conferir('o 2º bloco só se usa comprado', (await personalizar({ peca: 'p', parte: 'golpe2', opcao: 'dempsey' }, bia.token)).status === 403)
   const doPerfil = (await api('GET', '/perfil', { token: bia.token })).json
   conferir('o perfil traz os itens comprados e as conquistas', doPerfil.itens?.includes('p:ombros:placas') && doPerfil.conquistas?.includes('torres-30'), JSON.stringify({ itens: doPerfil.itens, conquistas: doPerfil.conquistas }))

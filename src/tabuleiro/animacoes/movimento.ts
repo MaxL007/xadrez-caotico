@@ -1,3 +1,4 @@
+import { agoraDoJogo } from '../sensacao/relogioDoJogo'
 import * as THREE from 'three'
 import { ossoRPG } from '../pecas/ossos'
 import { ritmoDosPassos, tocarSom, tocarUmPasso } from '../../som/sons'
@@ -81,16 +82,21 @@ export function pararRPG(mesh: THREE.Object3D) {
  * DadosRPG) —, acelerando no começo e freando no fim (perfil trapezoidal), com o ritmo dos passos
  * acompanhando a velocidade. Não vira nem para no fim (quem chama decide o que vem depois).
  */
-export function deslocarRPG(mesh: THREE.Object3D, de: { x: number; z: number }, para: { x: number; z: number }, depois: () => void) {
+/** O galope do cavalo (a investida da lança): o modelo não tem corrida, então a caminhada vai mais rápida e no ritmo
+ * do galope, como o cavalo que chega na promoção. */
+const GALOPE = { velocidade: 2.4, ritmo: 2.1 }
+
+export function deslocarRPG(mesh: THREE.Object3D, de: { x: number; z: number }, para: { x: number; z: number }, depois: () => void, galope = false) {
   const acoes = mesh.userData.acoesRPG as Record<string, THREE.AnimationAction>
   const dados = mesh.userData.dadosRPG as DadosRPG
   const dx = para.x - de.x
   const dz = para.z - de.z
   const distancia = Math.hypot(dx, dz)
   const escala = mesh.scale.x
-  const corre = distancia / escala > DISTANCIA_PRA_CORRER && Boolean(acoes.Run)
-  const clipe = corre ? acoes.Run : acoes.Walk
-  const velocidade = (corre ? dados.velocidadeRun : dados.velocidadeWalk) * escala
+  const corre = galope || (distancia / escala > DISTANCIA_PRA_CORRER && Boolean(acoes.Run))
+  const clipe = corre && acoes.Run ? acoes.Run : acoes.Walk
+  const velocidade = (galope && !acoes.Run ? GALOPE.velocidade : corre ? dados.velocidadeRun : dados.velocidadeWalk) * escala
+  const ritmoDoClipe = galope && !acoes.Run ? GALOPE.ritmo : 1
   if (!clipe || distancia < 1e-3) {
     depois()
     return
@@ -132,7 +138,7 @@ export function deslocarRPG(mesh: THREE.Object3D, de: { x: number; z: number }, 
     }
     // o ritmo dos passos acompanha a velocidade (nunca parado de todo, pra não "congelar" no
     // meio de um passo enquanto ainda arranca/freia)
-    clipe!.setEffectiveTimeScale(Math.max(0.35, v / velocidade))
+    clipe!.setEffectiveTimeScale(Math.max(0.35, v / velocidade) * ritmoDoClipe)
     if (t < total) requestAnimationFrame(passo)
     else depois()
   }
@@ -179,27 +185,48 @@ function saltarRPG(
   para: { x: number; z: number },
   depois: () => void,
   aoPousar?: () => void,
+  alcance?: AlcanceDoSalto,
 ) {
+  let alcancou = false
   const dados = mesh.userData.dadosRPG as DadosRPG
   const decola = dados.segundoDecola ?? 0.4
   const pousa = dados.segundoPousa ?? 1.13
   tocarSom('salto:n')
   tocarClipeRPGUmaVez(mesh, 'Mortal', { entrada: 0.15, voltarAoParado: false, aoTerminar: depois })
-  const inicio = performance.now()
-  function passo(agora: number) {
-    const t = (agora - inicio) / 1000
+  // no relógio do jogo: no congelamento do impacto (as patas no peito da vítima), o cavalo para no ar junto com o clipe
+  const inicio = agoraDoJogo()
+  function passo() {
+    const t = (agoraDoJogo() - inicio) / 1000
     const fracao = Math.min(1, Math.max(0, (t - decola) / (pousa - decola)))
     mesh.position.x = de.x + (para.x - de.x) * fracao
     mesh.position.z = de.z + (para.z - de.z) * fracao
+    // ainda no ar, a frente do cavalo chegou na vítima: as patas acertam o peito dela
+    if (alcance && !alcancou && Math.hypot(para.x - mesh.position.x, para.z - mesh.position.z) <= alcance.distancia) {
+      alcancou = true
+      alcance.aoAlcancar()
+    }
     if (fracao < 1) {
       requestAnimationFrame(passo)
       return
+    }
+    if (alcance && !alcancou) {
+      alcancou = true
+      alcance.aoAlcancar()
     }
     tocarSom('pouso:n')
     aoPousar?.()
   }
   requestAnimationFrame(passo)
 }
+
+/** No salto do cavalo, `aoAlcancar` roda quando falta `distancia` pra ele chegar (a frente dele encosta na vítima). */
+export interface AlcanceDoSalto {
+  distancia: number
+  aoAlcancar: () => void
+}
+
+/** Abaixo disso (em casas) o cavalo anda em vez de saltar: o lance do cavalo tem √5 casas. */
+const SALTO_MINIMO = 1.5
 
 /** O cavalo RPG salta (em vez de andar) — só se o modelo trouxer o salto. */
 export function pecaSaltaRPG(mesh: THREE.Object3D): boolean {
@@ -221,6 +248,7 @@ export function animarPosicaoRPG(
   para: { x: number; z: number },
   aoTerminar: () => void,
   aoPousar?: () => void,
+  alcance?: AlcanceDoSalto,
 ) {
   // um lance interrompe o que a peça estava fazendo (gesto com a espada na mão, por exemplo): a
   // sequência em andamento é cancelada e a espada volta pra bainha
@@ -235,8 +263,10 @@ export function animarPosicaoRPG(
     seguir()
     return
   }
+  // o cavalo salta o lance dele; o resto de caminho até a casa (depois da estocada da lança, por exemplo) ele anda
+  const salta = pecaSaltaRPG(mesh) && Math.hypot(para.x - de.x, para.z - de.z) > SALTO_MINIMO
   virarRPG(mesh, rumoEntre(de, para), () => {
-    if (pecaSaltaRPG(mesh)) saltarRPG(mesh, de, para, seguir, aoPousar)
+    if (salta) saltarRPG(mesh, de, para, seguir, aoPousar, alcance)
     else deslocarRPG(mesh, de, para, seguir)
   })
 }
