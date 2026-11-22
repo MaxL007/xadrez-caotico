@@ -120,14 +120,14 @@ function sopro(s: Saida, o: OpcoesSopro) {
 /** Uma voz curta, sintetizada: a corda vocal (uma onda dente de serra deslizando de `f0` a `ate`) passando pelos
  * formantes da boca (filtros em faixa, cada um [frequência, Q]), com um pouco de ar por cima. É o grunhido de esforço de
  * quem golpeia e o gemido de quem apanha. */
-function voz(s: Saida, o: { f0: number; ate: number; dur: number; vol: number; formantes: [number, number][]; inicio?: number; ataque?: number; sustenta?: number }) {
+function voz(s: Saida, o: { f0: number; ate: number; dur: number; vol: number; formantes: [number, number][]; inicio?: number; ataque?: number }) {
   const t = s.t + (o.inicio ?? 0)
   const ataque = o.ataque ?? 0.02
   const osc = s.ctx.createOscillator()
   osc.type = 'sawtooth'
   osc.frequency.setValueAtTime(o.f0 * s.v, t)
   osc.frequency.exponentialRampToValueAtTime(o.ate * s.v, t + ataque + o.dur)
-  const g = o.sustenta !== undefined ? envelopeSustentado(s.ctx, t, ataque, o.dur, o.vol, o.sustenta) : envelope(s.ctx, t, ataque, o.dur, o.vol)
+  const g = envelope(s.ctx, t, ataque, o.dur, o.vol)
   for (const [freq, q] of o.formantes) {
     const filtro = s.ctx.createBiquadFilter()
     filtro.type = 'bandpass'
@@ -293,6 +293,39 @@ function quedaDe(grave: number, vol: number) {
 function taiko(s: Saida, vol: number, inicio = 0) {
   pancada(s, 135, 56, 0.42, vol, inicio)
   sopro(s, { inicio, dur: 0.05, vol: vol * 0.2, freq: 700, q: 0.8 })
+}
+
+/** O timbre do zumbido do Puxão: o volume (dB) de cada harmônico da nota, do 1º (46,6 Hz) ao 24º (1,1 kHz), medido no
+ * áudio de referência do usuário (o mais forte é o 2º; os picos em 2-3, 6-7 e 14-15 são a boca de "ô"). */
+const HARMONICOS_DO_PUXAO = [-4.4, 0, -2.7, -15.7, -14.3, -9.7, -7.5, -21.7, -26.2, -23, -29.2, -24.1, -27.2, -21, -18.8, -37.6, -42.8, -39.6, -38.7, -37.8, -41, -44, -47, -50]
+/** O que o zumbido muda do áudio pro celular (pedido do usuário: ouvir sem aumentar o volume): os harmônicos acima de
+ * 300 Hz (do 7º em diante), que o alto-falante toca, sobem `REALCE_NO_CELULAR` dB, e os três primeiros, que ele não
+ * toca e que gastariam a folga do limitador, descem `GRAVE_A_MENOS` dB. A nota grave se ouve mesmo assim, pela
+ * sequência dos harmônicos. */
+const REALCE_NO_CELULAR = 9
+const GRAVE_A_MENOS = 6
+const ondasDoPuxao = new WeakMap<Contexto, PeriodicWave>()
+
+function ondaDoPuxao(ctx: Contexto): PeriodicWave {
+  let onda = ondasDoPuxao.get(ctx)
+  if (!onda) {
+    const ajuste = (i: number) => (i >= 6 ? REALCE_NO_CELULAR : i < 3 ? -GRAVE_A_MENOS : 0)
+    const amplitudes = HARMONICOS_DO_PUXAO.map((db, i) => 10 ** ((db + ajuste(i)) / 20))
+    const total = amplitudes.reduce((soma, a) => soma + a * a, 0)
+    const real = new Float32Array(amplitudes.length + 1)
+    const imag = new Float32Array(amplitudes.length + 1)
+    // as fases de Schroeder espalham o pico de cada harmônico pelo período: a onda fica uns 5 dB menos pontuda que a
+    // dente de serra filtrada, e o limitador deixa o zumbido mais alto com o mesmo espectro
+    for (let n = 1; n <= amplitudes.length; n++) {
+      let fase = 0
+      for (let k = 1; k < n; k++) fase -= (2 * Math.PI * (n - k) * amplitudes[k - 1] ** 2) / total
+      real[n] = amplitudes[n - 1] * Math.cos(fase)
+      imag[n] = amplitudes[n - 1] * Math.sin(fase)
+    }
+    onda = ctx.createPeriodicWave(real, imag)
+    ondasDoPuxao.set(ctx, onda)
+  }
+  return onda
 }
 
 /** Cada som do jogo. Devolve quanto tempo dura, em segundos. */
@@ -513,41 +546,42 @@ export const SONS: Record<string, (s: Saida) => number> = {
   },
   // as vozes das peças: o grunhido de quem golpeia e o gemido de quem apanha
   ...sonsDasVozes(),
-  // Puxão Universal (habilidade da rainha): a energia acendendo na palma, um zumbido que sobe
-  // A forma do som segue a do áudio de referência que o usuário mandou (o "Banshō Ten'in" do Pain, dublado; o arquivo
-  // não entra no jogo, que é público): um sopro de ar agudo no começo; uma entoação grave de quatro sílabas, só vogais,
-  // com o acento forte na última, logo antes de a cabeça travar na mão (o Puxão inteiro, do começo à pegada, tem o
-  // tamanho da voz do áudio, 1,15 s); e, depois da pegada, uma cauda escura que some devagar.
-  // O Puxão é o som que manda na habilidade (pedido do usuário): alto o bastante pra se ouvir sem aumentar o volume, e
-  // com corpo no meio do espectro (500 Hz a 3 kHz), que é o que o alto-falante de um celular toca. O grave fica baixo:
-  // o celular nem toca, e ele gastaria a folga do limitador, abaixando o resto.
+  // Puxão Universal (habilidade da rainha). A base é o áudio que o usuário mandou (22/11, "Puxão Universal"): um zumbido
+  // grave e contínuo, numa nota só (46,6 Hz), com a boca de um "ô" (quase nada acima de 900 Hz), que entra instável e
+  // firma em 0,45 s e depois cresce devagar, sem parar. O arquivo não entra no jogo (todo som aqui é sintetizado): o
+  // zumbido é a mesma nota, com o timbre medido harmônico a harmônico (HARMONICOS_DO_PUXAO) e o mesmo crescendo.
+  // Vai do começo do Puxão até a pancada, crescendo, e some com ela; por cima dele só os toques de cada momento (o ar
+  // sugado, o tranco da pegada, o vento da hélice e a pancada).
   'puxao:chama': (s) => {
-    // o ar abrindo e a energia acendendo na palma
-    sopro(s, { ataque: 0.01, dur: 0.18, vol: 0.8, freq: 1550, ate: 1850, q: 2, sustenta: 0.6 })
-    tom(s, { tipo: 'triangle', freq: 660, ate: 990, ataque: 0.15, dur: 0.35, vol: 0.05 })
-    // a entoação: a, o, e e o "i" final, forte; uma voz grave e firme, as sílabas emendadas como no áudio, que não tem
-    // silêncio da primeira à última. Cada sílaba leva, além das duas vogais da boca, a presença (2,7 kHz) que faz a voz
-    // atravessar o resto
-    const silabas: { inicio: number; dur: number; f0: number; ate: number; vol: number; boca: [number, number][] }[] = [
-      { inicio: 0.06, dur: 0.2, f0: 196, ate: 186, vol: 0.7, boca: [[780, 4], [1180, 6]] },
-      { inicio: 0.27, dur: 0.22, f0: 188, ate: 176, vol: 0.74, boca: [[540, 4], [880, 6]] },
-      { inicio: 0.5, dur: 0.22, f0: 182, ate: 176, vol: 0.7, boca: [[560, 4], [1750, 6]] },
-      { inicio: 0.74, dur: 0.36, f0: 222, ate: 168, vol: 1, boca: [[420, 4], [1900, 6]] },
-    ]
-    for (const silaba of silabas) {
-      voz(s, { inicio: silaba.inicio, f0: silaba.f0, ate: silaba.ate, dur: silaba.dur, vol: silaba.vol, formantes: [...silaba.boca, [2700, 4]], ataque: 0.03, sustenta: 0.75 })
-      tom(s, { inicio: silaba.inicio, freq: silaba.f0 / 2, ate: silaba.ate / 2, ataque: 0.03, dur: silaba.dur, vol: silaba.vol * 0.04 })
+    const t = s.t
+    // a pancada (PANCADA_ATE em puxaoUniversal.ts): o zumbido cresce até ela e apaga com ela
+    const PANCADA = 1.85
+    const osc = s.ctx.createOscillator()
+    osc.setPeriodicWave(ondaDoPuxao(s.ctx))
+    // a nota entra um pouco acima e firma, como no começo do áudio
+    osc.frequency.setValueAtTime(52 * s.v, t)
+    osc.frequency.exponentialRampToValueAtTime(46.6 * s.v, t + 0.45)
+    const g = s.ctx.createGain()
+    osc.connect(g)
+    // o volume do áudio, medido a cada 50 ms (em relação ao fim): -15 dB em 0,1 s, -10,5 em 0,2, -7 em 0,4, -4,5 em
+    // 0,6, -2,8 em 1 s e o máximo na pancada; depois apaga em 0,3 s, pra pancada passar por cima
+    const VOL = 0.35
+    g.gain.setValueAtTime(0.0001, t)
+    for (const [quando, nivel] of [[0.03, 0.0002], [0.1, 0.178], [0.2, 0.3], [0.4, 0.447], [0.6, 0.596], [1, 0.724], [PANCADA, 1]]) {
+      g.gain.exponentialRampToValueAtTime(nivel * VOL, t + quando)
     }
-    return 1.15
+    g.gain.exponentialRampToValueAtTime(0.0001, t + PANCADA + 0.3)
+    g.connect(s.destino)
+    osc.start(t)
+    osc.stop(t + PANCADA + 0.35)
+    // o começo instável do áudio: um sopro grave, antes de a nota firmar
+    sopro(s, { inicio: 0.02, ataque: 0.22, dur: 0.3, vol: 0.3, filtro: 'lowpass', freq: 380, q: 0.8 })
+    return PANCADA + 0.3
   },
-  // a peça vindo: a gravidade puxando num grave que cresce e o ar sendo sugado pra mão, cada vez mais rápido, no meio
-  // do espectro da voz do áudio
+  // a peça vindo: o ar sugado pra mão, cada vez mais rápido e mais agudo, por cima do zumbido
   'puxao:arrasta': (s) => {
-    tom(s, { freq: 55, ate: 110, ataque: 0.2, dur: 0.66, vol: 0.05 })
-    tom(s, { tipo: 'sawtooth', freq: 110, ate: 220, ataque: 0.3, dur: 0.6, vol: 0.06, corte: 1400 })
-    // o ar sugado pra mão, cada vez mais rápido e mais agudo
-    sopro(s, { ataque: 0.45, dur: 0.25, vol: 0.6, freq: 600, ate: 2400, q: 1.2 })
-    sopro(s, { inicio: 0.1, ataque: 0.4, dur: 0.2, vol: 0.25, freq: 1800, ate: 3600, q: 3 })
+    sopro(s, { ataque: 0.45, dur: 0.25, vol: 0.45, freq: 600, ate: 2400, q: 1.2 })
+    sopro(s, { inicio: 0.1, ataque: 0.4, dur: 0.2, vol: 0.18, freq: 1800, ate: 3600, q: 3 })
     return 0.75
   },
   // a ascensão completa: o brilho de anime e um acorde que sobe
@@ -594,21 +628,14 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { ataque: 0.04, dur: 0.14, vol: 0.55, freq: 520, ate: 1500, q: 2.2 })
     return 0.25
   },
-  // a cabeça batendo na mão: um tranco seco e a cauda escura do áudio de referência, grave (150 a 430 Hz) e sumindo
-  // devagar por quase um segundo, enquanto a peça gira na hélice
+  // a cabeça batendo na mão: um tranco seco e o estalo; o zumbido do Puxão segue por baixo, crescendo até a pancada
   'puxao:agarra': (s) => {
     pancada(s, 150, 70, 0.18, 0.42)
-    // o estalo da cabeça na mão
     sopro(s, { dur: 0.06, vol: 0.45, freq: 1400, q: 1.5 })
-    // a cauda: segura e desce só uns 7 dB em 0,8 s, como no áudio; a escura e, por cima, a mesma um pouco mais clara
-    // (900 a 520 Hz), que é a parte que o celular toca
-    sopro(s, { inicio: 0.04, ataque: 0.05, dur: 0.85, vol: 0.3, filtro: 'lowpass', freq: 420, ate: 300, q: 0.7, sustenta: 0.5 })
-    sopro(s, { inicio: 0.04, ataque: 0.06, dur: 0.85, vol: 0.5, freq: 900, ate: 520, q: 1.1, sustenta: 0.45 })
-    tom(s, { inicio: 0.04, tipo: 'triangle', freq: 330, ate: 220, ataque: 0.05, dur: 0.8, vol: 0.12 })
-    return 1
+    return 0.3
   },
   // a pancada do fim do Puxão: a peça batendo no chão, a madeira rachando e o estrondo do chão cedendo. É do Puxão:
-  // soa com o meio do espectro, como o resto dele, e abaixo da entoação
+  // soa com o meio do espectro, como o resto dele, e chega quando o zumbido apaga
   'puxao:esmaga': (s) => {
     pancada(s, 110, 30, 0.55, 0.6)
     sopro(s, { dur: 0.3, vol: 0.45, freq: 1100, ate: 420, q: 0.9 })

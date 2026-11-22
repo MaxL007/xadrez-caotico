@@ -167,24 +167,27 @@ As pastas de `src` são por função:
   centro 626,5 e 595,5, escala 1/875): os arcos como traços de pincel de grossura igual (`traco`), e os elos pelo
   contorno de cada um, seguido pixel a pixel e simplificado (`contorno`).
 
-  O som segue a forma do áudio de referência que o usuário mandou (o "Banshō Ten'in" do Pain, dublado em pt-br). O
-  arquivo não entra no jogo, que é público e o áudio é de outra obra: o som é sintetizado com a mesma forma, medida
-  a cada 50 ms (volume, faixas e centro do espectro):
-  - um sopro de ar agudo no começo;
-  - uma entoação grave de quatro sílabas, só vogais (a, o, e, i), emendadas e com o acento forte na última, logo
-    antes de a cabeça travar na mão. O Puxão, do começo à pegada, tem o tamanho da voz do áudio (1,15 s);
-  - depois da pegada, uma cauda escura que segura o nível e desce uns 9 dB em 0,8 s, durante a hélice.
+  A base do som é o segundo áudio que o usuário mandou (22/11, "Puxão Universal"; o primeiro, o "Banshō Ten'in" do
+  Pain dublado, virou uma entoação de quatro sílabas, trocada por este). O arquivo não entra no jogo, que é público e
+  só tem som sintetizado: `puxao:chama` faz a mesma coisa, medida no áudio:
+  - um zumbido grave numa nota só, 46,6 Hz, com a boca de um "ô" (o 2º harmônico é o mais forte; picos em 2-3, 6-7 e
+    14-15, quase nada acima de 900 Hz). A onda é periódica (`ondaDoPuxao`), com o volume de cada harmônico medido
+    (`HARMONICOS_DO_PUXAO`) e as fases de Schroeder, que deixam a onda uns 5 dB menos pontuda que uma dente de serra
+    filtrada, e o limitador a deixa mais alta;
+  - entra instável (um sopro grave e a nota descendo de 52 Hz) e firma em 0,45 s; depois cresce devagar, com os
+    pontos do volume do áudio (-15 dB em 0,1 s até o máximo), até a pancada (1,85 s, `PANCADA_ATE`), e apaga em 0,3 s
+    pra pancada passar.
 
-  São `puxao:chama`, `puxao:arrasta` e `puxao:agarra`, e o sintetizador ganhou o envelope que segura
-  (`envelopeSustentado`; `sustenta` em `sopro` e `voz`).
+  Por cima, só os toques de cada momento: o ar sugado (`puxao:arrasta`, sem os tons que subiam, que brigariam com a
+  nota), o tranco da pegada (`puxao:agarra`, sem a cauda, que o zumbido cobre), o vento da hélice e a pancada.
 
   O som do Puxão é o que manda na habilidade (pedido do usuário, 22/11): alto o bastante pra se ouvir sem aumentar o
-  volume. Tem corpo no meio do espectro, de 500 Hz a 3 kHz, que é o que um alto-falante de celular toca (cada sílaba da
-  entoação leva a presença de 2,7 kHz), e pouco grave, que o celular não toca e que gastaria a folga do limitador. Na
-  pancada, a vítima geme uma vez só: a pancada é a do Puxão (`puxao:esmaga`), sem o `esmagado` e sem o grunhido da
-  rainha (`sentirImpacto` com `grunhido` falso), que pareciam a vítima de novo. Medido no que o celular toca (acima
-  de 300 Hz), o Puxão fica entre -16 e -20 dB do começo à hélice, e o gemido, uns 15 dB abaixo. `testar-armas` confere
-  a voz única.
+  volume. O áudio de referência é quase todo grave, que o celular não toca; no jogo, os harmônicos acima de 300 Hz
+  sobem 9 dB (`REALCE_NO_CELULAR`) e os três primeiros descem 6 (`GRAVE_A_MENOS`). A nota grave se ouve mesmo assim,
+  pela sequência dos harmônicos. Medido no que o celular toca (acima de 300 Hz), o zumbido cresce de -20 a -15 dB até
+  a pancada. Na pancada, a vítima geme uma vez só: a pancada é a do Puxão (`puxao:esmaga`), sem o `esmagado` e sem o
+  grunhido da rainha (`sentirImpacto` com `grunhido` falso), que pareciam a vítima de novo. `testar-armas` confere a
+  voz única.
 
   As fotos de cada pose-chave saem de `SO=puxao,puxao-de-lado,puxao-de-cima,puxao-rainha node testes/fotos-armas.mjs`
   (a última compara a cratera da rainha com a do peão).
