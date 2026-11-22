@@ -179,7 +179,7 @@ As pastas de `src` são por função:
 
   As fotos de cada pose-chave saem de `SO=puxao,puxao-de-lado,puxao-de-cima,puxao-rainha node testes/fotos-armas.mjs`
   (a última compara a cratera da rainha com a do peão).
-- O peão tem a Dempsey Roll (`p:golpe:dempsey`, 300 óticoins; símbolo: a luva de boxe do desenho do usuário), o golpe do
+- O peão tem a Dempsey Roll (`p:golpe:dempsey`, 300 óticoins), o golpe do
   boxe de Jack Dempsey que é o golpe final do Ippo em Hajime no Ippo. Luta com os punhos (`maosLivres` no cadastro): vai
   até a vítima sem sacar a arma, no alcance dos socos, e vale com qualquer arma.
   - Agachado na guarda alta, os olhos brilham ("tiin").
@@ -194,6 +194,11 @@ As pastas de `src` são por função:
   - A vítima reage (`posarVitima`, pedido do usuário): no aquecimento levanta a guarda cobrindo o rosto, treme, recua uns
     passos e a cabeça acompanha o balanço; cada gancho joga a cabeça pro lado (uma mola) e o corpo gira junto, a guarda
     cai, ela cambaleia pro lado do golpe e os joelhos vão cedendo; depois do terceiro, tonta, o tronco roda devagar.
+
+  O símbolo é a segunda versão do desenho do usuário (21/11): duas luvas de boxe de frente, cada uma com o ∞ no dorso.
+  É desenho de contorno, então cada parte preta sai da imagem com os buracos brancos de dentro (o contorno seguido pixel
+  a pixel e simplificado), em `pecas/desenhos/dempsey.json`, com um bisel fino (`extrudarFino`) pra não fechar os vãos
+  estreitos do punho.
 
   Fica em `combate/dempseyRoll.ts` (as duas peças, por cima do clipe, desfeito e refeito no laço como o puxão). As fotos
   saem de `SO=dempsey,dempsey-de-lado node testes/fotos-armas.mjs`.

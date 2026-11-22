@@ -1,8 +1,9 @@
 import * as THREE from 'three'
+import desenhoDaDempsey from './desenhos/dempsey.json'
 
 // O símbolo de cada habilidade especial, pro expositor da Personalização e da Loja (no lugar da arma, que não é o que
-// se compra). Os dois vêm de desenhos do usuário. O do Puxão Universal, mais embaixo, é um X de traços curvos cercado de
-// arcos. O do retalhamento: um átomo de três órbitas cruzadas com dois cortes em
+// se compra). Todos vêm de desenhos do usuário: o do Puxão Universal (dois elos cercados de arcos) e o da Dempsey Roll
+// (duas luvas com o ∞), mais embaixo, saem dos traços da imagem dele. O do retalhamento: um átomo de três órbitas cruzadas com dois cortes em
 // crescente por cima, como garras. Cada órbita é uma faixa achatada, inclinada: de frente ela aparece grossa nas pontas e
 // fina no meio, como o traço de pincel do desenho.
 
@@ -168,32 +169,27 @@ function puxao(): THREE.Group {
   return emblema
 }
 
-// --- a Dempsey Roll, do desenho do usuário: a luva de boxe de lado, com o X no dorso, o polegar à direita e o punho em
-// faixas, e embaixo o traço em espiral do movimento (o oito da roda). Os pontos são do desenho (1920 px de lado).
+// --- a Dempsey Roll, do desenho do usuário (a segunda versão, de 21/11): duas luvas de boxe de frente uma pra outra,
+// cada uma com o ∞ do oito da roda no dorso. É desenho de contorno (linhas pretas com o miolo branco), então cada parte
+// preta sai da imagem como ela é: o contorno, seguido pixel a pixel e simplificado, e os buracos brancos de dentro (o
+// miolo da luva, os laços do ∞, os vãos do punho). Os pontos (2000 px de lado) ficam em desenhos/dempsey.json.
 
-const QUADRO_DA_LUVA: Quadro = { centro: new THREE.Vector2(960, 985), escala: 1 / 900 }
-const GROSSURA_DA_LUVA = 72
+const QUADRO_DA_LUVA: Quadro = { centro: new THREE.Vector2(desenhoDaDempsey.centro[0], desenhoDaDempsey.centro[1]), escala: 1 / 1060 }
+
+/** As linhas do desenho são finas: o bisel de sempre engrossaria cada uma e fecharia os vãos estreitos do punho. */
+function extrudarFino(forma: THREE.Shape): THREE.BufferGeometry {
+  const geo = new THREE.ExtrudeGeometry(forma, { depth: PROFUNDIDADE, curveSegments: 4, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.0012, bevelSegments: 1 })
+  geo.translate(0, 0, -PROFUNDIDADE / 2)
+  return geo
+}
 
 function dempsey(): THREE.Group {
   const emblema = new THREE.Group()
-  const tracos: [number, number][][] = [
-    // o corpo da luva: do punho, subindo pela esquerda, por cima e descendo pela direita até a dobra do polegar
-    [[715, 1025], [680, 960], [645, 862], [625, 780], [645, 715], [705, 660], [795, 598], [885, 550], [978, 528], [1062, 543], [1130, 590], [1175, 665], [1192, 745], [1185, 822], [1150, 900], [1062, 964]],
-    // o polegar
-    [[1165, 735], [1218, 745], [1245, 800], [1285, 862], [1290, 925], [1258, 990], [1208, 1030], [1165, 1036]],
-    // o X no dorso
-    [[835, 775], [882, 806], [932, 828], [990, 808]],
-    [[958, 742], [905, 798], [868, 880]],
-    // o punho: as faixas de cima e de baixo e os lados
-    [[775, 1032], [880, 1030], [980, 1032], [1062, 1028], [1100, 1018]],
-    [[725, 1085], [728, 1150]],
-    [[785, 1167], [900, 1173], [1010, 1176], [1120, 1148]],
-    [[1130, 1062], [1112, 1125]],
-    // o oito do movimento, embaixo
-    [[855, 1255], [770, 1268], [690, 1300], [640, 1345], [632, 1390], [690, 1428], [840, 1445], [990, 1430], [1120, 1400], [1185, 1365], [1140, 1340], [1000, 1330], [870, 1335], [748, 1345]],
-  ]
-  for (const pontos of tracos) {
-    const parte = new THREE.Mesh(extrudar(traco(pontos, GROSSURA_DA_LUVA, QUADRO_DA_LUVA), 24), acoEscuro)
+  const ponto = doDesenho(QUADRO_DA_LUVA)
+  for (const { contorno, buracos } of desenhoDaDempsey.formas as { contorno: [number, number][]; buracos: [number, number][][] }[]) {
+    const forma = new THREE.Shape(contorno.map(ponto))
+    for (const buraco of buracos) forma.holes.push(new THREE.Path(buraco.map(ponto)))
+    const parte = new THREE.Mesh(extrudarFino(forma), acoEscuro)
     parte.castShadow = true
     emblema.add(parte)
   }
