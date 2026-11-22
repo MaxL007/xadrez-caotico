@@ -196,7 +196,122 @@ function dempsey(): THREE.Group {
   return emblema
 }
 
-const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao, dempsey }
+// --- o Empurrão Universal, da imagem do usuário (21/11), no padrão da Loja: a imagem é de mangá (retícula, gradiente,
+// brilho), então as formas foram redesenhadas em traço cheio de aço, com a mesma composição e as proporções medidas
+// nela: a bolha de vento, uma meia cúpula no chão, com o núcleo de luz e os raios saindo dele; cinco setas empurrando
+// pra fora (165°, 128°, 90°, 52° e 15°, as pontas a quase duas vezes o raio da cúpula); os riscos de velocidade entre
+// elas, as faíscas e a linha do chão. O raio da cúpula é 0,36.
+
+const RAIO_DA_CUPULA = 0.36
+const polar = (angulo: number, raio: number) => new THREE.Vector2(Math.cos(angulo) * raio, Math.sin(angulo) * raio)
+const graus = (g: number) => (g * Math.PI) / 180
+
+/** Uma seta grossa saindo do centro no `angulo`: a haste de `base` até a cabeça e a cabeça em triângulo até `ponta`. */
+function setaParaFora(angulo: number, base: number, ponta: number): THREE.Shape {
+  const meiaHaste = 0.042
+  const meiaCabeca = 0.13
+  const comprimentoDaCabeca = 0.16
+  const frente = polar(angulo, 1)
+  const lado = new THREE.Vector2(-frente.y, frente.x)
+  const em = (r: number, l: number) => frente.clone().multiplyScalar(r).addScaledVector(lado, l)
+  const pescoco = ponta - comprimentoDaCabeca
+  return new THREE.Shape([
+    em(base, -meiaHaste),
+    em(pescoco, -meiaHaste),
+    em(pescoco - 0.012, -meiaCabeca),
+    em(ponta, 0),
+    em(pescoco - 0.012, meiaCabeca),
+    em(pescoco, meiaHaste),
+    em(base, meiaHaste),
+  ])
+}
+
+/** Um risco de velocidade: fino nas pontas e mais largo perto do começo, de `de` a `ate` no `angulo`. */
+function risco(angulo: number, de: number, ate: number, largura: number): THREE.Shape {
+  const frente = polar(angulo, 1)
+  const lado = new THREE.Vector2(-frente.y, frente.x)
+  const em = (r: number, l: number) => frente.clone().multiplyScalar(r).addScaledVector(lado, l)
+  const largo = de + (ate - de) * 0.35
+  const forma = new THREE.Shape()
+  const inicio = em(de, 0)
+  forma.moveTo(inicio.x, inicio.y)
+  const a = em(largo, largura)
+  const fim = em(ate, 0)
+  forma.quadraticCurveTo(a.x, a.y, fim.x, fim.y)
+  const b = em(largo, -largura)
+  forma.quadraticCurveTo(b.x, b.y, inicio.x, inicio.y)
+  return forma
+}
+
+/** Uma faísca: um losango pequeno. */
+function faiscaDoEmblema(centro: THREE.Vector2, tamanho: number, giro: number): THREE.Shape {
+  const pontos = [0, 1, 2, 3].map((i) => {
+    const raio = i % 2 === 0 ? tamanho : tamanho * 0.35
+    return centro.clone().add(polar(giro + (i * Math.PI) / 2, raio))
+  })
+  return new THREE.Shape(pontos)
+}
+
+function empurrao(): THREE.Group {
+  const emblema = new THREE.Group()
+  const malha = (forma: THREE.Shape, z = 0) => {
+    const parte = new THREE.Mesh(extrudar(forma, 48), acoEscuro)
+    parte.castShadow = true
+    parte.position.z = z
+    emblema.add(parte)
+  }
+  const R = RAIO_DA_CUPULA
+  // a bolha: a borda da cúpula, o reflexo de vidro por dentro e o núcleo de luz, uma meia lua no chão
+  malha(faixa(R * 0.945, R * 0.11, 0, Math.PI))
+  malha(faixa(R * 0.83, R * 0.035, graus(100), graus(158)))
+  const nucleo = new THREE.Shape()
+  nucleo.absarc(0, 0, R * 0.45, 0, Math.PI, false)
+  nucleo.closePath()
+  malha(nucleo)
+  // os raios de luz saindo do núcleo, dentro da cúpula
+  for (let g = 18; g <= 162; g += 24) malha(risco(graus(g), R * 0.5, R * 0.8, 0.012))
+  // a linha do chão, fina nas pontas
+  const chao = new THREE.Shape()
+  chao.absellipse(0, -0.016, R * 1.32, 0.013, 0, Math.PI * 2, false, 0)
+  malha(chao)
+  // as cinco setas empurrando pra fora
+  for (const [angulo, ponta] of [
+    [165, 0.68],
+    [128, 0.76],
+    [90, 0.76],
+    [52, 0.76],
+    [15, 0.68],
+  ]) {
+    malha(setaParaFora(graus(angulo), R * 1.18, ponta), 0.002)
+  }
+  // os riscos de velocidade entre as setas, dois em cada vão, um mais longo que o outro (os de perto das setas dos lados,
+  // mais curtos, pra não cruzar a cabeça delas)
+  for (const [angulo, de, ate] of [
+    [151, 1.12, 1.45],
+    [140, 1.08, 1.45],
+    [113, 1.12, 1.6],
+    [102, 1.08, 1.42],
+    [78, 1.08, 1.42],
+    [67, 1.12, 1.6],
+    [40, 1.08, 1.45],
+    [29, 1.12, 1.45],
+  ]) {
+    malha(risco(graus(angulo), R * de, R * ate, 0.018))
+  }
+  // as faíscas soltas em volta
+  for (const [angulo, raio, tamanho] of [
+    [158, 1.95, 0.022],
+    [120, 2.12, 0.018],
+    [75, 2.05, 0.02],
+    [44, 2.0, 0.018],
+    [8, 1.9, 0.02],
+  ]) {
+    malha(faiscaDoEmblema(polar(graus(angulo), R * raio), tamanho, graus(angulo)))
+  }
+  return emblema
+}
+
+const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao, dempsey, empurrao }
 
 /** O bloco de habilidade na Loja: `numero` placas lado a lado, a última dourada (a que o bloco libera). */
 export function emblemaDoBloco(numero: number): THREE.Group {

@@ -219,6 +219,12 @@ As pastas de `src` são por função:
   põe a pose do corpo arrancado por cima do clipe (costas arqueadas, membros pra trás ou pra frente, abertos, tremulando)
   e `massaDaPeca` dá o peso de cada peça. Seguem o Puxão, a Dempsey Roll e o nocaute dos golpes simples. A peça com
   `userData.poseDeHabilidade` (as duas de uma habilidade, a vítima no ar) fica fora da inércia de quem anda e dos gestos.
+- O Empurrão Universal (ideia do usuário, 21/11, ainda não é habilidade do jogo) já tem o símbolo pronto em `EMBLEMAS`
+  (`empurrao`): a imagem dele é de mangá (retícula, gradiente, brilho), então foi redesenhada em traço cheio de aço com
+  a mesma composição e as proporções medidas nela. A bolha de vento é uma meia cúpula no chão, com o núcleo de luz e os
+  raios; em volta, cinco setas pra fora (165°, 128°, 90°, 52° e 15°), os riscos de velocidade e as faíscas. A ideia, do
+  bilhete dele: a peça vai até a casa da outra e, as duas no mesmo lugar, carrega a habilidade como uma bolha de vento e
+  repele a peça capturada pra fora do tabuleiro. Faltam a peça e o preço (o bilhete diz 1500 ou 500 óticoins).
 - Os blocos de habilidade (pedido do usuário): até três habilidades na mesma peça, e na captura quem joga escolhe qual
   usar.
   - O 1º bloco é grátis; o 2º custa 50 e o 3º, 70 óticoins, uma vez por peça (`peça:bloco:2`, `peça:bloco:3`, preços em
