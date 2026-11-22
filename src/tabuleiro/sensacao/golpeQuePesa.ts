@@ -67,8 +67,14 @@ export function areaDaLuta(
   if (joga) pontos.push(v.clone().addScaledVector(rumo, 0.9).setY(0.3))
   // a hélice do Puxão: a vítima gira presa na mão erguida, acima da rainha e pra trás dela
   if (jeito.alto) pontos.push(a.clone().addScaledVector(rumo, 0.35).setY(alturaA * 2.1), a.clone().addScaledVector(rumo, -0.45).setY(alturaA * 1.2))
-  // o Empurrão: o começo do voo, alto, pra fora do tabuleiro (o resto do voo sai da tela, como no anime)
-  if (jeito.praFora) pontos.push(v.clone().addScaledVector(rumo, 1.3).setY(alturaV * 1.6))
+  // o Empurrão: a barreira em volta de quem ataca (a bolha cobre o corpo inteiro e abre pros lados) e o começo do voo,
+  // alto, pra fora do tabuleiro (o resto do voo sai da tela, como no anime)
+  if (jeito.praFora) {
+    const parada = v.clone().addScaledVector(rumo, -distanciaDaParada)
+    const deLado = new THREE.Vector3(-rumo.z, 0, rumo.x).multiplyScalar(0.8 * alturaA)
+    pontos.push(parada.clone().add(deLado).setY(0.5 * alturaA), parada.clone().sub(deLado).setY(0.5 * alturaA), parada.clone().setY(1.25 * alturaA))
+    pontos.push(v.clone().addScaledVector(rumo, 1.3).setY(alturaV * 1.6))
+  }
   // de perto: a câmera acompanha quem ataca, do lugar de onde sai até parar na frente da vítima
   const parada = v.clone().addScaledVector(rumo, -distanciaDaParada)
   const caminho = a.distanceTo(parada)

@@ -221,9 +221,10 @@ function dempsey(c: CapturaComHabilidade) {
 }
 
 /** O Empurrão Universal (rainha, com as mãos; a ideia e o símbolo são do usuário): ela vai até a peça e, as duas no
- * mesmo lugar, recolhe as palmas e carrega a bolha de vento entre elas (o brilho, o ar sugado, os anéis girando, a vítima
- * se inclinando contra o vento); as palmas saem de uma vez (o impulso), a bolha estoura no peito da vítima (o golpe que
- * decide, com a onda no chão e a poeira) e ela voa alto, por cima de tudo, pra fora do tabuleiro (ver
+ * mesmo lugar, recolhe as palmas e carrega a bolha de vento, que nasce entre elas e cresce até cobrir o corpo inteiro
+ * dela, uma barreira que nada atravessa (o brilho, o ar sugado, as correntes de vento, a vítima empurrada pela parede);
+ * as palmas saem de uma vez e a bolha se expande como uma onda (o impulso, a onda no chão e a poeira em volta da
+ * rainha); a parede passa pela vítima (o golpe que decide) e ela voa alto, por cima de tudo, pra fora do tabuleiro (ver
  * empurraoUniversal.ts e nocaute.ts). */
 function empurrar(c: CapturaComHabilidade) {
   const cor = corDoBrilho(c)
@@ -233,9 +234,13 @@ function empurrar(c: CapturaComHabilidade) {
   empurraoUniversal(c.atacante, c.vitima, c.cena, cor, c.vigente, {
     aoBrilhar: (palmas) => brilhoDeAnime(c, palmas, 0.4),
     aoCarregar: () => tocarSom('empurrao:carrega'),
-    aoEmpurrar: (palmas) => {
+    aoEmpurrar: (palmas, centro) => {
       tocarSom('empurrao:solta')
       impulsoDeAnime(c, palmas)
+      // a onda saindo da rainha pra todo lado: no chão e na poeira em volta dela
+      ondaDaMarretada(c.cena, centro.x, centro.z, cor)
+      poeiraDaPancada(c.cena, centro.x, centro.z)
+      tremerTabuleiro(c.cena, 0.05, 260)
     },
     aoEstourar: (ponto) => {
       tocarSom('empurrao:estouro')
@@ -245,10 +250,6 @@ function empurrar(c: CapturaComHabilidade) {
       const tamanho = c.vitima.scale.x
       anelDeImpacto(c.cena, ponto, praOndeVai, cor, 0.5 * tamanho, 320)
       estouroDeRiscos(c.cena, ponto, 14, 0.24 * tamanho, cor, 260)
-      // o vento batendo no chão: a onda e a poeira em volta da vítima
-      ondaDaMarretada(c.cena, c.posVitima.x, c.posVitima.z, cor)
-      poeiraDaPancada(c.cena, c.posVitima.x, c.posVitima.z)
-      tremerTabuleiro(c.cena, 0.05, 260)
       c.sentirImpacto(1.2, false)
       nocautear(
         c.cena,

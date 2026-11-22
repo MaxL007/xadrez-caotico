@@ -230,12 +230,17 @@ As pastas de `src` são por função:
   bilhete: a peça vai até a casa da outra e, as duas no mesmo lugar, carrega a habilidade como uma bolha de vento e
   repele a peça capturada pra fora do tabuleiro. De pose em pose, como o Puxão:
   - ela recolhe as palmas na frente do peito, uma de frente pra outra, e desce o corpo; o brilho de anime entre elas;
-  - a carga (quase 1 s): a bolha nasce entre as palmas e cresce, com três anéis de vento girando e o ar sugado (riscos
-    que nascem em volta e correm pra ela), e a rainha treme em dois. A vítima sente o vento: se inclina pra trás com os
-    braços na frente do rosto, escorrega um pouco e treme;
-  - as palmas saem de uma vez (o impulso) e a bolha voa até o peito da vítima;
-  - o estouro, o golpe que decide: a bolha abre em volta dela e some, com o anel, os riscos, a onda no chão e a poeira,
-    e a vítima voa alto, por cima de tudo, até passar da beira e cair na mesa (`nocautear` com `foraDoTabuleiro`);
+  - a bolha é uma barreira (pedido do usuário, 22/11): nasce entre as palmas e, em 0,6 s, cresce até cobrir a rainha
+    inteira, do chão ao alto da cabeça (centro no meio do corpo, raio de 0,7 vez a altura dela; o tabuleiro corta a
+    esfera embaixo, e ela fica pousada como uma cúpula). Nada a atravessa, de nenhum lado: a superfície é clara na borda
+    e quase transparente no meio (um sombreador próprio, com faixas de vento girando), e correntes de vento correm por
+    ela em todas as direções, com três anéis girando e o ar sugado de fora;
+  - a parede da bolha chega na vítima e a empurra pra trás conforme cresce (a esfera cortada na altura do peito dela):
+    ela resiste inclinada, os braços na frente do rosto, os pés escorregando, tremendo. Cheia, a rainha treme em dois;
+  - o empurrão: as palmas saem de uma vez e a bolha se expande como uma onda (até 2,8 vezes) e some, com a onda no chão
+    e a poeira em volta da rainha. A parede passa pela vítima (o golpe que decide: o quadro de impacto, o anel e os
+    riscos no peito dela), e ela voa alto, por cima de tudo, até passar da beira e cair na mesa (`nocautear` com
+    `foraDoTabuleiro`);
   - a rainha fica um instante com as palmas pra frente e volta.
 
   Fica em `combate/empurraoUniversal.ts`; os sons são `empurrao:carrega`, `empurrao:solta` e `empurrao:estouro`. O
@@ -596,8 +601,8 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
 - A câmera chega junto com quem ataca (pedido do usuário). Quem vai até a vítima sai de longe: a câmera escolhe o ponto
   de vista contando o lugar de onde a peça sai, começa mostrando o caminho todo e vai fechando no golpe conforme ela
   chega perto (`comeco` em `areaDaLuta`, com o quanto do caminho já andou; `acompanhar` na aproximação). Parada a
-  peça, o enquadramento é o do golpe. O cavalo de lança para mais longe (`parada`), e no Empurrão a área inclui o
-  começo do voo pra fora do tabuleiro (`praFora`).
+  peça, o enquadramento é o do golpe. O cavalo de lança para mais longe (`parada`), e no Empurrão a área inclui a
+  barreira em volta da rainha e o começo do voo pra fora do tabuleiro (`praFora`).
 - A tela inicial e a partida nova olham sempre pro meio do tabuleiro (`CENTRO` em `vistaDaCamera.ts`): o giro da câmera
   leva o centro de volta. Antes o centro ficava preso perto da última luta quando a pessoa encostava na câmera no meio
   da aproximação (no celular, todo toque conta), e o tabuleiro aparecia torto até na tela inicial (bug visto pelo
