@@ -518,31 +518,36 @@ export const SONS: Record<string, (s: Saida) => number> = {
   // não entra no jogo, que é público): um sopro de ar agudo no começo; uma entoação grave de quatro sílabas, só vogais,
   // com o acento forte na última, logo antes de a cabeça travar na mão (o Puxão inteiro, do começo à pegada, tem o
   // tamanho da voz do áudio, 1,15 s); e, depois da pegada, uma cauda escura que some devagar.
+  // O Puxão é o som que manda na habilidade (pedido do usuário): alto o bastante pra se ouvir sem aumentar o volume, e
+  // com corpo no meio do espectro (500 Hz a 3 kHz), que é o que o alto-falante de um celular toca. O grave fica baixo:
+  // o celular nem toca, e ele gastaria a folga do limitador, abaixando o resto.
   'puxao:chama': (s) => {
     // o ar abrindo e a energia acendendo na palma
-    sopro(s, { ataque: 0.01, dur: 0.18, vol: 0.6, freq: 1550, ate: 1850, q: 2, sustenta: 0.6 })
-    tom(s, { freq: 120, ate: 165, ataque: 0.2, dur: 0.5, vol: 0.04 })
-    tom(s, { tipo: 'triangle', freq: 660, ate: 990, ataque: 0.15, dur: 0.35, vol: 0.02 })
-    // a entoação: a, o, e e o "i" final, forte; uma voz grave e firme (abaixo do grunhido dela), as sílabas emendadas
-    // como no áudio, que não tem silêncio da primeira à última
+    sopro(s, { ataque: 0.01, dur: 0.18, vol: 0.8, freq: 1550, ate: 1850, q: 2, sustenta: 0.6 })
+    tom(s, { tipo: 'triangle', freq: 660, ate: 990, ataque: 0.15, dur: 0.35, vol: 0.05 })
+    // a entoação: a, o, e e o "i" final, forte; uma voz grave e firme, as sílabas emendadas como no áudio, que não tem
+    // silêncio da primeira à última. Cada sílaba leva, além das duas vogais da boca, a presença (2,7 kHz) que faz a voz
+    // atravessar o resto
     const silabas: { inicio: number; dur: number; f0: number; ate: number; vol: number; boca: [number, number][] }[] = [
-      { inicio: 0.06, dur: 0.2, f0: 196, ate: 186, vol: 0.3, boca: [[780, 5], [1180, 7]] },
-      { inicio: 0.27, dur: 0.22, f0: 188, ate: 176, vol: 0.32, boca: [[540, 5], [880, 7]] },
-      { inicio: 0.5, dur: 0.22, f0: 182, ate: 176, vol: 0.3, boca: [[560, 5], [1750, 8]] },
-      { inicio: 0.74, dur: 0.36, f0: 222, ate: 168, vol: 0.46, boca: [[420, 5], [1900, 8]] },
+      { inicio: 0.06, dur: 0.2, f0: 196, ate: 186, vol: 0.7, boca: [[780, 4], [1180, 6]] },
+      { inicio: 0.27, dur: 0.22, f0: 188, ate: 176, vol: 0.74, boca: [[540, 4], [880, 6]] },
+      { inicio: 0.5, dur: 0.22, f0: 182, ate: 176, vol: 0.7, boca: [[560, 4], [1750, 6]] },
+      { inicio: 0.74, dur: 0.36, f0: 222, ate: 168, vol: 1, boca: [[420, 4], [1900, 6]] },
     ]
     for (const silaba of silabas) {
-      voz(s, { inicio: silaba.inicio, f0: silaba.f0, ate: silaba.ate, dur: silaba.dur, vol: silaba.vol, formantes: silaba.boca, ataque: 0.03, sustenta: 0.7 })
-      tom(s, { inicio: silaba.inicio, freq: silaba.f0 / 2, ate: silaba.ate / 2, ataque: 0.03, dur: silaba.dur, vol: silaba.vol * 0.12 })
+      voz(s, { inicio: silaba.inicio, f0: silaba.f0, ate: silaba.ate, dur: silaba.dur, vol: silaba.vol, formantes: [...silaba.boca, [2700, 4]], ataque: 0.03, sustenta: 0.75 })
+      tom(s, { inicio: silaba.inicio, freq: silaba.f0 / 2, ate: silaba.ate / 2, ataque: 0.03, dur: silaba.dur, vol: silaba.vol * 0.04 })
     }
     return 1.15
   },
   // a peça vindo: a gravidade puxando num grave que cresce e o ar sendo sugado pra mão, cada vez mais rápido, no meio
   // do espectro da voz do áudio
   'puxao:arrasta': (s) => {
-    tom(s, { freq: 46, ate: 92, ataque: 0.2, dur: 0.66, vol: 0.12 })
-    tom(s, { tipo: 'sawtooth', freq: 55, ate: 110, ataque: 0.25, dur: 0.62, vol: 0.035, corte: 300 })
-    sopro(s, { ataque: 0.5, dur: 0.2, vol: 0.16, freq: 900, ate: 1600, q: 1.1 })
+    tom(s, { freq: 55, ate: 110, ataque: 0.2, dur: 0.66, vol: 0.05 })
+    tom(s, { tipo: 'sawtooth', freq: 110, ate: 220, ataque: 0.3, dur: 0.6, vol: 0.06, corte: 1400 })
+    // o ar sugado pra mão, cada vez mais rápido e mais agudo
+    sopro(s, { ataque: 0.45, dur: 0.25, vol: 0.6, freq: 600, ate: 2400, q: 1.2 })
+    sopro(s, { inicio: 0.1, ataque: 0.4, dur: 0.2, vol: 0.25, freq: 1800, ate: 3600, q: 3 })
     return 0.75
   },
   // a ascensão completa: o brilho de anime e um acorde que sobe
@@ -586,18 +591,31 @@ export const SONS: Record<string, (s: Saida) => number> = {
   },
   // a hélice: o vento de cada meia volta, zunindo
   'puxao:gira': (s) => {
-    sopro(s, { ataque: 0.04, dur: 0.14, vol: 0.16, freq: 520, ate: 1500, q: 2.2 })
+    sopro(s, { ataque: 0.04, dur: 0.14, vol: 0.55, freq: 520, ate: 1500, q: 2.2 })
     return 0.25
   },
   // a cabeça batendo na mão: um tranco seco e a cauda escura do áudio de referência, grave (150 a 430 Hz) e sumindo
   // devagar por quase um segundo, enquanto a peça gira na hélice
   'puxao:agarra': (s) => {
     pancada(s, 150, 70, 0.18, 0.42)
-    sopro(s, { dur: 0.06, vol: 0.12, freq: 900, q: 2 })
-    // a cauda: segura e desce só uns 7 dB em 0,8 s, como no áudio
-    sopro(s, { inicio: 0.04, ataque: 0.05, dur: 0.85, vol: 0.4, filtro: 'lowpass', freq: 420, ate: 300, q: 0.7, sustenta: 0.5 })
-    sopro(s, { inicio: 0.04, ataque: 0.06, dur: 0.85, vol: 0.14, freq: 380, ate: 300, q: 1, sustenta: 0.45 })
-    tom(s, { inicio: 0.04, tipo: 'triangle', freq: 240, ate: 160, ataque: 0.05, dur: 0.8, vol: 0.05 })
+    // o estalo da cabeça na mão
+    sopro(s, { dur: 0.06, vol: 0.45, freq: 1400, q: 1.5 })
+    // a cauda: segura e desce só uns 7 dB em 0,8 s, como no áudio; a escura e, por cima, a mesma um pouco mais clara
+    // (900 a 520 Hz), que é a parte que o celular toca
+    sopro(s, { inicio: 0.04, ataque: 0.05, dur: 0.85, vol: 0.3, filtro: 'lowpass', freq: 420, ate: 300, q: 0.7, sustenta: 0.5 })
+    sopro(s, { inicio: 0.04, ataque: 0.06, dur: 0.85, vol: 0.5, freq: 900, ate: 520, q: 1.1, sustenta: 0.45 })
+    tom(s, { inicio: 0.04, tipo: 'triangle', freq: 330, ate: 220, ataque: 0.05, dur: 0.8, vol: 0.12 })
+    return 1
+  },
+  // a pancada do fim do Puxão: a peça batendo no chão, a madeira rachando e o estrondo do chão cedendo. É do Puxão:
+  // soa com o meio do espectro, como o resto dele, e abaixo da entoação
+  'puxao:esmaga': (s) => {
+    pancada(s, 110, 30, 0.55, 0.6)
+    sopro(s, { dur: 0.3, vol: 0.45, freq: 1100, ate: 420, q: 0.9 })
+    for (let i = 0; i < 7; i++) {
+      sopro(s, { inicio: 0.03 + i * 0.075 + Math.random() * 0.03, dur: 0.018, vol: 0.14 - i * 0.012, freq: 1500 + Math.random() * 2200, q: 5 })
+    }
+    sopro(s, { inicio: 0.05, ataque: 0.05, dur: 0.7, vol: 0.3, freq: 620, ate: 300, q: 1, sustenta: 0.4 })
     return 1
   },
   // lua: o vento do tornado subindo, uivando, e o assobio da peça arremessada

@@ -402,7 +402,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       let lutaAcabou = false
       /** O golpe acertou: congela um instante, treme e solta as vozes (`fator` multiplica o peso). Devolve os ms do
        * congelamento, que a queda da vítima espera. */
-      const impacto = (fator = 1, tremer = true) => sentirImpacto(scene, tipoAtacante, tipoVitima, peso * fator, tremer)
+      const impacto = (fator = 1, tremer = true, grunhido = true) => sentirImpacto(scene, tipoAtacante, tipoVitima, peso * fator, tremer, grunhido)
 
       const removerVitima = () => {
         if (!vigente()) return

@@ -180,15 +180,23 @@ try {
   await h('forcarGolpeSemArma', null)
   // o Puxão Universal: a rainha puxa a peça pela gravidade, segura pela cabeça e esmaga no chão; com ou sem arma
   const naOrdem = (tocados, sons) => sons.every((som, i) => i === 0 || tocados.indexOf(sons[i - 1]) < tocados.indexOf(som)) && sons.every((som) => tocados.includes(som))
-  const PUXAO = ['puxao:chama', 'puxao:arrasta', 'puxao:agarra', 'marreta:impacto']
+  const PUXAO = ['puxao:chama', 'puxao:arrasta', 'puxao:agarra', 'puxao:esmaga']
   // só o que tocou até a pancada do puxão: depois vem a resposta da máquina (o rei tomando a rainha, por exemplo)
-  const ateAPancada = (tocados) => tocados.slice(0, tocados.indexOf('marreta:impacto'))
+  const ateAPancada = (tocados) => tocados.slice(0, tocados.indexOf('puxao:esmaga'))
+  // o Puxão inteiro, até a rainha andar pra casa
+  const doPuxao = (tocados) => {
+    const pancada = tocados.indexOf('puxao:esmaga')
+    const anda = tocados.findIndex((som, i) => i > pancada && som.startsWith('passo:'))
+    return tocados.slice(0, anda < 0 ? tocados.length : anda)
+  }
   const puxao = await capturar('puxão universal', { ...COM_RAINHA, vestir: { q: { golpe: 'puxao' } } })
   conferir(
     'puxão universal: chama, arrasta, agarra pela cabeça e esmaga no chão — sem socos',
     naOrdem(puxao.tocados, PUXAO) && !ateAPancada(puxao.tocados).some((som) => som.startsWith('soco')) && puxao.problemas.length === 0,
     `${puxao.tocados.join(' ')} | ${puxao.problemas.join('; ')}`,
   )
+  const vozesNoPuxao = doPuxao(puxao.tocados).filter((som) => som.startsWith('dor:') || som.startsWith('voz:') || som === 'esmagado')
+  conferir('no Puxão, a vítima geme uma vez só, e mais nenhuma voz por cima do som dele', vozesNoPuxao.join(',') === 'dor:p', vozesNoPuxao.join(','))
   const puxaoComLua = await capturar('puxão com a lua', { ...COM_RAINHA, vestir: { q: { arma: 'lua', golpe: 'puxao' } } })
   conferir(
     'com a lua na outra mão, o puxão continua valendo (sem o tornado)',

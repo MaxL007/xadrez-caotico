@@ -139,10 +139,10 @@ export const tomDaTroca = (seguidas: number) => 2 ** (Math.min(Math.max(seguidas
  * corpo fica congelado: a queda da vítima espera esse tempo (`depoisDoCongelamento`). `tremer` falso quando a arma já
  * tem o tremor dela (a marreta).
  */
-export function sentirImpacto(cena: THREE.Object3D, tipoAtacante: string, tipoVitima: string, peso: number, tremer = true): number {
+export function sentirImpacto(cena: THREE.Object3D, tipoAtacante: string, tipoVitima: string, peso: number, tremer = true, grunhido = true): number {
   const ms = Math.round(40 + 90 * peso)
   congelar(ms)
-  tocarSom(`voz:${tipoAtacante}`)
+  if (grunhido) tocarSom(`voz:${tipoAtacante}`)
   tocarSom(`dor:${tipoVitima}`, 0.07)
   if (tremer) tremerTabuleiro(cena, (0.025 + 0.09 * peso) * (menosMovimento() ? 0.3 : 1), 260 + 220 * peso)
   return ms

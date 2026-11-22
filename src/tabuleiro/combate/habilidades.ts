@@ -39,8 +39,9 @@ export interface CapturaComHabilidade {
   fim: () => void
   comemorarAliadas: () => void
   /** O golpe acertou ("o golpe que pesa"): congela um instante, treme e solta as vozes; `fator` multiplica o peso da
-   * captura, `tremer` falso quando a habilidade tem o tremor dela. Devolve os ms do congelamento. */
-  sentirImpacto: (fator?: number, tremer?: boolean) => number
+   * captura, `tremer` falso quando a habilidade tem o tremor dela, `grunhido` falso quando quem ataca não grunhe (o
+   * som da habilidade fala por ela). Devolve os ms do congelamento. */
+  sentirImpacto: (fator?: number, tremer?: boolean, grunhido?: boolean) => number
   /** A câmera, o som e os efeitos de tela da partida (as linhas de foco, o quadro de impacto, o soco da câmera). */
   sensacao: SensacaoDaPartida
 }
@@ -141,8 +142,9 @@ function puxar(c: CapturaComHabilidade) {
     aoEsmagar: ({ meio, rumo, comprimento, meiaGrossura }) => {
       // a pancada pesa o que a peça pesa: rachaduras, tremor e cratera crescem com a massa dela
       const massa = massaDaPeca(c.vitima.userData.tipo)
-      tocarSom('marreta:impacto')
-      tocarSom('esmagado', 0.05)
+      // o som que manda é o do Puxão (pedido do usuário): a pancada é dele, e a vítima geme uma vez só (o gemido sai do
+      // sentirImpacto; sem o esmagado e sem o grunhido da rainha, que pareciam a vítima de novo)
+      tocarSom('puxao:esmaga')
       impactoDeAnime(c, meio)
       animarImpacto(c.cena, meio.x, meio.z)
       ondaDaMarretada(c.cena, meio.x, meio.z, cor)
@@ -150,7 +152,7 @@ function puxar(c: CapturaComHabilidade) {
       rachadurasNoTabuleiro(c.cena, meio.x, meio.z, 1.1 + 0.09 * massa, 2200, 0.001)
       poeiraDaPancada(c.cena, meio.x, meio.z)
       tremerTabuleiro(c.cena, 0.1 + 0.013 * massa)
-      const ms = c.sentirImpacto(1, false)
+      const ms = c.sentirImpacto(1, false, false)
       depoisDoCongelamento(ms, () => {
         if (!c.vigente()) return
         // o chão cede, a peça achata deitada e afunda; o lance segue quando o chão já voltou (a rainha anda por cima)

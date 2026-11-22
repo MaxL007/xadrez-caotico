@@ -178,6 +178,14 @@ As pastas de `src` são por função:
   São `puxao:chama`, `puxao:arrasta` e `puxao:agarra`, e o sintetizador ganhou o envelope que segura
   (`envelopeSustentado`; `sustenta` em `sopro` e `voz`).
 
+  O som do Puxão é o que manda na habilidade (pedido do usuário, 22/11): alto o bastante pra se ouvir sem aumentar o
+  volume. Tem corpo no meio do espectro, de 500 Hz a 3 kHz, que é o que um alto-falante de celular toca (cada sílaba da
+  entoação leva a presença de 2,7 kHz), e pouco grave, que o celular não toca e que gastaria a folga do limitador. Na
+  pancada, a vítima geme uma vez só: a pancada é a do Puxão (`puxao:esmaga`), sem o `esmagado` e sem o grunhido da
+  rainha (`sentirImpacto` com `grunhido` falso), que pareciam a vítima de novo. Medido no que o celular toca (acima
+  de 300 Hz), o Puxão fica entre -16 e -20 dB do começo à hélice, e o gemido, uns 15 dB abaixo. `testar-armas` confere
+  a voz única.
+
   As fotos de cada pose-chave saem de `SO=puxao,puxao-de-lado,puxao-de-cima,puxao-rainha node testes/fotos-armas.mjs`
   (a última compara a cratera da rainha com a do peão).
 - O peão tem a Dempsey Roll (`p:golpe:dempsey`, 300 óticoins), o golpe do
