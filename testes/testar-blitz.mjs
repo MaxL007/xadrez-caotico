@@ -30,8 +30,10 @@ const h = (fn, ...args) => page.evaluate(({ fn, args }) => window.__xadrez[fn](.
 const botao = (nome) => page.locator('main').getByRole('button', { name: nome, exact: true })
 const esperarParar = () => page.waitForFunction(() => !window.__xadrez.ocupado(), null, { timeout: 120000, polling: 200 })
 const relogio = () => h('relogio')
-/** A partida aberta terminou (a taça da anterior pode ainda estar na tela por um instante). */
-const esperarFim = () => page.waitForFunction(() => window.__xadrez.partidaAtual()?.status === 'FINALIZADA', null, { timeout: 20000, polling: 100 })
+/** A partida aberta terminou (a taça da anterior pode ainda estar na tela por um instante). O prazo é largo: logo depois
+ * de recarregar com a conta aberta, a página sincroniza com o servidor enquanto a máquina pensa, e na máquina do GitHub
+ * sobrecarregada isso passava dos 20 s de vez em quando (falha intermitente, sem defeito no jogo). */
+const esperarFim = () => page.waitForFunction(() => window.__xadrez.partidaAtual()?.status === 'FINALIZADA', null, { timeout: 60000, polling: 100 })
 /** Uma posição, com quem joga e as casas, num PGN que o tabuleiro aceita. */
 const posicao = (fen) => `[SetUp "1"]\n[FEN "${fen}"]\n\n*`
 
@@ -172,7 +174,7 @@ try {
     await h('carregarTeste', '1. e4', 'w', 'facil', '3+2')
     await h('ajustarRelogio', 'b', 50)
     await esperarFim()
-    await page.locator('[data-resultado="venceu"]').waitFor({ timeout: 20000 })
+    await page.locator('[data-resultado="venceu"]').waitFor({ timeout: 60000 })
   }
   const sufixo = Date.now().toString(36)
   const comVaga = await novaConta(`Blitz ${sufixo}`)
