@@ -13,6 +13,7 @@ import { abrirCratera, afundarNaCratera } from './cratera'
 import { anelDeImpacto, estouroDeRiscos, faisca, rastroDeBrilho, respingos } from './efeitosDeAnime'
 import { dempseyRoll } from './dempseyRoll'
 import { empurraoUniversal } from './empurraoUniversal'
+import { espiralAbsoluto } from './espiralAbsoluto'
 import { nocautear, sacudir } from './nocaute'
 import { congelar } from '../sensacao/relogioDoJogo'
 import { animarImpacto } from './golpes'
@@ -273,8 +274,68 @@ function empurrar(c: CapturaComHabilidade) {
   })
 }
 
+/** O Espiral Absoluto (peão, com ou sem arma; a ideia e a descrição são do usuário): o pé acende, o chute pra cima no
+ * queixo joga a vítima bem alto, o peão pula atrás e a agarra, os dois caem girando numa espiral e, perto do chão, o
+ * peão solta e cai meio agachado enquanto a vítima bate de costas no chão, que cede numa cratera (ver
+ * espiralAbsoluto.ts e cratera.ts). */
+function espiral(c: CapturaComHabilidade) {
+  const cor = corDoBrilho(c)
+  const tamanho = c.vitima.scale.x
+  const tipoVitima = String(c.vitima.userData.tipo ?? 'p')
+  espiralAbsoluto(c.atacante, c.vitima, c.cena, c.vigente, {
+    aoBrilhar: (pe) => brilhoDeAnime(c, pe, 0.3),
+    aoChutar: (queixo, direcao) => {
+      tocarSom('espiral:chute')
+      tocarSom(`dor:${tipoVitima}`, 0.04)
+      impulsoDeAnime(c, queixo)
+      faisca(c.cena, queixo, 0xffffff, 0.4 * tamanho, 180)
+      anelDeImpacto(c.cena, queixo, direcao, cor, 0.3 * tamanho, 260)
+      estouroDeRiscos(c.cena, queixo, 9, 0.16 * tamanho, cor, 220)
+      respingos(c.cena, queixo, direcao, 0.009 * tamanho)
+      congelar(45)
+    },
+    aoSaltar: (pes) => {
+      tocarSom('espiral:salta')
+      poeiraDaPancada(c.cena, pes.x, pes.z)
+    },
+    aoAgarrar: (ponto) => {
+      tocarSom('espiral:agarra')
+      faisca(c.cena, ponto, cor, 0.45 * c.atacante.scale.x, 200)
+    },
+    aoComecarAEspiral: (ponto) => impulsoDeAnime(c, ponto, 0.85),
+    aoGirar: (volta) => tocarSom('espiral:gira', 0, 1 + 0.04 * volta),
+    // o rastro da espiral: a cor da facção, demorado, pra ficar o desenho do caminho no ar
+    aoRastro: (ponto) => rastroDeBrilho(c.cena, ponto, cor, 0.26 * tamanho, 420),
+    aoSoltar: () => tocarSom('anime:estala', 0, 0.75),
+    aoColidir: ({ meio, rumo, comprimento, meiaGrossura }) => {
+      // a pancada pesa o que a peça pesa, como no Puxão: rachaduras, tremor e cratera crescem com a massa dela
+      const massa = massaDaPeca(tipoVitima)
+      tocarSom('espiral:colide')
+      impactoDeAnime(c, meio.clone().setY(0.1))
+      animarImpacto(c.cena, meio.x, meio.z)
+      ondaDaMarretada(c.cena, meio.x, meio.z, cor)
+      rachadurasNoTabuleiro(c.cena, meio.x, meio.z, 1.1 + 0.09 * massa, 2200, 0.001)
+      poeiraDaPancada(c.cena, meio.x, meio.z)
+      tremerTabuleiro(c.cena, 0.1 + 0.013 * massa)
+      const ms = c.sentirImpacto(1.3, false)
+      depoisDoCongelamento(ms, () => {
+        if (!c.vigente()) return
+        const cratera = abrirCratera(c.cena, c.vitima, meio, rumo, comprimento, massa)
+        afundarNaCratera(c.vitima, cratera, meio, meiaGrossura, () => {
+          window.setTimeout(() => cratera.fechar(() => c.vigente() && c.fim()), 220)
+        })
+      })
+      c.comemorarAliadas()
+    },
+    aoPousar: (onde) => {
+      tocarSom('espiral:pouso')
+      poeiraDaPancada(c.cena, onde.x, onde.z)
+    },
+  })
+}
+
 /** A captura de cada habilidade, pelo nome dela no catálogo. */
-export const CAPTURAS: Record<string, (c: CapturaComHabilidade) => void> = { retalhamento: retalhar, puxao: puxar, dempsey, empurrao: empurrar }
+export const CAPTURAS: Record<string, (c: CapturaComHabilidade) => void> = { retalhamento: retalhar, puxao: puxar, dempsey, empurrao: empurrar, espiral }
 
 /** O que falta em cada habilidade do catálogo: o cadastro, a peça certa, a animação, o símbolo, o preço na Loja e os
  * textos nos três idiomas. Vazio quando está tudo certo (o teste das armas confere). */

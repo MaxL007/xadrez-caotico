@@ -46,7 +46,7 @@ export function areaDaLuta(
   vitima: THREE.Object3D,
   deLonge: boolean,
   joga: boolean,
-  jeito: { alto?: boolean; parada?: number; praFora?: boolean } = {},
+  jeito: { alto?: boolean; parada?: number; praFora?: boolean; espiral?: boolean } = {},
 ): AreaDaLuta {
   const distanciaDaParada = jeito.parada ?? 0.45
   const alturaDe = (peca: THREE.Object3D) => Math.max(0.5, new THREE.Box3().setFromObject(peca).max.y)
@@ -67,6 +67,13 @@ export function areaDaLuta(
   if (joga) pontos.push(v.clone().addScaledVector(rumo, 0.9).setY(0.3))
   // a hélice do Puxão: a vítima gira presa na mão erguida, acima da rainha e pra trás dela
   if (jeito.alto) pontos.push(a.clone().addScaledVector(rumo, 0.35).setY(alturaA * 2.1), a.clone().addScaledVector(rumo, -0.45).setY(alturaA * 1.2))
+  // o Espiral Absoluto: a vítima sobe bem alto em cima da casa (o centro do corpo a ~3,1 vezes o tamanho dela) e desce
+  // numa espiral que abre pro lado do peão; ele pousa antes da casa
+  if (jeito.espiral) {
+    const alto = alturaV * 3.9
+    const deLado = new THREE.Vector3(-rumo.z, 0, rumo.x).multiplyScalar(0.55 * alturaV)
+    pontos.push(v.clone().setY(alto), v.clone().add(deLado).setY(alto * 0.6), v.clone().sub(deLado).setY(alto * 0.6), v.clone().addScaledVector(rumo, -0.9 * alturaV).setY(alto * 0.75))
+  }
   // o Empurrão: a barreira em volta de quem ataca (a bolha cobre o corpo inteiro e abre pros lados) e o começo do voo,
   // alto, pra fora do tabuleiro (o resto do voo sai da tela, como no anime)
   if (jeito.praFora) {

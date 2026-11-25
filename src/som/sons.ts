@@ -623,6 +623,40 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { inicio: 0.08, dur: 0.12, vol: 0.18, freq: 900, q: 1.4 })
     return 0.6
   },
+  // o Espiral Absoluto: o chute no queixo (o ar cortado e a pancada seca), o pulo, a pegada no ar, o vento de cada meia
+  // volta da espiral (subindo de tom), a pancada no chão (o estrondo e a madeira cedendo) e o pouso do peão
+  'espiral:chute': (s) => {
+    sopro(s, { ataque: 0.01, dur: 0.1, vol: 0.18, freq: 700, ate: 3000, q: 1.3 })
+    pancada(s, 150, 55, 0.2, 0.6, 0.06)
+    sopro(s, { inicio: 0.06, dur: 0.06, vol: 0.14, freq: 1500, q: 1.6 })
+    return 0.4
+  },
+  'espiral:salta': (s) => {
+    pancada(s, 90, 50, 0.12, 0.3)
+    sopro(s, { ataque: 0.03, dur: 0.3, vol: 0.12, freq: 380, ate: 1400, q: 1.4 })
+    return 0.4
+  },
+  'espiral:agarra': (s) => {
+    pancada(s, 140, 70, 0.14, 0.38)
+    sopro(s, { dur: 0.05, vol: 0.3, freq: 1300, q: 1.5 })
+    return 0.25
+  },
+  'espiral:gira': (s) => {
+    sopro(s, { ataque: 0.04, dur: 0.15, vol: 0.4, freq: 480, ate: 1600, q: 2.2 })
+    return 0.25
+  },
+  'espiral:colide': (s) => {
+    pancada(s, 100, 28, 0.55, 0.55)
+    pancada(s, 60, 24, 0.7, 0.35, 0.03)
+    sopro(s, { inicio: 0.02, dur: 0.5, vol: 0.18, freq: 700, ate: 180, q: 0.9 })
+    sopro(s, { inicio: 0.05, dur: 0.18, vol: 0.12, freq: 2400, q: 2 })
+    return 0.9
+  },
+  'espiral:pouso': (s) => {
+    pancada(s, 110, 55, 0.16, 0.35)
+    sopro(s, { dur: 0.12, vol: 0.1, freq: 600, q: 1.2 })
+    return 0.25
+  },
   // a hélice: o vento de cada meia volta, zunindo
   'puxao:gira': (s) => {
     sopro(s, { ataque: 0.04, dur: 0.14, vol: 0.55, freq: 520, ate: 1500, q: 2.2 })

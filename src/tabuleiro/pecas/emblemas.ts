@@ -311,7 +311,56 @@ function empurrao(): THREE.Group {
   return emblema
 }
 
-const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao, dempsey, empurrao }
+// --- o Espiral Absoluto (o golpe é do usuário; o símbolo, não: ele não mandou desenho). A espiral da queda, em aço, larga
+// por fora e afinando até o centro, que desce até a linha do chão; no centro, o estouro da pancada (riscos e faíscas).
+// Por fora, do lado esquerdo, a seta do chute subindo. Fica dentro do mesmo quadro dos outros (até uns 0,75 de raio).
+
+/** Uma faixa em espiral: do raio `de` (por dentro) ao `ate` (por fora) em `voltas`, larga por fora e fina no centro. */
+function faixaEmEspiral(de: number, ate: number, voltas: number, larguraFora: number, larguraDentro: number): THREE.Shape {
+  const passos = 160
+  const total = voltas * Math.PI * 2
+  const ponto = (u: number, meiaLargura: number) => {
+    const angulo = u * total
+    const raio = de + (ate - de) * u + meiaLargura
+    return new THREE.Vector2(Math.cos(angulo) * raio, Math.sin(angulo) * raio)
+  }
+  const largura = (u: number) => larguraDentro + (larguraFora - larguraDentro) * u
+  const pontos: THREE.Vector2[] = []
+  for (let i = 0; i <= passos; i++) pontos.push(ponto(i / passos, largura(i / passos) / 2))
+  for (let i = passos; i >= 0; i--) pontos.push(ponto(i / passos, -largura(i / passos) / 2))
+  return new THREE.Shape(pontos)
+}
+
+function espiral(): THREE.Group {
+  const emblema = new THREE.Group()
+  const malha = (forma: THREE.Shape, x = 0, y = 0, z = 0) => {
+    const parte = new THREE.Mesh(extrudar(forma, 48), acoEscuro)
+    parte.castShadow = true
+    parte.position.set(x, y, z)
+    emblema.add(parte)
+  }
+  // a espiral, com o centro um pouco acima do meio, pra caber a linha do chão embaixo; o espaço entre as voltas é maior
+  // que a faixa mais larga, então ela não se encosta
+  malha(faixaEmEspiral(0.04, 0.46, 2.4, 0.085, 0.025), 0.03, 0.08)
+  // a descida do centro até o chão: um risco grosso no alto e fino embaixo
+  malha(risco(graus(-90), 0.02, 0.46, 0.03), 0.03, 0.08)
+  // a linha do chão, fina nas pontas, e o estouro da pancada em cima dela
+  const chao = new THREE.Shape()
+  chao.absellipse(0.03, -0.4, 0.5, 0.014, 0, Math.PI * 2, false, 0)
+  malha(chao)
+  for (const g of [20, 50, 90, 130, 160]) malha(risco(graus(g), 0.05, g === 90 ? 0.17 : 0.13, 0.014), 0.03, -0.39, 0.002)
+  for (const [x, tamanho, giro] of [
+    [-0.3, 0.022, 20],
+    [0.36, 0.02, 60],
+  ]) {
+    malha(faiscaDoEmblema(new THREE.Vector2(x, -0.3), tamanho, graus(giro)), 0, 0, 0.002)
+  }
+  // a seta do chute, por fora da espiral, subindo
+  malha(setaParaFora(graus(100), 0.12, 0.46), -0.55, 0.02, 0.002)
+  return emblema
+}
+
+const EMBLEMAS: Record<string, () => THREE.Group> = { retalhamento, puxao, dempsey, empurrao, espiral }
 
 /** O bloco de habilidade na Loja: `numero` placas lado a lado, a última dourada (a que o bloco libera). */
 export function emblemaDoBloco(numero: number): THREE.Group {

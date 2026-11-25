@@ -91,7 +91,8 @@
     "p": [
       "nenhuma",
       "retalhamento",
-      "dempsey"
+      "dempsey",
+      "espiral"
     ],
     "q": [
       "nenhuma",
@@ -144,7 +145,8 @@
       "arma:katana": 35,
       "arma:espada": 30,
       "golpe:retalhamento": 80,
-      "golpe:dempsey": 300
+      "golpe:dempsey": 300,
+      "golpe:espiral": 250
     },
     "r": {
       "cabeca:elmo": 30,

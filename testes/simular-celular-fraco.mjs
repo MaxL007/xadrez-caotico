@@ -48,10 +48,11 @@ const medirQuadros = (page, ms) =>
   )
 const memoriaJS = (page) => page.evaluate(() => (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null))
 
-// as capturas das partidas: peão de katana (retalhamento), peão de punhos (Dempsey Roll), rainha (Puxão e Empurrão)
+// as capturas das partidas: peão de katana (retalhamento), peão de punhos (Dempsey Roll e Espiral Absoluto), rainha (Puxão e Empurrão)
 const CAPTURAS = [
   { nome: 'retalhamento', vestir: { p: { arma: 'katana', golpe: 'retalhamento' } }, pgn: '1. e4 d5', de: 'e4', para: 'd5' },
   { nome: 'Dempsey Roll', vestir: { p: { golpe: 'dempsey' } }, pgn: '1. e4 d5', de: 'e4', para: 'd5' },
+  { nome: 'Espiral Absoluto', vestir: { p: { golpe: 'espiral' } }, pgn: '1. e4 d5', de: 'e4', para: 'd5' },
   { nome: 'Puxão Universal', vestir: { q: { golpe: 'puxao', golpe2: 'empurrao' } }, pgn: '1. e4 e5 2. Qh5 Nf6', de: 'h5', para: 'f7', habilidade: 'puxao' },
   { nome: 'Empurrão Universal', vestir: { q: { golpe: 'puxao', golpe2: 'empurrao' } }, pgn: '1. e4 e5 2. Qh5 Nf6', de: 'h5', para: 'f7', habilidade: 'empurrao' },
   { nome: 'golpe de sempre', vestir: {}, pgn: '1. e4 d5', de: 'e4', para: 'd5' },

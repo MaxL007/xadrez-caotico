@@ -193,6 +193,23 @@ try {
       ['dempsey:final', 800, 'dempsey-no-chao.png'],
     ],
   })
+  // o Espiral Absoluto com o enquadramento automático: o pé aceso, o chute no queixo, a vítima subindo, o peão agarrando
+  // lá no alto, a espiral, a pancada no chão e o peão meio agachado com a mão no chão
+  await fotografar('espiral', {
+    ...PEAO,
+    camera: null,
+    vestir: { p: { golpe: 'espiral' } },
+    momentos: [
+      ['anime:brilho', 40, 'espiral-carrega.png'],
+      ['espiral:chute', 0, 'espiral-chute.png'],
+      ['espiral:chute', 350, 'espiral-sobe.png'],
+      ['espiral:agarra', 0, 'espiral-agarra.png'],
+      ['espiral:gira', 250, 'espiral-girando.png'],
+      ['espiral:colide', 0, 'espiral-colide.png'],
+      ['espiral:pouso', 250, 'espiral-pouso.png'],
+    ],
+  })
+  await fotografar('espiral-de-lado', { ...PEAO, camera: [4, 50, 70], vestir: { p: { golpe: 'espiral' } }, momentos: [['espiral:chute', 30, 'espiral-de-lado-chute.png'], ['espiral:pouso', 300, 'espiral-de-lado-pouso.png']] })
   // o gancho na cabeça: o impacto (anel, riscos, respingos) e a cabeça jogada pra trás
   await fotografar('dempsey-de-lado', { ...PEAO, camera: [3, 50, 78], vestir: { p: { golpe: 'dempsey' } }, momentos: [['dempsey:balanco', 600, 'dempsey-de-lado-aquecimento.png'], ['dempsey:gancho', 30, 'dempsey-de-lado-impacto.png'], ['dempsey:gancho', 120, 'dempsey-de-lado-gancho.png'], ['dempsey:gancho', 700, 'dempsey-de-lado-oito.png']] })
   // o enquadramento automático da luta, da vista de jogo de sempre (sem câmera posta à mão): o golpe inteiro tem de

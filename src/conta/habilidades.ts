@@ -29,6 +29,9 @@ export const HABILIDADES: Record<string, DadosDaHabilidade> = {
   dempsey: { peca: 'p', alcance: 'corpoACorpo', maosLivres: true },
   // a rainha vai até a peça, carrega a bolha de vento entre as palmas e a repele pra fora do tabuleiro; com as mãos
   empurrao: { peca: 'q', alcance: 'corpoACorpo', maosLivres: true },
+  // o peão chuta a peça pro alto pelo queixo, pula, agarra e os dois caem girando numa espiral até ela bater no chão;
+  // luta com o corpo, então vale com ou sem arma (ideia do usuário)
+  espiral: { peca: 'p', alcance: 'corpoACorpo', maosLivres: true },
 }
 
 /**

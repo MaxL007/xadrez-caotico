@@ -218,6 +218,23 @@ As pastas de `src` são por função:
 
   Fica em `combate/dempseyRoll.ts` (as duas peças, por cima do clipe, desfeito e refeito no laço como o puxão). As fotos
   saem de `SO=dempsey,dempsey-de-lado node testes/fotos-armas.mjs`.
+- O peão tem o Espiral Absoluto (`p:golpe:espiral`, 250 óticoins; a ideia e a descrição são do usuário, 25/11). Luta com
+  o corpo (`maosLivres`): vai até a vítima sem sacar a arma e vale com ou sem ela.
+  - O pé direito acende com o joelho recolhido (o "tiin"), e o chute sobe até o queixo, com o tronco indo pra trás pra
+    alcançar.
+  - A vítima sobe bem alto (o meio do corpo a 3,1 vezes o tamanho dela), girando pra trás até ficar deitada de barriga pra
+    cima. O peão agacha, pula e a agarra pelos ombros, ajoelhado em cima dela (um tranco no tempo).
+  - O "ma" lá no alto, tremendo em dois. Depois os dois caem girando juntos, três voltas acelerando, num caminho em
+    espiral que fecha em cima da casa dela, com o rastro de luz nos pés da vítima.
+  - Perto do chão o peão solta e cai meio agachado, de frente pra ela, meia casa antes: os pés no chão, a mão direita no
+    chão e a esquerda no ar. A vítima bate de costas e o chão cede numa cratera, como no Puxão (`aoColidir`).
+  - O peão termina onde pousou, e o lance o leva dali pra casa. A câmera inclui o alto da subida e a espiral
+    (`espiral` em `areaDaLuta`).
+
+  Os sons são `espiral:chute`, `espiral:salta`, `espiral:agarra`, `espiral:gira`, `espiral:colide` e `espiral:pouso`.
+  O usuário não mandou desenho do símbolo: `EMBLEMAS.espiral` é uma espiral de aço afinando até a linha do chão, com o
+  estouro da pancada e a seta do chute subindo. Fica em `combate/espiralAbsoluto.ts`; as fotos saem de
+  `SO=espiral,espiral-de-lado node testes/fotos-armas.mjs`.
 - Nas outras habilidades a vítima também reage: no Puxão, vê a rainha carregando, vira pra ela e se inclina pra trás com
   os braços na frente; puxada, resiste inclinada pra trás e arrastando os pés, se debatendo, até ser arrancada do chão
   (`ARRASTA_ATE`, `ARRANCA_ATE`). No Retalhamento, recua e cambaleia a cada corte, um pra cada lado (`sacudir`).
@@ -263,7 +280,7 @@ As pastas de `src` são por função:
   usar.
   - O 1º bloco é grátis; o 2º custa 50 e o 3º, 70 óticoins, uma vez por peça (`peça:bloco:2`, `peça:bloco:3`, preços em
     `blocosDeHabilidade` no catálogo).
-  - Um bloco só é vendido quando a peça tem habilidades pra ele: hoje o peão e a rainha têm o 2º, e ninguém tem o 3º. O 3º pede o 2º
+  - Um bloco só é vendido quando a peça tem habilidades pra ele: hoje o peão tem o 2º e o 3º (três habilidades) e a rainha, o 2º. O 3º pede o 2º
     antes (`falta-o-bloco-anterior`).
   - Cada bloco é uma parte da peça: `golpe`, `golpe2` e `golpe3`, com as mesmas opções. O servidor confere o bloco
     comprado (`bloco-bloqueado`) e a habilidade comprada (a parte `golpe` do catálogo vale pros três). A mesma

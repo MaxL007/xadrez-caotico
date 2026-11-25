@@ -14,6 +14,7 @@ import { atualizarLutas, desfazerPosesDasLutas } from './combate/lutaSemArma'
 import { atualizarPuxoes, desfazerPosesDosPuxoes } from './combate/puxaoUniversal'
 import { atualizarNocautes, desfazerPosesDosNocautes } from './combate/nocaute'
 import { atualizarDempseys, desfazerPosesDasDempseys } from './combate/dempseyRoll'
+import { atualizarEspirais, desfazerPosesDosEspirais } from './combate/espiralAbsoluto'
 import { atualizarEmpurroes, desfazerPosesDosEmpurroes } from './combate/empurraoUniversal'
 import { atualizarLancas, desfazerPosesDasLancas } from './combate/lancaDoCavalo'
 import { desesmaecer, esmaecer } from './cena/esmaecer'
@@ -56,7 +57,7 @@ import { criarPartidaContraMaquina, PAUSA_MAQUINA_MS } from './fluxo/partidaCont
 
 
 /** Na escolha da habilidade da captura, um sinal pra cada uma (a do catálogo sem sinal fica com o brilho). */
-const ICONE_DA_HABILIDADE: Record<string, string> = { retalhamento: '⚔️', puxao: '🌀', dempsey: '🥊', empurrao: '💨' }
+const ICONE_DA_HABILIDADE: Record<string, string> = { retalhamento: '⚔️', puxao: '🌀', dempsey: '🥊', empurrao: '💨', espiral: '🌪️' }
 
 const PECAS_PROMOCAO: { peca: PecaPromocao; nome: ChaveTexto; branca: string; preta: string }[] = [
   { peca: 'q', nome: 'promocao.rainha', branca: '♕', preta: '♛' },
@@ -1224,6 +1225,7 @@ export function ChessBoard3D() {
       desfazerInercia()
       desfazerPosturas()
       desfazerPosesDosNocautes()
+      desfazerPosesDosEspirais()
       desfazerPosesDosEmpurroes()
       desfazerPosesDasLancas()
       desfazerPosesDosPuxoes()
@@ -1239,6 +1241,7 @@ export function ChessBoard3D() {
       atualizarPuxoes(agoraDoCorpo)
       atualizarLancas(agoraDoCorpo)
       atualizarEmpurroes(agoraDoCorpo)
+      atualizarEspirais(agoraDoCorpo)
       atualizarNocautes(agoraDoCorpo)
       atualizarPosturas(agora)
       // a inércia é a última pose: o tronco inclinando ao andar e balançando ao parar

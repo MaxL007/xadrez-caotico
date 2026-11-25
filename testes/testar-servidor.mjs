@@ -631,6 +631,9 @@ try {
   conferir('o Puxão é só da rainha', (await personalizar({ peca: 'k', parte: 'golpe', opcao: 'puxao' })).status === 422 && (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'puxao' })).status === 422)
   conferir('o peão equipa a Dempsey Roll', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'dempsey' })).json?.personalizacao?.p?.golpe === 'dempsey')
   conferir('a Dempsey Roll é só do peão', (await personalizar({ peca: 'q', parte: 'golpe', opcao: 'dempsey' })).status === 422)
+  conferir('o peão equipa o Espiral Absoluto', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'espiral' })).json?.personalizacao?.p?.golpe === 'espiral')
+  conferir('o Espiral Absoluto é só do peão', (await personalizar({ peca: 'r', parte: 'golpe', opcao: 'espiral' })).status === 422)
+  conferir('com três habilidades, o peão usa o 3º bloco', (await personalizar({ peca: 'p', parte: 'golpe3', opcao: 'retalhamento' })).json?.personalizacao?.p?.golpe3 === 'retalhamento')
   conferir('habilidade inventada não entra', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'voo' })).status === 422)
   // os blocos de habilidade: com tudo liberado, o peão leva as duas; a mesma não fica em dois blocos
   await personalizar({ peca: 'p', parte: 'golpe', opcao: 'retalhamento' })

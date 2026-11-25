@@ -394,9 +394,9 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
       const comLanca = tipoAtacante === 'n' && ehRPG && armaDoAtacante === 'lanca' && !habilidade
       const paradaDoCavalo = comLanca ? paradaDaLanca(atacante, vitima) : undefined
       const comEfeitoProprio =
-        ['marreta', 'machado', 'maca', 'cetro', 'lua'].includes(armaDoAtacante) || habilidade === 'retalhamento' || habilidade === 'puxao' || comLanca
+        ['marreta', 'machado', 'maca', 'cetro', 'lua'].includes(armaDoAtacante) || habilidade === 'retalhamento' || habilidade === 'puxao' || habilidade === 'espiral' || comLanca
       sensacao.comecarLuta(
-        areaDaLuta(atacante, vitima, deLonge, !comEfeitoProprio, { alto: habilidade === 'puxao', parada: paradaDoCavalo, praFora: habilidade === 'empurrao' }),
+        areaDaLuta(atacante, vitima, deLonge, !comEfeitoProprio, { alto: habilidade === 'puxao', parada: paradaDoCavalo, praFora: habilidade === 'empurrao', espiral: habilidade === 'espiral' }),
         peso,
         tomDaTroca(andamento.capturasSeguidas),
       )
@@ -706,7 +706,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         return
       }
 
-      // a habilidade de mãos livres (a Dempsey Roll): vai até a vítima sem sacar a arma, no alcance dos socos
+      // a habilidade de mãos livres (a Dempsey Roll, o Espiral Absoluto): vai até a vítima sem sacar a arma, no alcance dos socos
       if (habilidade && HABILIDADES[habilidade].maosLivres) {
         voltarAoDescanso(atacante)
         embainharAntes(atacante, () =>

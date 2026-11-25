@@ -61,6 +61,7 @@ async function capturar(nome, { pgn, vestir, de, para, promocao = null, vigiar =
       andou: Math.max(0, ...pontos.map(([x, , z]) => Math.hypot(x - x0, z - z0))),
       longe: Math.max(0, ...pontos.map(([x, , z]) => Math.max(Math.abs(x), Math.abs(z)))),
       baixo: Math.min(...pontos.map(([, y]) => y)),
+      alto: Math.max(...pontos.map(([, y]) => y)),
       /** Pra que lado foi (o último ponto, em relação ao primeiro). */
       rumo: pontos.length ? [pontos[pontos.length - 1][0] - x0, pontos[pontos.length - 1][2] - z0] : [0, 0],
     }
@@ -219,6 +220,24 @@ try {
     'com o cajado na mão, o empurrão continua valendo (sem o raio)',
     naOrdem(empurraoComCajado.tocados, EMPURRAO) && !ateOEstouro(empurraoComCajado.tocados).includes('raio:q') && empurraoComCajado.problemas.length === 0,
     `${empurraoComCajado.tocados.join(' ')} | ${empurraoComCajado.problemas.join('; ')}`,
+  )
+  // o Espiral Absoluto (peão, ideia do usuário): o chute no queixo joga a peça bem alto, o peão pula, agarra, os dois
+  // caem girando e ela bate no chão de costas; vale com ou sem arma, e com a katana na mão ela fica na bainha
+  const ESPIRAL = ['anime:brilho', 'espiral:chute', 'espiral:salta', 'espiral:agarra', 'espiral:gira', 'espiral:colide', 'espiral:pouso']
+  const ateAColisao = (tocados) => tocados.slice(0, tocados.indexOf('espiral:colide'))
+  const PEAO_CAPTURA = { pgn: '1. e4 d5', de: 'e4', para: 'd5' }
+  const espiral = await capturar('espiral absoluto', { ...PEAO_CAPTURA, vestir: { p: { golpe: 'espiral' } }, vigiar: true })
+  conferir(
+    'espiral absoluto: o brilho, o chute, o salto, a pegada, a espiral, a pancada no chão e o pouso — sem socos',
+    naOrdem(espiral.tocados, ESPIRAL) && !ateAColisao(espiral.tocados).some((som) => som.startsWith('soco')) && espiral.problemas.length === 0,
+    `${espiral.tocados.join(' ')} | ${espiral.problemas.join('; ')}`,
+  )
+  conferir('no espiral, a peça sobe bem alto e cai na casa dela', espiral.caminho.alto > 1.5 && espiral.caminho.andou < 1.3, JSON.stringify(espiral.caminho))
+  const espiralComKatana = await capturar('espiral com a katana', { ...PEAO_CAPTURA, vestir: { p: { arma: 'katana', golpe: 'espiral' } } })
+  conferir(
+    'com a katana, o espiral continua valendo, sem sacar a katana',
+    naOrdem(espiralComKatana.tocados, ESPIRAL) && !ateAColisao(espiralComKatana.tocados).includes('katana:saca') && espiralComKatana.problemas.length === 0,
+    `${espiralComKatana.tocados.join(' ')} | ${espiralComKatana.problemas.join('; ')}`,
   )
   const lua = await capturar('lua', { ...COM_RAINHA, vestir: { q: { arma: 'lua' } } })
   conferir('lua: o tornado que arremessa a peça longe', lua.tocados.includes('tornado') && lua.problemas.length === 0, `${lua.tocados.join(' ')} | ${lua.problemas.join('; ')}`)
