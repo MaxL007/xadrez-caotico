@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ouvirAvisosTocados } from '../app/notificacoes'
+import { sessaoAtual } from '../dados/servidor'
 import * as THREE from 'three'
 import { Chess, type Square } from 'chess.js'
 import { Button } from '../telas/ui/Basics'
@@ -230,6 +232,27 @@ export function ChessBoard3D() {
     setEmpate,
     aoRecusada: () => handleMenu(),
   })
+  // tocar no aviso de uma partida (com o jogo fechado ou em segundo plano) abre o jogo em ?sala=<código>: entra direto
+  // nela. Com o jogo já aberto, o service worker manda o endereço do aviso e a tela vai pra lá
+  const abrirSalaRef = useRef(abrirSala)
+  abrirSalaRef.current = abrirSala
+  useEffect(() => {
+    const abrirDoAviso = (endereco: URL) => {
+      const codigo = endereco.searchParams.get('sala')
+      if (codigo && /^[A-Z0-9]{8}$/.test(codigo) && sessaoAtual()) abrirSalaRef.current(codigo)
+      // o ?amigos= fica pro menu (que abre a aba Amigos)
+      if (endereco.searchParams.has('amigos')) history.replaceState(history.state, '', `${location.pathname}?amigos=1`)
+    }
+    const aberto = new URL(location.href)
+    if (aberto.searchParams.has('sala')) {
+      // o endereço fica limpo (recarregar a página não volta pra partida do aviso)
+      const limpo = new URL(aberto.href)
+      limpo.searchParams.delete('sala')
+      history.replaceState(history.state, '', limpo.href)
+      abrirDoAviso(aberto)
+    }
+    ouvirAvisosTocados(abrirDoAviso)
+  }, [])
   // a recusa some sozinha depois de um tempo
   useEffect(() => {
     if (empate?.tipo !== 'recusado') return

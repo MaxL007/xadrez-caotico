@@ -112,9 +112,22 @@ export async function recuperarConta(nome: string, codigo: string, senhaNova: st
   return r.codigoRecuperacao
 }
 
+// os avisos com o jogo fechado (ver src/app/notificacoes.ts e worker/src/push.ts)
+export const chaveDosAvisos = () => pedir<{ chave: string | null }>('GET', '/push/chave')
+export const inscreverAvisos = (inscricao: { endpoint: string; p256dh: string; auth: string; idioma: string }) => pedir('POST', '/push', inscricao)
+export const sairDosAvisos = (endpoint: string) => pedir('POST', '/push/sair', { endpoint })
+
 export async function sairDaConta() {
   // a bolinha verde apaga antes de a sessão acabar
   if (sessao) await pedir('POST', '/presenca/sair', { token: sessao.token }).catch(() => undefined)
+  // os avisos desta conta não chegam mais neste aparelho (pra quem entrar depois nele)
+  if (sessao && 'serviceWorker' in navigator) {
+    const inscricao = await navigator.serviceWorker
+      .getRegistration()
+      .then((registro) => registro?.pushManager?.getSubscription())
+      .catch(() => null)
+    if (inscricao) await sairDosAvisos(inscricao.endpoint).catch(() => undefined)
+  }
   await pedir('POST', '/sessoes/sair').catch(() => {
     // sem conexão: a sessão vence sozinha no servidor
   })

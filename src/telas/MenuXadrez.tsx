@@ -17,6 +17,7 @@ import { PainelLoja } from './PainelLoja'
 import { PainelPrivacidade } from './PainelPrivacidade'
 import { marcarPasseioVisto, PasseioInicial, passeioJaVisto, passeioNaAutomacao } from './PasseioInicial'
 import { instalarAplicativo, useAplicativo } from '../app/aplicativo'
+import { avisosSuportados, desligarAvisos, ligarAvisos, manterAvisos, situacaoDosAvisos, type SituacaoDosAvisos } from '../app/notificacoes'
 import { dispensarAvisoDoConvite, guardarPedidosAvisados, pedidosAvisados, useConviteDeAmizade } from '../conta/conviteDeAmizade'
 import type { VitrineDaPeca } from '../tabuleiro/pecas/equipamentos'
 import type * as THREE from 'three'
@@ -135,6 +136,39 @@ function ImportarPartidas({ t, onImportou }: { t: Traduzir; onImportou: () => vo
 
 const botaoPequeno = 'rounded-lg border border-[#c9a24a]/50 px-3 py-1 text-xs font-semibold hover:bg-[#3a2614]'
 
+/** Os avisos com o jogo fechado (a vez numa partida online, convites, o fim da partida): ligar pede a permissão do
+ * aparelho e precisa da conta. Só aparece onde o navegador sabe mostrá-los (o site publicado, com service worker). */
+function AvisosComOJogoFechado({ t, idioma }: { t: Traduzir; idioma: Idioma }) {
+  const sessao = useSessao()
+  const [situacao, setSituacao] = useState<SituacaoDosAvisos | null>(null)
+  const [mudando, setMudando] = useState(false)
+  useEffect(() => {
+    let vivo = true
+    void situacaoDosAvisos().then((s) => vivo && setSituacao(s))
+    return () => {
+      vivo = false
+    }
+  }, [sessao?.usuario.id])
+  if (!avisosSuportados() || !situacao || situacao === 'sem-suporte') return null
+  const dica = !sessao ? t('config.avisosSemConta') : situacao === 'bloqueados' ? t('config.avisosBloqueados') : t('config.avisosDica')
+  return (
+    <Linha titulo={t('config.avisos')} dica={dica}>
+      <Alternador
+        rotulo={t('config.avisos')}
+        ligado={situacao === 'ligados'}
+        onMudar={(ligar) => {
+          if (mudando || !sessao || situacao === 'bloqueados') return
+          setMudando(true)
+          void (ligar ? ligarAvisos(idioma) : desligarAvisos())
+            .then(setSituacao)
+            .catch(() => situacaoDosAvisos().then(setSituacao))
+            .finally(() => setMudando(false))
+        }}
+      />
+    </Linha>
+  )
+}
+
 function Configuracoes({
   t,
   config,
@@ -189,6 +223,7 @@ function Configuracoes({
       <Linha titulo={t('config.ambiente')}>
         <Alternador rotulo={t('config.ambiente')} ligado={config.ambiente} onMudar={(ambiente) => onConfig({ ambiente })} />
       </Linha>
+      <AvisosComOJogoFechado t={t} idioma={config.idioma} />
       <Linha titulo={t('config.toque')} dica={t('config.toqueDica')}>
         <Alternador rotulo={t('config.toque')} ligado={config.toque} onMudar={(toque) => onConfig({ toque })} />
       </Linha>
@@ -344,6 +379,19 @@ export function MenuXadrez({
     marcarAvisados(amigos?.convitesRecebidos.map((j) => j.idJogador) ?? [])
     setPainel('amigos')
   }
+  // os avisos com o jogo fechado: a inscrição fica em dia a cada abertura (o navegador pode trocá-la, o idioma pode mudar)
+  useEffect(() => {
+    if (sessao) void manterAvisos(config.idioma)
+  }, [sessao, config.idioma])
+  // tocar no aviso de convite ou de pedido de amizade abre o jogo em ?amigos=1: vai direto pros Amigos
+  useEffect(() => {
+    const endereco = new URL(location.href)
+    if (!endereco.searchParams.has('amigos')) return
+    endereco.searchParams.delete('amigos')
+    history.replaceState(history.state, '', endereco.href)
+    if (sessao) setPainel('amigos')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só na abertura
+  }, [])
 
   // o convite do link: o pedido que chegou entra na lista na hora (e vira o aviso de cima); o resto avisa aqui
   const avisoDoLink = useConviteDeAmizade().aviso

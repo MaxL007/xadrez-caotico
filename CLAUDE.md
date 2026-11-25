@@ -103,6 +103,35 @@ As pastas de `src` são por função:
 - O Perfil tem três abas: Perfil, Conquistas e Configurações. O botão do menu que era Configurações agora é
   Personalização.
 
+## Avisos com o jogo fechado
+
+- Pedido do usuário (25/11): alguns processos seguem com o jogo em segundo plano. O que segue de verdade, mesmo com o
+  aplicativo fechado, são os avisos do Web Push: com eles ligados (Configurações → "Avisos com o jogo fechado", que pede
+  a permissão do aparelho e precisa da conta), chegam como notificação:
+  - a vez numa partida online, quando o outro joga e a pessoa não está com a partida aberta;
+  - o fim da partida (com o motivo);
+  - o convite pra uma partida amistosa e o amigo que aceitou o convite;
+  - o pedido de amizade;
+  - o adversário automático encontrado.
+
+  O resto do jogo para fora da tela de propósito: o relógio da blitz contra a máquina é guardado e congela, a máquina
+  espera, o som suspende. A partida online mora no servidor, então nada se perde: ao voltar, a tela confere com ele.
+- O aparelho se inscreve no serviço de push do navegador (`src/app/notificacoes.ts`) e entrega o endereço e as chaves
+  (`POST /push`, com o idioma do jogo; `/push/sair` desliga, e sair da conta também esquece o aparelho). O servidor guarda
+  em `inscricoes_push` (migração 0014; até 10 aparelhos por pessoa) e só aceita endereços dos serviços conhecidos (Google,
+  Mozilla, Apple, Microsoft), pra não virar um jeito de fazer o servidor chamar um site qualquer.
+- `worker/src/push.ts` cifra cada aviso pro aparelho (RFC 8291, aes128gcm) e assina o VAPID (RFC 8292) com a WebCrypto,
+  sem biblioteca. As chaves ficam nos segredos `VAPID_PRIVADA` (JWK) e `VAPID_PUBLICA` (base64url); sem elas (o
+  simulador), nada sai. O `sub` do VAPID é o endereço do jogo, sem e-mail de ninguém. A inscrição que o serviço diz ter
+  acabado (404/410) é apagada.
+- A sala (`sala.ts`, `avisarQuemSaiu`) só avisa quem não está com a partida aberta (as conexões dela), sem segurar o lance
+  (`waitUntil`). As rotas de convite esperam o aviso no máximo 1,5 s (`avisarSemDemora`).
+- O service worker (`scripts/aplicativo/sw.js`) mostra o aviso (não mostra se o jogo está aberto e à vista) e, no toque,
+  abre o jogo no endereço dele: `?sala=<código>` entra na partida (`ChessBoard3D`) e `?amigos=1` abre os Amigos (menu).
+  Com o jogo já aberto, manda o endereço por mensagem. Só existe no site publicado: no desenvolvimento a chave não aparece.
+- `node testes/testar-push.mjs` (à mão: ainda fora do testes.yml, porque o token deste celular não tem a permissão `workflow`) confere a cifra com o exemplo da RFC 8291 (o resultado tem de bater byte a byte), a
+  decifra como o aparelho faria, o JWT do VAPID e os endereços aceitos. `testar-servidor` confere as rotas.
+
 ## Aplicativo instalável
 
 - O site é um PWA: `public/manifest.webmanifest`, ícones em `public/icones` (a óticoin é a logo; saem de
@@ -218,23 +247,30 @@ As pastas de `src` são por função:
 
   Fica em `combate/dempseyRoll.ts` (as duas peças, por cima do clipe, desfeito e refeito no laço como o puxão). As fotos
   saem de `SO=dempsey,dempsey-de-lado node testes/fotos-armas.mjs`.
-- O peão tem o Espiral Absoluto (`p:golpe:espiral`, 250 óticoins; a ideia e a descrição são do usuário, 25/11). Luta com
-  o corpo (`maosLivres`): vai até a vítima sem sacar a arma e vale com ou sem ela.
-  - O pé direito acende com o joelho recolhido (o "tiin"), e o chute sobe até o queixo, com o tronco indo pra trás pra
-    alcançar.
-  - A vítima sobe bem alto (o meio do corpo a 3,1 vezes o tamanho dela), girando pra trás até ficar deitada de barriga pra
-    cima. O peão agacha, pula e a agarra pelos ombros, ajoelhado em cima dela (um tranco no tempo).
-  - O "ma" lá no alto, tremendo em dois. Depois os dois caem girando juntos, três voltas acelerando, num caminho em
-    espiral que fecha em cima da casa dela, com o rastro de luz nos pés da vítima.
-  - Perto do chão o peão solta e cai meio agachado, de frente pra ela, meia casa antes: os pés no chão, a mão direita no
-    chão e a esquerda no ar. A vítima bate de costas e o chão cede numa cratera, como no Puxão (`aoColidir`).
+- O peão tem o Espiral Absoluto (`p:golpe:espiral`, 250 óticoins; a ideia, a descrição e um vídeo de referência são do
+  usuário, 25/11). Luta com o corpo (`maosLivres`): vai até a vítima sem sacar a arma e vale com ou sem ela. Segue a
+  mecânica do vídeo, com mudanças pedidas pelo usuário pra não ficar igual (no vídeo: faixas de tecido, o atacante
+  surgindo atrás, a broca caindo reta, o oponente enterrado de cabeça).
+  - O pé direito acende com o joelho recolhido, e o chute sobe até o queixo; a vítima sobe bem alto (o meio do corpo a
+    3,1 vezes o tamanho dela), a cabeça pra trás.
+  - O peão agacha e sobe atrás dela com um rastro de luz (`aoRastroDoSalto`) e a abraça pelas costas (um tranco no tempo).
+  - No alto os dois viram de cabeça pra baixo e as fitas de luz na cor da facção enrolam a vítima inteira, com os braços
+    presos no corpo (malhas filhas da vítima, liberadas no fim).
+  - A broca: os dois caem girando, três voltas acelerando e a broca girando em volta dela mesma, num caminho em espiral
+    que fecha em cima da casa, com o rastro de luz nos pés da vítima.
+  - Perto do chão o peão solta, dá um mortal pra trás e cai meio agachado, de frente pra casa: os pés no chão, a mão
+    direita no chão e a esquerda no ar. A vítima bate de cabeça (`aoColidir`: o golpe que decide), fica fincada um
+    instante, tomba de costas e o chão cede numa cratera, como no Puxão (`aoDeitar`).
+  - Fincada, a broca freia até o giro em que o tombo vai pra longe do peão (`giroDoTombo`): a cabeça fica na casa e o
+    corpo deita do outro lado, então a cratera nunca abre debaixo do peão (antes, o tombo seguia o giro em que a broca
+    parou e às vezes caía em cima dele).
   - O peão termina onde pousou, e o lance o leva dali pra casa. A câmera inclui o alto da subida e a espiral
     (`espiral` em `areaDaLuta`).
 
-  Os sons são `espiral:chute`, `espiral:salta`, `espiral:agarra`, `espiral:gira`, `espiral:colide` e `espiral:pouso`.
-  O usuário não mandou desenho do símbolo: `EMBLEMAS.espiral` é uma espiral de aço afinando até a linha do chão, com o
-  estouro da pancada e a seta do chute subindo. Fica em `combate/espiralAbsoluto.ts`; as fotos saem de
-  `SO=espiral,espiral-de-lado node testes/fotos-armas.mjs`.
+  Os sons são `espiral:chute`, `espiral:salta`, `espiral:agarra`, `espiral:enrola`, `espiral:gira`, `espiral:colide` e
+  `espiral:pouso`. O usuário não mandou desenho do símbolo: `EMBLEMAS.espiral` é uma espiral de aço afinando até a
+  linha do chão, com o estouro da pancada e a seta do chute subindo. Fica em `combate/espiralAbsoluto.ts`; as fotos saem
+  de `SO=espiral,espiral-de-lado node testes/fotos-armas.mjs`.
 - Nas outras habilidades a vítima também reage: no Puxão, vê a rainha carregando, vira pra ela e se inclina pra trás com
   os braços na frente; puxada, resiste inclinada pra trás e arrastando os pés, se debatendo, até ser arrancada do chão
   (`ARRASTA_ATE`, `ARRANCA_ATE`). No Retalhamento, recua e cambaleia a cada corte, um pra cada lado (`sacudir`).

@@ -14,6 +14,7 @@ import { Chess, type Square } from 'chess.js'
 import { semMaterialParaMate, temposDoRitmo, type Ritmo } from '../../src/jogo/relogio'
 import type { Ambiente } from './index'
 import type { Usuario } from './conta'
+import { avisar, type Acontecimento } from './push'
 
 const SEM_LANCE_LIMITE_MS = 7 * 24 * 60 * 60 * 1000
 const CONVITE_VALE_MS = 3 * 24 * 60 * 60 * 1000
@@ -143,6 +144,8 @@ export class Sala extends DurableObject<Ambiente> {
     await this.ctx.storage.setAlarm(this.proximoAlarme(estado))
     await this.env.DB.prepare('UPDATE salas SET status = ?1, atualizada_em = ?2 WHERE codigo = ?3').bind('andamento', Date.now(), estado.codigo).run()
     this.avisarTodos(estado)
+    // quem chamou pode ter saído do jogo esperando: fica sabendo que o amigo aceitou e a partida começou
+    this.avisarQuemSaiu(estado, estado.corDoCriador, (adversario) => ({ tipo: 'adversario-achado', codigo: estado.codigo, adversario }))
     return { ok: true, cor }
   }
 
@@ -302,6 +305,8 @@ export class Sala extends DurableObject<Ambiente> {
     this.enviar({ t: 'lance', n: estado.lances.length - 1, de: lance.from, para: lance.to, promocao: lance.promotion, san: lance.san, habilidade, relogio: this.relogioParaEnviar(estado) })
     // o estado inteiro só depois do lance: antes, o aparelho do outro poria o lance na fila sem a habilidade
     if (releu) this.avisarTodos(estado)
+    // a vez é do outro: se ele não está com a partida na tela, o aviso chega no aparelho (o fim tem o aviso dele)
+    if (!fim) this.avisarQuemSaiu(estado, cor === 'w' ? 'b' : 'w', (adversario) => ({ tipo: 'vez', codigo: estado.codigo, adversario, lance: lance.san }))
     if (fim) await this.encerrar(estado, fim.resultado, fim.motivo)
   }
 
@@ -342,6 +347,10 @@ export class Sala extends DurableObject<Ambiente> {
       .bind('fim', resultado, motivo, JSON.stringify(estado.lances), Date.now(), estado.codigo)
       .run()
     this.enviar({ t: 'fim', resultado, motivo, relogio: this.relogioParaEnviar(estado) })
+    for (const cor of ['w', 'b'] as const) {
+      const venceu = resultado === (cor === 'w' ? 'brancas' : 'pretas')
+      this.avisarQuemSaiu(estado, cor, (adversario) => ({ tipo: 'fim', codigo: estado.codigo, adversario, resultado: resultado === 'empate' ? 'empate' : venceu ? 'venceu' : 'perdeu', motivo }))
+    }
   }
 
   /** Convite sem resposta expira; partida parada perde quem está com a vez (na blitz, quando o tempo dela acaba). */
@@ -373,6 +382,15 @@ export class Sala extends DurableObject<Ambiente> {
 
   async webSocketError(conexao: WebSocket) {
     await this.webSocketClose(conexao)
+  }
+
+  /** O aviso com o jogo fechado (ver push.ts) pra quem é da cor e não está com esta partida aberta na tela. A sala não
+   * espera o aviso sair (waitUntil). */
+  private avisarQuemSaiu(estado: EstadoDaSala, cor: Cor, montar: (adversario: string) => Acontecimento) {
+    const quem = cor === 'w' ? estado.brancas : estado.pretas
+    const outro = cor === 'w' ? estado.pretas : estado.brancas
+    if (!quem || !outro || this.conectados().has(quem.id)) return
+    this.ctx.waitUntil(avisar(this.env, quem.id, montar(outro.nome)))
   }
 
   private corDe(estado: EstadoDaSala, usuarioId: string): Cor | null {

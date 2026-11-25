@@ -641,6 +641,12 @@ export const SONS: Record<string, (s: Saida) => number> = {
     sopro(s, { dur: 0.05, vol: 0.3, freq: 1300, q: 1.5 })
     return 0.25
   },
+  // as fitas de luz enrolando a vítima: um chicote de ar subindo de tom
+  'espiral:enrola': (s) => {
+    sopro(s, { ataque: 0.02, dur: 0.3, vol: 0.22, freq: 900, ate: 3200, q: 2.4 })
+    sopro(s, { inicio: 0.12, dur: 0.14, vol: 0.12, freq: 2200, ate: 4200, q: 2 })
+    return 0.45
+  },
   'espiral:gira': (s) => {
     sopro(s, { ataque: 0.04, dur: 0.15, vol: 0.4, freq: 480, ate: 1600, q: 2.2 })
     return 0.25

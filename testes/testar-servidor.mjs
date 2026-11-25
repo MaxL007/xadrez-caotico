@@ -692,6 +692,25 @@ try {
   anaVestida.fechar()
   biaVendo.fechar()
 
+  // =================== os avisos com o jogo fechado (Web Push) ===================
+  // no simulador não há chaves do VAPID: a inscrição é guardada, mas nenhum aviso sai (ver testes/testar-push.mjs)
+  const chaveDoAparelho = 'B' + 'A'.repeat(86)
+  const inscricaoValida = { endpoint: 'https://fcm.googleapis.com/fcm/send/teste-do-servidor', p256dh: Buffer.from([4, ...Array(64).fill(7)]).toString('base64url'), auth: Buffer.alloc(16, 9).toString('base64url'), idioma: 'en' }
+  conferir('sem as chaves do VAPID, o servidor diz que não há chave de avisos', (await api('GET', '/push/chave')).json?.chave === null)
+  conferir('sem sessão não liga os avisos', (await api('POST', '/push', { corpo: inscricaoValida })).status === 401)
+  conferir('liga os avisos de um aparelho', (await api('POST', '/push', { token: ana.token, corpo: inscricaoValida })).status === 200)
+  conferir('a inscrição fica guardada, no idioma do aparelho', consultarBanco("SELECT idioma FROM inscricoes_push WHERE endpoint = 'https://fcm.googleapis.com/fcm/send/teste-do-servidor'")[0]?.idioma === 'en')
+  for (const [nome, corpo] of [
+    ['endereço que não é de um serviço de push', { ...inscricaoValida, endpoint: 'https://site-malicioso.example/coleta' }],
+    ['endereço sem https', { ...inscricaoValida, endpoint: 'http://fcm.googleapis.com/fcm/send/x' }],
+    ['chave do aparelho com tamanho errado', { ...inscricaoValida, p256dh: chaveDoAparelho.slice(0, 20) }],
+    ['segredo com tamanho errado', { ...inscricaoValida, auth: 'AAAA' }],
+  ]) {
+    conferir(`avisos recusados: ${nome}`, (await api('POST', '/push', { token: ana.token, corpo })).status === 422)
+  }
+  conferir('desliga os avisos do aparelho', (await api('POST', '/push/sair', { token: ana.token, corpo: { endpoint: inscricaoValida.endpoint } })).status === 200)
+  conferir('desligado, o aparelho sai da lista', consultarBanco("SELECT COUNT(*) AS n FROM inscricoes_push WHERE endpoint = 'https://fcm.googleapis.com/fcm/send/teste-do-servidor'")[0]?.n === 0)
+
   // =================== conquistas e óticoins ===================
   const receber = (ids, token = ana.token) => api('POST', '/conquistas/receber', { token, corpo: { ids } })
   conferir('sem sessão não vê conquistas', (await api('GET', '/conquistas')).status === 401)

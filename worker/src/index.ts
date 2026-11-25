@@ -27,6 +27,7 @@ import personalizacao from '../../src/catalogos/personalizacao.json'
 import conquistas from '../../src/catalogos/conquistas.json'
 
 export { Sala } from './sala'
+import { avisar, deBase64Url, enderecoDePushValido, idiomaValido, type Acontecimento } from './push'
 
 export interface Ambiente {
   DB: D1Database
@@ -37,6 +38,10 @@ export interface Ambiente {
   LIMITE_CONTAS?: string
   /** Só no simulador (.dev.vars): o relógio da blitz entre pessoas anda tantas vezes mais depressa, pros testes. */
   ACELERAR_RELOGIO?: string
+  /** As chaves das notificações com o jogo fechado (VAPID): a pública em base64url, a privada em JWK. Sem elas (o
+   * simulador), os avisos não saem. */
+  VAPID_PUBLICA?: string
+  VAPID_PRIVADA?: string
 }
 
 const LIMITE_CORPO = 256 * 1024
@@ -338,6 +343,7 @@ async function convidarAmigo(pedido: Request, env: Ambiente) {
     return responder({ ...jogadorPublico(alvo), status: 'aceita' })
   }
   await env.DB.prepare("INSERT INTO amizades (solicitante_id, destinatario_id, status, criada_em) VALUES (?1, ?2, 'pendente', ?3) ON CONFLICT DO NOTHING").bind(usuario.id, alvo.id, Date.now()).run()
+  await avisarSemDemora(env, alvo.id, { tipo: 'pedido-amizade', amigo: usuario.nome })
   return responder({ ...jogadorPublico(alvo), status: 'pendente' }, 201)
 }
 
@@ -946,6 +952,7 @@ async function abrirPartidaAmistosa(
     .bind(codigo, usuario.id, brancas.id, pretas.id, brancas.nome, pretas.nome, ritmo, agora)
     .run()
   await stubDaSala(env, codigo).criar(codigo, brancas, pretas, minhaCor, { ritmo })
+  await avisarSemDemora(env, convidado.id, { tipo: 'convite-partida', codigo, amigo: usuario.nome })
   return { codigo, cor: minhaCor, nova: true }
 }
 
@@ -1150,6 +1157,8 @@ async function procurarAdversario(env: Ambiente, usuario: Usuario, ritmo: Ritmo)
       ).bind(codigo, usuario.id, brancas.id, pretas.id, brancas.nome, pretas.nome, ritmo, agora),
       env.DB.prepare('UPDATE fila SET sala_codigo = ?1 WHERE sala_codigo = ?2').bind(codigo, reserva),
     ])
+    // quem esperava na fila pode ter saído do jogo: fica sabendo que a partida começou
+    await avisarSemDemora(env, outro.id, { tipo: 'adversario-achado', codigo, adversario: usuario.nome })
   } catch (erro) {
     // a sala não nasceu: os dois voltam a procurar
     await env.DB.prepare('UPDATE fila SET sala_codigo = NULL WHERE sala_codigo = ?1').bind(reserva).run()
@@ -1293,6 +1302,57 @@ async function receberErro(pedido: Request, env: Ambiente) {
   return responder({ ok: true })
 }
 
+// --- notificações com o jogo fechado (ver push.ts) -----------------------------------------
+/** Os aparelhos com avisos de uma pessoa (o celular, o computador, o tablet). */
+const APARELHOS_COM_AVISO_POR_PESSOA = 10
+/** O quanto um aviso pode segurar a resposta: o serviço de push lento não trava o convite. */
+const AVISO_ESPERA_MS = 1500
+
+/** Manda o aviso sem deixar a rota esperar mais que AVISO_ESPERA_MS (e sem nunca falhar por causa dele). */
+async function avisarSemDemora(env: Ambiente, usuarioId: string, acontecimento: Acontecimento) {
+  await Promise.race([avisar(env, usuarioId, acontecimento), new Promise((pronto) => setTimeout(pronto, AVISO_ESPERA_MS))])
+}
+
+/** Liga os avisos neste aparelho: guarda o endereço do serviço de push e as chaves dele (as de outra conta, que usava o
+ * mesmo aparelho, passam pra esta). */
+async function inscreverNoPush(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { endpoint, p256dh, auth, idioma } = await lerCorpo<{ endpoint?: unknown; p256dh?: unknown; auth?: unknown; idioma?: unknown }>(pedido)
+  if (!enderecoDePushValido(endpoint)) throw new Falha(422, 'endereco-invalido')
+  const chaveValida = (valor: unknown, tamanho: number): valor is string => {
+    if (typeof valor !== 'string' || valor.length > 200 || !/^[A-Za-z0-9_-]+$/.test(valor)) return false
+    try {
+      const bytes = deBase64Url(valor)
+      return bytes.length === tamanho && (tamanho !== 65 || bytes[0] === 4)
+    } catch {
+      return false
+    }
+  }
+  if (!chaveValida(p256dh, 65) || !chaveValida(auth, 16)) throw new Falha(422, 'chaves-invalidas')
+  await env.DB.prepare(
+    `INSERT INTO inscricoes_push (endpoint, usuario_id, p256dh, auth, idioma, criada_em) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+     ON CONFLICT(endpoint) DO UPDATE SET usuario_id = ?2, p256dh = ?3, auth = ?4, idioma = ?5`,
+  )
+    .bind(endpoint, usuario.id, p256dh, auth, idiomaValido(idioma), Date.now())
+    .run()
+  // no máximo uns aparelhos por pessoa: os mais antigos saem
+  await env.DB.prepare(
+    `DELETE FROM inscricoes_push WHERE usuario_id = ?1 AND endpoint NOT IN
+       (SELECT endpoint FROM inscricoes_push WHERE usuario_id = ?1 ORDER BY criada_em DESC LIMIT ?2)`,
+  )
+    .bind(usuario.id, APARELHOS_COM_AVISO_POR_PESSOA)
+    .run()
+  return responder({ ok: true })
+}
+
+/** Desliga os avisos neste aparelho (também ao sair da conta). */
+async function sairDoPush(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { endpoint } = await lerCorpo<{ endpoint?: unknown }>(pedido)
+  if (typeof endpoint === 'string') await env.DB.prepare('DELETE FROM inscricoes_push WHERE endpoint = ?1 AND usuario_id = ?2').bind(endpoint, usuario.id).run()
+  return responder({ ok: true })
+}
+
 // --- rotas -------------------------------------------------------------------------------
 async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Response> {
   const { pathname: caminho } = url
@@ -1337,6 +1397,9 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (convite && metodo === 'GET') return verConvite(pedido, env, convite[1])
   if (amigo && metodo === 'GET' && !amigo[2]) return verPerfil(pedido, env, amigo[1])
   if (amigo && metodo === 'POST' && amigo[2]) return removerAmigo(pedido, env, amigo[1])
+  if (metodo === 'GET' && caminho === '/push/chave') return responder({ chave: env.VAPID_PUBLICA ?? null })
+  if (metodo === 'POST' && caminho === '/push') return inscreverNoPush(pedido, env)
+  if (metodo === 'POST' && caminho === '/push/sair') return sairDoPush(pedido, env)
   if (metodo === 'POST' && caminho === '/fila') return entrarNaFila(pedido, env)
   if (metodo === 'GET' && caminho === '/fila') return verFila(pedido, env)
   if (metodo === 'POST' && caminho === '/fila/sair') return sairDaFila(pedido, env)

@@ -274,15 +274,17 @@ function empurrar(c: CapturaComHabilidade) {
   })
 }
 
-/** O Espiral Absoluto (peão, com ou sem arma; a ideia e a descrição são do usuário): o pé acende, o chute pra cima no
- * queixo joga a vítima bem alto, o peão pula atrás e a agarra, os dois caem girando numa espiral e, perto do chão, o
- * peão solta e cai meio agachado enquanto a vítima bate de costas no chão, que cede numa cratera (ver
- * espiralAbsoluto.ts e cratera.ts). */
+/** O Espiral Absoluto (peão, com ou sem arma; a ideia, a descrição e o vídeo de referência são do usuário): o pé acende,
+ * o chute pra cima no queixo joga a vítima bem alto, o peão sobe atrás dela com um rastro de luz e a abraça pelas
+ * costas; lá no alto os dois viram de cabeça pra baixo e as fitas de luz enrolam a vítima; caem como uma broca num
+ * caminho em espiral e, perto do chão, o peão solta, dá um mortal e cai meio agachado, enquanto a vítima bate de cabeça,
+ * fica fincada, tomba de costas e o chão cede numa cratera (ver espiralAbsoluto.ts e cratera.ts). */
 function espiral(c: CapturaComHabilidade) {
   const cor = corDoBrilho(c)
   const tamanho = c.vitima.scale.x
   const tipoVitima = String(c.vitima.userData.tipo ?? 'p')
-  espiralAbsoluto(c.atacante, c.vitima, c.cena, c.vigente, {
+  const massa = massaDaPeca(tipoVitima)
+  espiralAbsoluto(c.atacante, c.vitima, c.cena, cor, c.vigente, {
     aoBrilhar: (pe) => brilhoDeAnime(c, pe, 0.3),
     aoChutar: (queixo, direcao) => {
       tocarSom('espiral:chute')
@@ -298,34 +300,40 @@ function espiral(c: CapturaComHabilidade) {
       tocarSom('espiral:salta')
       poeiraDaPancada(c.cena, pes.x, pes.z)
     },
+    // o peão subindo: o rastro de luz (a mudança pedida: no vídeo ele só aparece atrás)
+    aoRastroDoSalto: (ponto) => rastroDeBrilho(c.cena, ponto, cor, 0.22 * c.atacante.scale.x, 300),
     aoAgarrar: (ponto) => {
       tocarSom('espiral:agarra')
       faisca(c.cena, ponto, cor, 0.45 * c.atacante.scale.x, 200)
+    },
+    aoEnrolar: (ponto) => {
+      tocarSom('espiral:enrola')
+      faisca(c.cena, ponto, cor, 0.35 * tamanho, 260)
     },
     aoComecarAEspiral: (ponto) => impulsoDeAnime(c, ponto, 0.85),
     aoGirar: (volta) => tocarSom('espiral:gira', 0, 1 + 0.04 * volta),
     // o rastro da espiral: a cor da facção, demorado, pra ficar o desenho do caminho no ar
     aoRastro: (ponto) => rastroDeBrilho(c.cena, ponto, cor, 0.26 * tamanho, 420),
     aoSoltar: () => tocarSom('anime:estala', 0, 0.75),
-    aoColidir: ({ meio, rumo, comprimento, meiaGrossura }) => {
-      // a pancada pesa o que a peça pesa, como no Puxão: rachaduras, tremor e cratera crescem com a massa dela
-      const massa = massaDaPeca(tipoVitima)
+    // a cabeça bate no chão: o golpe que decide, com o peso da peça
+    aoColidir: (ponto) => {
       tocarSom('espiral:colide')
-      impactoDeAnime(c, meio.clone().setY(0.1))
-      animarImpacto(c.cena, meio.x, meio.z)
-      ondaDaMarretada(c.cena, meio.x, meio.z, cor)
-      rachadurasNoTabuleiro(c.cena, meio.x, meio.z, 1.1 + 0.09 * massa, 2200, 0.001)
-      poeiraDaPancada(c.cena, meio.x, meio.z)
+      impactoDeAnime(c, ponto.clone().setY(0.1))
+      animarImpacto(c.cena, ponto.x, ponto.z)
+      ondaDaMarretada(c.cena, ponto.x, ponto.z, cor)
+      rachadurasNoTabuleiro(c.cena, ponto.x, ponto.z, 1.1 + 0.09 * massa, 2200, 0.001)
+      poeiraDaPancada(c.cena, ponto.x, ponto.z)
       tremerTabuleiro(c.cena, 0.1 + 0.013 * massa)
-      const ms = c.sentirImpacto(1.3, false)
-      depoisDoCongelamento(ms, () => {
-        if (!c.vigente()) return
-        const cratera = abrirCratera(c.cena, c.vitima, meio, rumo, comprimento, massa)
-        afundarNaCratera(c.vitima, cratera, meio, meiaGrossura, () => {
-          window.setTimeout(() => cratera.fechar(() => c.vigente() && c.fim()), 220)
-        })
-      })
+      c.sentirImpacto(1.3, false)
       c.comemorarAliadas()
+    },
+    // tombou de costas: o chão cede numa cratera do tamanho do peso dela, como no Puxão
+    aoDeitar: ({ meio, rumo, comprimento, meiaGrossura }) => {
+      if (!c.vigente()) return
+      const cratera = abrirCratera(c.cena, c.vitima, meio, rumo, comprimento, massa)
+      afundarNaCratera(c.vitima, cratera, meio, meiaGrossura, () => {
+        window.setTimeout(() => cratera.fechar(() => c.vigente() && c.fim()), 220)
+      })
     },
     aoPousar: (onde) => {
       tocarSom('espiral:pouso')

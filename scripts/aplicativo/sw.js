@@ -84,3 +84,52 @@ self.addEventListener('fetch', (evento) => {
       .then((guardada) => guardada ?? fetch(pedido)),
   )
 })
+
+// --- os avisos com o jogo fechado (Web Push; ver worker/src/push.ts) ----------------------------------------------------
+// O servidor manda o aviso cifrado pro serviço de push do navegador, que acorda este service worker mesmo com o jogo
+// fechado: ele mostra a notificação. Tocar nela abre o jogo (ou traz pra frente a janela que já estava aberta) no
+// endereço do aviso: a partida (?sala=) ou os Amigos (?amigos=1).
+self.addEventListener('push', (evento) => {
+  let aviso = {}
+  try {
+    aviso = evento.data ? evento.data.json() : {}
+  } catch {
+    aviso = { titulo: 'Xadrez Caótico', texto: evento.data ? evento.data.text() : '' }
+  }
+  evento.waitUntil(
+    (async () => {
+      // com o jogo aberto e à vista, quem cuida é a própria tela (a partida já mostra o lance): sem aviso repetido
+      const janelas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      if (janelas.some((janela) => janela.visibilityState === 'visible' && janela.focused)) return
+      await self.registration.showNotification(aviso.titulo || 'Xadrez Caótico', {
+        body: aviso.texto || '',
+        tag: aviso.etiqueta || 'xadrez',
+        renotify: true,
+        icon: enderecoDe('icones/icone-192.png'),
+        badge: enderecoDe('icones/icone-mascara-512.png'),
+        data: { url: enderecoDe(aviso.url || '') },
+      })
+    })(),
+  )
+})
+
+self.addEventListener('notificationclick', (evento) => {
+  evento.notification.close()
+  const destino = evento.notification.data && evento.notification.data.url ? evento.notification.data.url : ESCOPO
+  evento.waitUntil(
+    (async () => {
+      const janelas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      const aberta = janelas.find((janela) => janela.url.startsWith(ESCOPO))
+      if (aberta) {
+        // a janela já aberta vai pro endereço do aviso (a tela lê o ?sala= e o ?amigos=)
+        await aberta.focus()
+        aberta.postMessage({ tipo: 'abrir-aviso', url: destino })
+        return
+      }
+      await self.clients.openWindow(destino)
+    })(),
+  )
+})
+
+// o navegador trocou a inscrição (as chaves venceram): a próxima abertura do jogo inscreve de novo
+self.addEventListener('pushsubscriptionchange', () => {})
