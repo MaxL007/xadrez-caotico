@@ -55,7 +55,9 @@ export interface Particula {
 export function animarParticulas(cena: THREE.Object3D, particulas: Particula[]) {
   let anterior = performance.now()
   function passo(agora: number) {
-    const dt = (agora - anterior) / 1000
+    // no máximo 1/20 s por passo: depois de uma travada (o celular fraco, a volta de outro aplicativo) as partículas
+    // não saltam pra longe
+    const dt = Math.min(0.05, (agora - anterior) / 1000)
     anterior = agora
     for (let i = particulas.length - 1; i >= 0; i--) {
       const p = particulas[i]

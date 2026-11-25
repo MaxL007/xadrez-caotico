@@ -29,7 +29,7 @@ import { HABILIDADES, habilidadesQuePodem } from '../../conta/habilidades'
 import { antecipar, areaDaLuta, continuarDoGolpe, depoisDoCongelamento, pesoDoGolpe, sentirImpacto, type SensacaoDaPartida, tomDaTroca } from '../sensacao/golpeQuePesa'
 import { materiaisDaPeca, materiaisPorFaccao, materialCoroa } from '../pecas/materiais'
 import { type EspadaRPG, guardarEspadaRPG, modelosRPG, mostrarEspadaRPG, novaSequenciaRPG, sacarEspadaRPG, sequenciaRPGValida, tocarClipeRPGUmaVez, tocarGolpeRPG } from '../pecas/modelosRPG'
-import { armaDoPeaoNoTabuleiro, vestimenta } from '../pecas/vestimenta'
+import { armaDoPeaoNoTabuleiro, escolhasDaCor } from '../pecas/vestimenta'
 import type { Andamento } from './andamento'
 import type { CenaDoTabuleiro } from '../cena/montarCena'
 
@@ -50,12 +50,13 @@ export interface DependenciasDoLance {
   sensacao: SensacaoDaPartida
 }
 
-/** A habilidade especial com que a peça captura, ou null: equipada por quem joga, desta peça, e com a arma que ela pede
- * na mão (o servidor só deixa equipar quem comprou). */
+/** A habilidade especial com que a peça captura, ou null: equipada pelo dono dela (quem joga ou, na partida contra
+ * outra pessoa, o adversário), desta peça, e com a arma que ela pede na mão (o servidor só deixa equipar quem comprou).
+ * A escolhida vem do clique de quem joga ou, no lance do adversário, do servidor. */
 function habilidadeDaCaptura(atacante: THREE.Object3D, tipo: string, cor: 'w' | 'b', ehRPG: boolean, arma: string, escolhida?: string): string | null {
-  if (!ehRPG || cor !== vestimenta.cor) return null
+  if (!ehRPG) return null
   const naMao = tipo === 'p' ? (armaDoPeaoNoTabuleiro(atacante) ?? 'nenhuma') : arma
-  const podem = habilidadesQuePodem(vestimenta.escolhas[tipo] ?? {}, tipo, naMao)
+  const podem = habilidadesQuePodem(escolhasDaCor(cor)[tipo] ?? {}, tipo, naMao)
   // a escolhida na hora da captura; sem escolha (um bloco só, ou a prévia), a do primeiro bloco que pode
   if (escolhida && podem.includes(escolhida)) return escolhida
   return podem[0] ?? null
@@ -222,7 +223,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         desfazerEquipamentos(meshMovendo, vigente)
         const tipoNovo = (lance.promotion ?? 'q') as Peca
         const corDoBrilho = materiaisPorFaccao[lance.color].brilho.color
-        const escolhas = lance.color === vestimenta.cor ? vestimenta.escolhas : {}
+        const escolhas = escolhasDaCor(lance.color)
         const vestidas = partesVestidas(tipoNovo, escolhas)
         const materiais = materiaisDaPeca(lance.color)
         const destino = squareToPosPeca(casaDestino)

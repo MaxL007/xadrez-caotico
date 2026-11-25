@@ -20,13 +20,30 @@ export interface Qualidade {
   quadrosPorSegundo: number
   /** Antisserrilhado e o filtro que deixa a madeira nítida de longe. Valem ao abrir o jogo. */
   acabamento: boolean
+  /** O filtro das texturas sem o acabamento (1, nenhum): deixa a madeira nítida vista de lado, quase de graça. */
+  filtroLeve?: number
+  /** A resolução se ajusta sozinha ao aparelho: baixa quando os quadros atrasam e volta quando sobra folga. */
+  resolucaoDinamica?: boolean
 }
+
+/** Na baixa, o máximo de pixels desenhados (perto de 1280×1000): num tablet de tela grande a nitidez do celular
+ * custaria pixels demais. */
+const PIXELS_DA_BAIXA = 1_300_000
 
 /** O que cada qualidade do jogo muda. */
 export const QUALIDADES: Record<QualidadeXadrez, Qualidade> = {
-  // a leve, pra celular e computador fracos: abaixo da resolução da tela, sem sombras, sem antisserrilhado e a 30
-  // quadros por segundo. A imagem fica mais simples, mas o aparelho aguenta
-  baixa: { resolucao: () => Math.min(window.devicePixelRatio || 1, 1.25) * 0.8, sombras: 0, quadrosPorSegundo: 30, acabamento: false },
+  // a leve, pra celular e computador fracos: sem sombras, sem antisserrilhado e a 30 quadros por segundo. Antes ela
+  // desenhava abaixo da tela (0,8 × até 1,25): num celular de tela densa a imagem era esticada 3 vezes e ficava
+  // embaçada (visto pelo usuário). Agora vai até 1,35 vez a tela no celular e a própria tela no computador, com um teto
+  // de pixels, o filtro leve nas texturas e a resolução dinâmica, que segura a fluidez no aparelho que não aguentar
+  baixa: {
+    resolucao: (largura, altura) => Math.min(Math.min(window.devicePixelRatio || 1, 1.35), Math.sqrt(PIXELS_DA_BAIXA / Math.max(largura * altura, 1))),
+    sombras: 0,
+    quadrosPorSegundo: 30,
+    acabamento: false,
+    filtroLeve: 4,
+    resolucaoDinamica: true,
+  },
   // o padrão: até 1,6 vez a tela (no celular, que tem tela densa, bem menos que Full HD), com sombras médias e nunca
   // abaixo da resolução da tela no computador
   media: {
@@ -83,7 +100,9 @@ export function montarCena(container: HTMLDivElement, qualidade: QualidadeXadrez
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.05
   container.appendChild(renderer.domElement)
-  const anisotropia = qualidadeDeInicio.acabamento ? renderer.capabilities.getMaxAnisotropy() : 1
+  const anisotropia = qualidadeDeInicio.acabamento
+    ? renderer.capabilities.getMaxAnisotropy()
+    : Math.min(qualidadeDeInicio.filtroLeve ?? 1, renderer.capabilities.getMaxAnisotropy())
 
   // reflexo de ambiente (um "estúdio" gerado na hora, sem imagem externa): é o que faz o metal das
   // armaduras, o ouro das coroas e o verniz do tabuleiro brilharem de verdade

@@ -22,7 +22,7 @@ import { passarQuadro } from './sensacao/relogioDoJogo'
 import { aplicarInercia, desfazerInercia } from './sensacao/inercia'
 import { Vinheta } from './Vinheta'
 import { abafarAmbiente, ambienteDoTabuleiro, configurarSom, definirTomDosGolpes, destravarSom, tocarSom } from '../som/sons'
-import { type QualidadeXadrez, useConfigXadrez } from '../jogo/configXadrez'
+import { painelDesenhando, type QualidadeXadrez, useConfigXadrez } from '../jogo/configXadrez'
 import { type ChaveTexto, tradutor, type Traduzir } from '../textos/idiomas'
 import { MenuXadrez } from '../telas/MenuXadrez'
 import { listPartidas, novaPartida, type PartidaXadrez, resultadoDaPartida, salvarPartida } from '../dados/xadrezRepo'
@@ -310,12 +310,20 @@ export function ChessBoard3D() {
     const andamento = andamentoNovo()
     /** Na prévia da Loja, o que as peças vestem (o item no lugar); fora dela, null. */
     let escolhasDaPrevia: Record<string, Record<string, string>> | null = null
+    /** A resolução dinâmica da qualidade baixa (ver medirQuadro): o fator sobre a resolução e a janela de quadros medida. */
+    const FATOR_MINIMO = 0.7
+    const QUADRO_LENTO_MS = 1000 / 24
+    const QUADRO_FOLGADO_MS = 1000 / 29
+    let fatorDinamico = 1
+    let janela = { quadros: 0, tempo: 0 }
+    let janelasFolgadas = 0
     function novoTabuleiro() {
       resolverPromocaoRef.current?.(null)
       resolverHabilidadeRef.current?.(null)
       andamento.geracao++
       andamento.lancesEmAndamento = 0
       andamento.filaDaSala = []
+      andamento.habilidadesDaSala.clear()
       andamento.animandoDaSala = false
       andamento.ultimoPedidoDeEmpate = -1
       andamento.capturasSeguidas = 0
@@ -455,7 +463,9 @@ export function ChessBoard3D() {
     /** `porParteEm`: a peça nova dessa casa sai com cada equipamento numa malha própria (a da promoção, que recebe
      * os equipamentos voando). */
     function sincronizarPecas(recriar = false, porParteEm?: string) {
-      definirVestimenta({ cor: corHumanoRef.current, escolhas: escolhasDaPrevia ?? vestimentaDeTeste ?? personalizacaoAtual().escolhas })
+      // na partida contra outra pessoa, as peças dela vestem o que ela comprou e equipou (o servidor manda)
+      const adversario = escolhasDaPrevia ? {} : (salaRef.current?.estado?.vestimentaDoAdversario ?? {})
+      definirVestimenta({ cor: corHumanoRef.current, escolhas: escolhasDaPrevia ?? vestimentaDeTeste ?? personalizacaoAtual().escolhas, adversario })
       if (recriar) {
         // inclusive as que estavam caindo/sumindo de uma captura em andamento
         piecesGroup.clear()
@@ -864,11 +874,11 @@ export function ChessBoard3D() {
           if (salaRef.current) online.processarFilaDaSala()
           else if (!chess.isGameOver()) maquina.jogarLanceDaMaquina()
         })
-        conexaoDaSala?.enviarLance(numeroDoLance, origem, destino, promotion)
+        conexaoDaSala?.enviarLance(numeroDoLance, origem, destino, promotion, habilidade)
       }
       // a captura de uma peça com duas ou mais habilidades: o lance só sai depois de escolher qual usar. Cancelando,
-      // a peça fica onde está e a vez continua de quem ia jogar. A escolha é só de quem joga: o adversário vê o golpe
-      // de sempre, porque as peças dele não estão vestidas com o que esta conta escolheu
+      // a peça fica onde está e a vez continua de quem ia jogar. Na partida contra outra pessoa a escolha vai junto
+      // com o lance, e o adversário vê a mesma habilidade (as peças desta conta estão vestidas na tela dele)
       const escolherHabilidadeEJogar = (promotion?: PecaPromocao) => {
         const lance = chess.moves({ square: origem, verbose: true }).find((m) => m.to === destino)
         const mesh = pieceMeshBySquare.get(origem)
@@ -877,7 +887,9 @@ export function ChessBoard3D() {
             ? habilidadesQuePodem(vestimenta.escolhas[lance.piece] ?? {}, lance.piece, (mesh.userData.arma as string | undefined) ?? 'nenhuma')
             : []
         if (opcoes.length < 2) {
-          jogar(promotion)
+          // com uma só, ela vai no lance do mesmo jeito: o adversário vê a habilidade mesmo que esta conta a tenha
+          // equipado depois de entrar na partida
+          jogar(promotion, opcoes[0])
           return
         }
         resolverHabilidadeRef.current = (id) => {
@@ -1137,12 +1149,46 @@ export function ChessBoard3D() {
       if (montado) sincronizarPecas()
     })
 
-    /** Resolução que vale agora, pela qualidade escolhida. */
+    // a resolução dinâmica (qualidade baixa): a cada janela de quadros, se o aparelho não segura ~24 por segundo a
+    // resolução desce um degrau (até 70%); com folga por várias janelas seguidas, sobe de volta. Assim o celular fraco
+    // fica nítido quando dá e fluido quando aperta (uma luta com muitos efeitos), sem a pessoa mexer em nada
+    // (o fator e as janelas ficam no começo do efeito: a vista pode pedir a resolução a qualquer momento)
+    function medirQuadro(intervalo: number) {
+      if (!QUALIDADES[configRef.current.qualidade].resolucaoDinamica) return
+      // a aba em segundo plano (ou a página travada um instante) não conta
+      if (intervalo <= 0 || intervalo > 250) return
+      janela.quadros++
+      janela.tempo += intervalo
+      if (janela.quadros < 45) return
+      const media = janela.tempo / janela.quadros
+      janela = { quadros: 0, tempo: 0 }
+      let novo = fatorDinamico
+      if (media > QUADRO_LENTO_MS) {
+        janelasFolgadas = 0
+        novo = Math.max(FATOR_MINIMO, fatorDinamico - 0.1)
+      } else if (media < QUADRO_FOLGADO_MS && ++janelasFolgadas >= 3) {
+        janelasFolgadas = 0
+        novo = Math.min(1, fatorDinamico + 0.1)
+      }
+      if (Math.abs(novo - fatorDinamico) < 0.001) return
+      fatorDinamico = novo
+      // só a resolução: o onResize da vista também reenquadra a câmera, o que não cabe no meio da partida
+      const el = containerRef.current
+      if (!el || !el.clientWidth || !el.clientHeight) return
+      renderer.setPixelRatio(resolucaoDoJogo(el.clientWidth, el.clientHeight))
+      renderer.setSize(el.clientWidth, el.clientHeight, false)
+    }
+
+    /** Resolução que vale agora, pela qualidade escolhida (e, na baixa, o ajuste dinâmico ao aparelho). */
     function resolucaoDoJogo(largura: number, altura: number): number {
-      return QUALIDADES[configRef.current.qualidade].resolucao(largura, altura)
+      const qualidade = QUALIDADES[configRef.current.qualidade]
+      return qualidade.resolucao(largura, altura) * (qualidade.resolucaoDinamica ? fatorDinamico : 1)
     }
 
     function aplicarQualidade(qualidade: QualidadeXadrez) {
+      fatorDinamico = 1
+      janela = { quadros: 0, tempo: 0 }
+      janelasFolgadas = 0
       const { sombras } = QUALIDADES[qualidade]
       dirLight.castShadow = sombras > 0
       if (sombras > 0 && dirLight.shadow.mapSize.x !== sombras) {
@@ -1160,9 +1206,14 @@ export function ChessBoard3D() {
       frameId = requestAnimationFrame(animate)
       // na qualidade leve, no máximo 30 quadros por segundo: metade do trabalho pro aparelho fraco. O tempo que passou
       // entra todo no quadro seguinte, então as animações andam no mesmo ritmo
-      const teto = QUALIDADES[configRef.current.qualidade].quadrosPorSegundo
+      // com a Loja ou a Personalização desenhando por cima, o tabuleiro é só o fundo: 20 por segundo bastam, e a placa
+      // de vídeo fica pro painel
+      const atrasDoPainel = painelDesenhando()
+      const teto = atrasDoPainel ? 20 : QUALIDADES[configRef.current.qualidade].quadrosPorSegundo
       const agoraDoQuadro = performance.now()
       if (teto && agoraDoQuadro - ultimoQuadro < 1000 / teto - 2) return
+      // o ritmo reduzido de propósito não conta como aparelho lento
+      if (!atrasDoPainel) medirQuadro(agoraDoQuadro - ultimoQuadro)
       ultimoQuadro = agoraDoQuadro
       const delta = relogio.getDelta()
       const agora = performance.now()

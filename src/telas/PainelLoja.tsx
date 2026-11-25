@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { ChaveTexto, Traduzir } from '../textos/idiomas'
-import { desenhoDosPaineis } from '../jogo/configXadrez'
+import { desenhoDosPaineis, ritmoDoPainel } from '../jogo/configXadrez'
 import { urlDoAvatar } from '../conta/aparencia'
 import { acessoDaOpcao, blocoLiberado, comprarItem, NA_LOJA, opcaoLiberada, PECAS, usePersonalizacao, type Peca } from '../conta/personalizacao'
 import { CONQUISTAS, type SituacaoDasConquistas } from '../conta/conquistas'
@@ -110,9 +110,11 @@ function usePalco(raiz: React.RefObject<HTMLDivElement | null>, montarExpositor:
     }
 
     const medida = { largura: 0, altura: 0, topo: -1 }
+    const desenhaAgora = ritmoDoPainel()
     let quadro = 0
     function animar() {
       quadro = requestAnimationFrame(animar)
+      if (!desenhaAgora(caixa!)) return
       // o canvas acompanha a faixa da Loja que aparece dentro de quem rola
       const fora = caixa!.getBoundingClientRect()
       const janela = rolagem?.getBoundingClientRect()

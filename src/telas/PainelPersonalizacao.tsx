@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { ChaveTexto, Traduzir } from '../textos/idiomas'
-import { desenhoDosPaineis } from '../jogo/configXadrez'
+import { desenhoDosPaineis, ritmoDoPainel } from '../jogo/configXadrez'
 import type { VitrineDaPeca } from '../tabuleiro/pecas/equipamentos'
 import { CONQUISTAS } from '../conta/conquistas'
 import { acessoDaOpcao, blocoLiberado, escolhaDaParte, escolherOpcao, opcaoLiberada, partesDaPeca, PECAS, usePersonalizacao, type ParteDaPeca, type Peca } from '../conta/personalizacao'
@@ -152,10 +152,11 @@ function Vitrine({ t, peca, escolhas, selecionada, onSelecionar, montarVitrine, 
     const relogio = new THREE.Clock()
     const ponto = new THREE.Vector3()
     const naTela = new THREE.Vector3()
+    const desenhaAgora = ritmoDoPainel()
     let quadro = 0
     function animar() {
       quadro = requestAnimationFrame(animar)
-      if (!vitrine) return
+      if (!vitrine || !desenhaAgora(caixa!)) return
       vitrine.atualizar(Math.min(relogio.getDelta(), 0.1))
       vitrine.grupo.rotation.y = giroRef.current
       const largura = caixa!.clientWidth

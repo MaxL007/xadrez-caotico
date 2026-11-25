@@ -4,7 +4,7 @@ import { criarContorno } from '../casas'
 import { CONFIG_BRACO_DIR, CONFIG_BRACO_ESQ, CONFIG_PERNA_DIR, CONFIG_PERNA_ESQ, criarMembro, ESCALA_MODELO_RPG, ESCALA_POR_TIPO, geometriasDoTipo, type MembrosPersonagem, POSE_BASE_NEUTRA, type PoseBaseMembros } from './geometricas'
 import { geoCaboEspada, materiaisDaPeca, materialCaboEspada, materialDaParte } from './materiais'
 import { buildPecaRPG, modelosRPG } from './modelosRPG'
-import { assinaturaDaVestimenta, vestimenta } from './vestimenta'
+import { assinaturaDaVestimenta, escolhasDaCor } from './vestimenta'
 
 // Monta a peça de uma casa: o modelo RPG vestido ou, sem ele, a geométrica.
 
@@ -17,8 +17,8 @@ export function buildPieceMesh(tipo: string, cor: 'w' | 'b', { porParte = false 
   const modeloRPG = modelosRPG[tipo]
   if (modeloRPG) {
     const grupo = buildPecaRPG(modeloRPG, cor)
-    // toda peça passa por aqui: sem escolha (o adversário, a máquina), fica sem arma
-    const escolhas = cor === vestimenta.cor ? vestimenta.escolhas[tipo] : undefined
+    // toda peça passa por aqui: sem escolha (a máquina), fica sem arma
+    const escolhas = escolhasDaCor(cor)[tipo]
     vestirPeca(grupo, tipo, escolhas ?? {}, materiaisDaPeca(cor), { porParte })
     grupo.userData.vestimenta = assinaturaDaVestimenta(tipo, cor)
     grupo.userData.tipo = tipo

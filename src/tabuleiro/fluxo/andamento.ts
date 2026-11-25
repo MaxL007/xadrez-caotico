@@ -9,6 +9,8 @@ export interface Andamento {
   lancesEmAndamento: number
   /** Lances do adversário que chegaram enquanto outra peça ainda andava. */
   filaDaSala: string[]
+  /** A habilidade de cada lance do adversário que a trouxe, pelo número do lance (0 é o 1º das brancas). */
+  habilidadesDaSala: Map<number, string>
   animandoDaSala: boolean
   /** Pra não disparar a comemoração de novo enquanto o fim continuar sendo a posição atual. */
   comemoracaoDisparada: boolean
@@ -22,6 +24,7 @@ export const andamentoNovo = (): Andamento => ({
   geracao: 0,
   lancesEmAndamento: 0,
   filaDaSala: [],
+  habilidadesDaSala: new Map(),
   animandoDaSala: false,
   comemoracaoDisparada: false,
   ultimoPedidoDeEmpate: -1,

@@ -1,7 +1,7 @@
 // A partida contra outra pessoa, do lado do tabuleiro: monta o tabuleiro com o que o servidor mandou, confere a cada
 // estado novo se está igual ao do servidor, anda com os lances do adversário um de cada vez (nunca por cima de outra
 // animação) e mostra o fim por desistência ou tempo. A conexão em si fica em useSalaOnline.
-import type { Chess } from 'chess.js'
+import type { Chess, Square } from 'chess.js'
 import type { EstadoDaSala, LanceDaSala, ResultadoDaSala } from '../../dados/salaAoVivo'
 import type { PartidaXadrez } from '../../dados/xadrezRepo'
 import type { FimDaPartida } from '../ResultadoDaPartida'
@@ -32,7 +32,7 @@ export interface DependenciasDaPartidaOnline {
   limparDestaques: () => void
   atualizarStatusTexto: () => void
   comemorarFimDaSala: (corVencedora: 'w' | 'b', motivo: string) => void
-  executarLanceComAnimacao: (entrada: string, aoTerminar: () => void) => void
+  executarLanceComAnimacao: (entrada: string | { from: Square; to: Square; promotion?: string; habilidade?: string }, aoTerminar: () => void) => void
 }
 
 export function criarPartidaOnline(dependencias: DependenciasDaPartidaOnline) {
@@ -67,7 +67,13 @@ export function criarPartidaOnline(dependencias: DependenciasDaPartidaOnline) {
     andamento.animandoDaSala = true
     // trava os cliques enquanto a peça do adversário anda
     vezDaMaquinaRef.current = true
-    executarLanceComAnimacao(san, () => {
+    // a habilidade que o adversário escolheu (comprada e equipada por ele): quem joga contra vê o mesmo golpe
+    const numero = chessRef.current.history().length
+    const habilidade = andamento.habilidadesDaSala.get(numero)
+    andamento.habilidadesDaSala.delete(numero)
+    const lance = habilidade ? chessRef.current.moves({ verbose: true }).find((m) => m.san === san) : undefined
+    const entrada = lance ? { from: lance.from as Square, to: lance.to as Square, promotion: lance.promotion, habilidade } : san
+    executarLanceComAnimacao(entrada, () => {
       andamento.animandoDaSala = false
       vezDaMaquinaRef.current = false
       atualizarStatusTexto()
@@ -103,7 +109,11 @@ export function criarPartidaOnline(dependencias: DependenciasDaPartidaOnline) {
   function receberEstadoDaSala(estado: EstadoDaSala) {
     const atual = salaRef.current
     if (!atual) return
+    // o adversário trocou o que veste (voltou à partida depois de mexer na Personalização): as peças dele se vestem
+    // de novo quando nenhuma estiver andando (o lance que termina também sincroniza)
+    const trocouAVestimenta = JSON.stringify(atual.estado?.vestimentaDoAdversario ?? {}) !== JSON.stringify(estado.vestimentaDoAdversario ?? {})
     atual.estado = estado
+    if (trocouAVestimenta && !andamento.animandoDaSala && andamento.lancesEmAndamento === 0) sincronizarPecas()
     const local = [...chessRef.current.history(), ...andamento.filaDaSala]
     const faltaUm = estado.lances.length === local.length + 1 && local.every((san, i) => san === estado.lances[i])
     if (faltaUm) {
@@ -121,6 +131,7 @@ export function criarPartidaOnline(dependencias: DependenciasDaPartidaOnline) {
     atual.estado = { ...atual.estado, empate: null, lances: [...atual.estado.lances.slice(0, lance.n), lance.san] }
     // o nosso próprio lance voltando: já está no tabuleiro desde o clique
     if (lance.n < chessRef.current.history().length + andamento.filaDaSala.length) return
+    if (lance.habilidade) andamento.habilidadesDaSala.set(lance.n, lance.habilidade)
     andamento.filaDaSala.push(lance.san)
     processarFilaDaSala()
   }

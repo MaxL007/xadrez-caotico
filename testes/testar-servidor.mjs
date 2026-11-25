@@ -663,6 +663,32 @@ try {
   conferir('e o Puxão Universal também', (await personalizar({ peca: 'q', parte: 'golpe', opcao: 'puxao' }, bia.token)).status === 403)
   conferir('tirar a habilidade qualquer um pode', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'nenhuma' }, bia.token)).status === 200)
 
+  // =================== o adversário vê o que a pessoa comprou ===================
+  // a Ana tem a Dempsey Roll no peão; a Bia, nada. Cada uma recebe o que a outra veste, e a habilidade escolhida na
+  // captura vai junto com o lance, conferida pelo servidor (pedido do usuário: quem não comprou também vê o golpe)
+  const salaVestida = (await api('POST', '/salas', { token: ana.token, corpo: { cor: 'w', amigo: idBia } })).json
+  await api('POST', `/salas/${salaVestida.codigo}/entrar`, { token: bia.token })
+  const anaVestida = await conectar(salaVestida.codigo, ana.token)
+  const biaVendo = await conectar(salaVestida.codigo, bia.token)
+  const estadoDaBia = await biaVendo.esperar((m) => m.t === 'estado')
+  conferir('a Bia recebe o que as peças da Ana vestem', estadoDaBia.vestimentaDoAdversario?.p?.golpe === 'dempsey' && estadoDaBia.vestimentaDoAdversario?.p?.arma === 'espada', JSON.stringify(estadoDaBia.vestimentaDoAdversario))
+  const estadoDaAna = await anaVestida.esperar((m) => m.t === 'estado')
+  conferir('a Ana não recebe a própria vestimenta como se fosse da Bia', !estadoDaAna.vestimentaDoAdversario?.p?.golpe, JSON.stringify(estadoDaAna.vestimentaDoAdversario))
+  anaVestida.enviar(lance('e2', 'e4', 0))
+  await biaVendo.esperar((m) => m.t === 'lance' && m.n === 0)
+  biaVendo.enviar(lance('d7', 'd5', 1))
+  await anaVestida.esperar((m) => m.t === 'lance' && m.n === 1)
+  anaVestida.enviar({ ...lance('e4', 'd5', 2), habilidade: 'dempsey' })
+  const capturaVista = await biaVendo.esperar((m) => m.t === 'lance' && m.n === 2)
+  conferir('a Bia vê a Dempsey Roll da Ana na captura', capturaVista.habilidade === 'dempsey', JSON.stringify(capturaVista))
+  biaVendo.enviar({ ...lance('d8', 'd5', 3), habilidade: 'puxao' })
+  const semComprar = await anaVestida.esperar((m) => m.t === 'lance' && m.n === 3)
+  conferir('habilidade que a peça não tem equipada não passa, mesmo chamando o servidor direto', semComprar.habilidade === null, JSON.stringify(semComprar))
+  anaVestida.enviar({ t: 'desistir' })
+  await biaVendo.esperar((m) => m.t === 'fim')
+  anaVestida.fechar()
+  biaVendo.fechar()
+
   // =================== conquistas e óticoins ===================
   const receber = (ids, token = ana.token) => api('POST', '/conquistas/receber', { token, corpo: { ids } })
   conferir('sem sessão não vê conquistas', (await api('GET', '/conquistas')).status === 401)

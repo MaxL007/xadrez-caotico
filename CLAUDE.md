@@ -272,8 +272,12 @@ As pastas de `src` são por função:
     das habilidades da peça, com o símbolo de placas (`emblemaDoBloco`).
   - Na captura (`tentarMover` no ChessBoard3D), com duas ou mais equipadas que podem sair (`habilidadesQuePodem`: a
     peça certa e a arma na mão), aparece "Qual habilidade usar?" antes do lance. A escolha vai em
-    `executarLanceComAnimacao({ ..., habilidade })`; sem escolha vale a do primeiro bloco que pode. É só de quem joga:
-    o adversário vê o golpe de sempre. Na promoção com captura, a peça da promoção vem antes.
+    `executarLanceComAnimacao({ ..., habilidade })`; sem escolha vale a do primeiro bloco que pode. Na partida contra
+    outra pessoa a habilidade (escolhida ou a única) vai no lance (`enviarLance(..., habilidade)`); o servidor só
+    repassa se a peça a tem equipada num bloco (`habilidadeConferida`; se não confere, relê o banco uma vez, pra quem
+    equipou depois de entrar) e o adversário vê a mesma (`andamento.habilidadesDaSala`, pelo número do lance). O lance
+    sai antes do estado inteiro: ao contrário, o outro aparelho enfileiraria o lance sem a habilidade. Na promoção com
+    captura, a peça da promoção vem antes.
   - A prévia da Loja tira os outros blocos, pra não perguntar.
 - A katana fica na bainha quando a peça não vai usá-la (bug visto pelo usuário). Um gesto com a katana cortado no meio
   por um lance perdia a guarda: a nova sequência invalidava o "guardar" do fim do gesto, e a katana ficava na mão. Com
@@ -392,7 +396,11 @@ As pastas de `src` são por função:
 - `src/tabuleiro/pecas/equipamentos.ts` monta as armaduras e armas: cada parte vira malha com esqueleto presa ao osso que cobre,
   medida no corpo em pose de braços abertos (igual nas seis peças). O que a parte nova substitui (ombreira redonda,
   cajado, sela, katana) some do modelo pela regra de `ESCONDER`, numa cópia da geometria.
-- Quem joga veste só as próprias peças (`tabuleiro/pecas/vestimenta.ts`); no menu, as brancas. A marreta da torre muda em
+- Quem joga veste as próprias peças (`tabuleiro/pecas/vestimenta.ts`); no menu, as brancas. Na partida contra outra
+  pessoa, as peças do adversário vestem o que ele comprou e equipou (`vestimenta.adversario`, `escolhasDaCor`): pedido
+  do usuário (25/11), pra quem não comprou ver as armas e as habilidades e ter vontade de jogar pra comprar. A sala lê a
+  personalização dos dois no banco a cada conexão (`lerVestimentas` em `sala.ts`; o banco só guarda o que foi comprado)
+  e manda a do outro em `vestimentaDoAdversario`. A máquina não veste nada. A marreta da torre muda em
   `criarMarreta`. A vitrine da aba tem renderizador próprio e é montada por `montarVitrine`.
 - `testes/fotos-personalizacao.mjs` fotografa cada peça vestida: é como se confere se as partes encaixam.
 
@@ -633,13 +641,24 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
 
 ## Qualidade
 
-- A média é o padrão. A configuração inteira é gravada na primeira vez, então a alta de antes estava gravada até em
-  quem nunca escolheu: a qualidade gravada só vale com `qualidadeEscolhida`, marcado quando a pessoa escolhe.
-- Baixa: abaixo da resolução da tela (0,8 × até 1,25), sem sombras, sem antisserrilhado e no máximo 30 quadros por
-  segundo, pra celular e computador fracos. Média: até 1,6 vez a tela, nunca abaixo dela, sombras de 1024. Alta: como
-  sempre, no mínimo Full HD e sombras de 2048. O antisserrilhado só muda ao abrir o jogo de novo.
+- A média é o padrão; no aparelho fraco (`navigator.deviceMemory` até 4, o celular de 4 GB), a baixa. A configuração
+  inteira é gravada na primeira vez, então a alta de antes estava gravada até em quem nunca escolheu: a qualidade
+  gravada só vale com `qualidadeEscolhida`, marcado quando a pessoa escolhe.
+- Baixa: até 1,35 vez a tela no celular e a própria tela no computador (teto de 1,3 milhão de pixels), sem sombras, sem
+  antisserrilhado, filtro de textura 4 (`filtroLeve`) e no máximo 30 quadros por segundo. Antes era 0,8 × até 1,25: no
+  celular de tela densa a imagem era esticada 2 a 3 vezes e ficava embaçada (visto pelo usuário, 25/11). A resolução é
+  dinâmica (`medirQuadro` no ChessBoard3D): abaixo de ~24 quadros por segundo desce 10% (até 70%) e, com folga por 3
+  janelas seguidas, sobe. Mexe só no `setPixelRatio`, nunca no `onResize` da vista, que reenquadra a câmera. Média: até
+  1,6 vez a tela, nunca abaixo dela, sombras de 1024. Alta: como sempre, no mínimo Full HD e sombras de 2048. O
+  antisserrilhado e o filtro de textura só mudam ao abrir o jogo de novo.
 - A Loja, a vitrine e a taça seguem a qualidade gravada (`desenhoDosPaineis`). Os testes forçam a baixa, e por isso
   gravam `qualidadeEscolhida: true` junto.
+- A Loja e a Personalização desenham pelo `ritmoDoPainel`: nada escondidas (a Loja fica montada durante a prévia) e no
+  máximo 30 por segundo na baixa. Enquanto um painel desenha (`painelDesenhando`), o tabuleiro de fundo vai a 20 quadros
+  por segundo e a resolução dinâmica não mede.
+- `node testes/simular-celular-fraco.mjs` (com o site no ar) emula o celular de 4 GB (tela 360×800 a 2x, processador
+  4 vezes mais lento, `LENTIDAO=` muda): a qualidade de partida, capturas com habilidades, a memória ao longo das
+  partidas, a placa de vídeo perdida e devolvida, a aba congelada no meio do Puxão e a Loja por cima.
 
 ## Livro de aberturas
 

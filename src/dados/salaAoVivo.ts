@@ -37,6 +37,8 @@ export interface EstadoDaSala {
   relogio?: RelogioDaSala | null
   /** Partida do adversário automático (as duas pessoas não precisam ser amigas). */
   automatica?: boolean
+  /** O que as peças do adversário vestem (armas, armaduras, habilidades): o que ele comprou e equipou. */
+  vestimentaDoAdversario?: Record<string, Record<string, string>> | null
 }
 
 export interface LanceDaSala {
@@ -45,6 +47,8 @@ export interface LanceDaSala {
   para: string
   promocao?: string
   san: string
+  /** A habilidade escolhida na captura, conferida pelo servidor: quem vê o lance vê o mesmo golpe. */
+  habilidade?: string | null
   relogio?: RelogioDaSala | null
 }
 
@@ -65,7 +69,7 @@ export interface AoReceberDaSala {
 }
 
 export interface ConexaoDaSala {
-  enviarLance: (n: number, de: string, para: string, promocao?: string) => void
+  enviarLance: (n: number, de: string, para: string, promocao?: string, habilidade?: string) => void
   desistir: () => void
   pedirEmpate: () => void
   responderEmpate: (aceito: boolean) => void
@@ -124,7 +128,7 @@ export function abrirConexaoDaSala(codigo: string, token: string, ao: AoReceberD
 
   conectar()
   return {
-    enviarLance: (n, de, para, promocao) => enviar({ t: 'lance', n, de, para, promocao }),
+    enviarLance: (n, de, para, promocao, habilidade) => enviar({ t: 'lance', n, de, para, promocao, habilidade }),
     desistir: () => enviar({ t: 'desistir' }),
     pedirEmpate: () => enviar({ t: 'empate' }),
     responderEmpate: (aceito) => enviar({ t: 'responderEmpate', aceito }),

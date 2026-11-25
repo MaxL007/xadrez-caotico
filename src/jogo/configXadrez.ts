@@ -9,7 +9,7 @@ export type QualidadeXadrez = 'baixa' | 'media' | 'alta'
 /** As configurações do jogo de xadrez, guardadas em cada aparelho. */
 export interface ConfigXadrez {
   qualidade: QualidadeXadrez
-  /** A pessoa escolheu a qualidade nas Configurações. Sem isso vale o padrão, a média. */
+  /** A pessoa escolheu a qualidade nas Configurações. Sem isso vale o padrão: a média, ou a baixa no aparelho fraco. */
   qualidadeEscolhida?: boolean
   som: boolean
   volume: number
@@ -34,9 +34,18 @@ export interface ConfigXadrez {
   ritmo: Ritmo
 }
 
+/** Aparelho fraco: até 4 GB de memória. O navegador só informa a memória em faixas (0,25 a 8); sem a informação
+ * (iPhone, Firefox), conta como aparelho comum. Os núcleos não servem: o celular de 4 GB costuma ter 8. */
+function aparelhoFraco(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const memoria = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+  return typeof memoria === 'number' && memoria <= 4
+}
+
 const PADRAO: ConfigXadrez = {
-  // a média: boa de jogar e bonita na maioria dos aparelhos. A baixa fica pros fracos, a alta pros fortes
-  qualidade: 'media',
+  // a média: boa de jogar e bonita na maioria dos aparelhos. No aparelho fraco (celular de 4 GB) a média travava as
+  // lutas: quem nunca escolheu começa na baixa, que ficou nítida (ver QUALIDADES). A alta fica pros fortes
+  qualidade: aparelhoFraco() ? 'baixa' : 'media',
   som: true,
   volume: 0.8,
   volumeEfeitos: 1,
@@ -63,10 +72,32 @@ export function qualidadeEmUso(): QualidadeXadrez {
   }
 }
 
-/** Os desenhos 3D de fora do tabuleiro: na qualidade leve, na resolução da tela e sem antisserrilhado. */
+let painelDesenhouEm = -Infinity
+/** A Loja ou a Personalização desenhou o 3D dela há pouco: o tabuleiro de fundo desenha menos enquanto isso (no
+ * celular fraco, dois desenhos 3D ao mesmo tempo disputavam a placa de vídeo). Escondido (a prévia da Loja), o painel
+ * não desenha, e o tabuleiro volta ao ritmo dele. */
+export const painelDesenhando = () => performance.now() - painelDesenhouEm < 300
+
+/** O ritmo de um painel com desenho 3D: diz, a cada quadro, se ele desenha. Não desenha escondido (a Loja fica montada
+ * durante a prévia) e, na qualidade leve, desenha no máximo 30 vezes por segundo, como o tabuleiro. */
+export function ritmoDoPainel(): (caixa: HTMLElement) => boolean {
+  const leve = qualidadeEmUso() === 'baixa'
+  let ultimo = 0
+  return (caixa) => {
+    if (!caixa.isConnected || caixa.clientWidth === 0) return false
+    const agora = performance.now()
+    if (leve && agora - ultimo < 1000 / 30 - 2) return false
+    ultimo = agora
+    painelDesenhouEm = agora
+    return true
+  }
+}
+
+/** Os desenhos 3D de fora do tabuleiro: na qualidade leve, sem antisserrilhado e com a resolução contida. */
 export function desenhoDosPaineis(): { antialias: boolean; resolucao: number } {
   const leve = qualidadeEmUso() === 'baixa'
-  return { antialias: !leve, resolucao: leve ? Math.min(window.devicePixelRatio || 1, 1) : Math.min(window.devicePixelRatio || 1, 2) }
+  // na leve, até 1,35 vez a tela como o tabuleiro: na própria tela o retrato ficava embaçado no celular
+  return { antialias: !leve, resolucao: leve ? Math.min(window.devicePixelRatio || 1, 1.35) : Math.min(window.devicePixelRatio || 1, 2) }
 }
 
 export function useConfigXadrez(): [ConfigXadrez, (mudanca: Partial<ConfigXadrez>) => void] {

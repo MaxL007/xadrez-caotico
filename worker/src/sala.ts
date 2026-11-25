@@ -55,6 +55,29 @@ interface EstadoDaSala {
   relogio?: RelogioDaSala
   /** Partida do adversário automático: as duas pessoas não precisam ser amigas e ela começa na hora. */
   automatica?: boolean
+  /** O que as peças de cada um vestem, lido do banco quando ele se conecta: o banco só guarda o que foi comprado. Cada
+   * um recebe o do outro, pra ver as armas, armaduras e habilidades dele. */
+  vestimentas?: Partial<Record<Cor, Vestimenta>>
+}
+
+type Vestimenta = Record<string, Record<string, string>>
+
+const BLOCOS_DE_HABILIDADE = ['golpe', 'golpe2', 'golpe3']
+
+function lerVestimenta(texto: string | null): Vestimenta {
+  try {
+    const lida = JSON.parse(texto ?? '{}')
+    return lida && typeof lida === 'object' && !Array.isArray(lida) ? (lida as Vestimenta) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** A habilidade que veio com o lance vale se a peça que capturou a tem equipada num dos blocos; senão, nenhuma. */
+function habilidadeConferida(vestimenta: Vestimenta | undefined, peca: string, captura: boolean, pedida: unknown): string | null {
+  if (!captura || typeof pedida !== 'string' || pedida.length > 40) return null
+  const daPeca = vestimenta?.[peca]
+  return daPeca && BLOCOS_DE_HABILIDADE.some((bloco) => daPeca[bloco] === pedida) ? pedida : null
 }
 
 function chaveDaPosicao(fen: string): string {
@@ -150,21 +173,53 @@ export class Sala extends DurableObject<Ambiente> {
   /** Só chega aqui depois de o Worker conferir a sessão: ele manda quem é em X-Usuario-Id. */
   async fetch(pedido: Request): Promise<Response> {
     const usuarioId = pedido.headers.get('X-Usuario-Id')
-    const estado = await this.ler()
+    let estado = await this.ler()
     if (!estado || !usuarioId || !this.corDe(estado, usuarioId)) return new Response('sem lugar nesta sala', { status: 403 })
+
+    // o que os dois vestem agora (quem entra pode ter mexido na Personalização desde a última vez). Se mudou o de
+    // alguém, o outro, já conectado, fica sabendo
+    const mudouAVestimenta = await this.lerVestimentas(estado)
+    estado = (await this.ler()) ?? estado
 
     const par = new WebSocketPair()
     const [cliente, servidor] = Object.values(par)
     this.ctx.acceptWebSocket(servidor, [usuarioId])
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'))
-    servidor.send(JSON.stringify(this.fotografia(estado, usuarioId)))
+    if (mudouAVestimenta) this.avisarTodos(estado)
+    else servidor.send(JSON.stringify(this.fotografia(estado, usuarioId)))
     this.avisarPresenca(estado)
     return new Response(null, { status: 101, webSocket: cliente, headers: { 'Sec-WebSocket-Protocol': 'xadrez' } })
   }
 
+  /** Lê do banco o que as peças dos dois vestem e grava na sala. Devolve se mudou alguma coisa. Sem o banco no
+   * momento, fica o que já estava. */
+  private async lerVestimentas(estado: EstadoDaSala): Promise<boolean> {
+    const ids = [estado.brancas?.id, estado.pretas?.id].filter((id): id is string => !!id)
+    if (!ids.length) return false
+    let linhas: { id: string; personalizacao: string | null }[]
+    try {
+      const resposta = await this.env.DB.prepare(`SELECT id, personalizacao FROM usuarios WHERE id IN (${ids.map((_, i) => `?${i + 1}`).join(', ')})`)
+        .bind(...ids)
+        .all<{ id: string; personalizacao: string | null }>()
+      linhas = resposta.results
+    } catch {
+      return false
+    }
+    const atual = (await this.ler()) ?? estado
+    const vestimentas: Partial<Record<Cor, Vestimenta>> = {}
+    for (const linha of linhas) {
+      const cor = this.corDe(atual, linha.id)
+      if (cor) vestimentas[cor] = lerVestimenta(linha.personalizacao)
+    }
+    if (JSON.stringify(vestimentas) === JSON.stringify(atual.vestimentas ?? {})) return false
+    atual.vestimentas = vestimentas
+    await this.gravar(atual)
+    return true
+  }
+
   async webSocketMessage(conexao: WebSocket, mensagem: string | ArrayBuffer) {
     if (typeof mensagem !== 'string' || mensagem.length > TAMANHO_MAXIMO_MENSAGEM) return
-    let pedido: { t?: string; n?: number; de?: string; para?: string; promocao?: string; aceito?: unknown }
+    let pedido: { t?: string; n?: number; de?: string; para?: string; promocao?: string; habilidade?: unknown; aceito?: unknown }
     try {
       pedido = JSON.parse(mensagem)
     } catch {
@@ -201,7 +256,7 @@ export class Sala extends DurableObject<Ambiente> {
     this.enviar({ t: 'empateRecusado', de })
   }
 
-  private async receberLance(estado: EstadoDaSala, cor: Cor, conexao: WebSocket, usuarioId: string, pedido: { n?: number; de?: string; para?: string; promocao?: string }) {
+  private async receberLance(estado: EstadoDaSala, cor: Cor, conexao: WebSocket, usuarioId: string, pedido: { n?: number; de?: string; para?: string; promocao?: string; habilidade?: unknown }) {
     const reenviar = () => conexao.send(JSON.stringify(this.fotografia(estado, usuarioId)))
     if (estado.status !== 'andamento' || pedido.n !== estado.lances.length) return reenviar()
 
@@ -235,7 +290,18 @@ export class Sala extends DurableObject<Ambiente> {
     const fim = this.fimDePartida(chess, estado)
     if (!fim) await this.ctx.storage.setAlarm(this.proximoAlarme(estado))
     await this.gravar(estado)
-    this.enviar({ t: 'lance', n: estado.lances.length - 1, de: lance.from, para: lance.to, promocao: lance.promotion, san: lance.san, relogio: this.relogioParaEnviar(estado) })
+    // a habilidade escolhida na captura vai junto, se a peça a tem equipada: o outro vê o mesmo golpe. Se não confere,
+    // pode ser que quem jogou equipou depois de entrar: lê do banco de novo (e o outro recebe as peças vestidas)
+    let habilidade = habilidadeConferida(estado.vestimentas?.[cor], lance.piece, !!lance.captured, pedido.habilidade)
+    let releu = false
+    if (!habilidade && lance.captured && typeof pedido.habilidade === 'string' && (await this.lerVestimentas(estado))) {
+      releu = true
+      estado.vestimentas = (await this.ler())?.vestimentas
+      habilidade = habilidadeConferida(estado.vestimentas?.[cor], lance.piece, true, pedido.habilidade)
+    }
+    this.enviar({ t: 'lance', n: estado.lances.length - 1, de: lance.from, para: lance.to, promocao: lance.promotion, san: lance.san, habilidade, relogio: this.relogioParaEnviar(estado) })
+    // o estado inteiro só depois do lance: antes, o aparelho do outro poria o lance na fila sem a habilidade
+    if (releu) this.avisarTodos(estado)
     if (fim) await this.encerrar(estado, fim.resultado, fim.motivo)
   }
 
@@ -349,6 +415,7 @@ export class Sala extends DurableObject<Ambiente> {
       ritmo: estado.ritmo ?? null,
       relogio: this.relogioParaEnviar(estado),
       automatica: !!estado.automatica,
+      vestimentaDoAdversario: (cor && estado.vestimentas?.[cor === 'w' ? 'b' : 'w']) ?? null,
     }
   }
 
