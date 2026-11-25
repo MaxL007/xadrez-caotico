@@ -876,7 +876,10 @@ try {
   conferir('o Empurrão é só da rainha', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'empurrao' }, bia.token)).status === 422)
   conferir('a arma que já saiu pela conquista não precisa ser comprada', (await comprar('p:arma:katana')).status === 409)
   conferir('o 2º bloco de habilidade do peão está à venda (sem saldo, não compra)', (await comprar('p:bloco:2')).status === 402)
-  conferir('sem habilidades pra ele, o bloco não é vendido: o 3º do peão e o da rainha', (await comprar('p:bloco:3')).status === 422 && (await comprar('q:bloco:3')).status === 422)
+  // com o Espiral Absoluto o peão tem três habilidades: o 3º bloco dele está à venda, mas pede o 2º antes
+  const terceiroDoPeao = await comprar('p:bloco:3')
+  conferir('o 3º bloco do peão é vendido, mas pede o 2º antes', terceiroDoPeao.status === 409 && terceiroDoPeao.json?.erro === 'falta-o-bloco-anterior', JSON.stringify(terceiroDoPeao.json))
+  conferir('sem habilidades pra ele, o bloco não é vendido: o 3º da rainha', (await comprar('q:bloco:3')).status === 422)
   conferir('com o Empurrão, a rainha tem duas habilidades: o 2º bloco dela é vendido', (await comprar('q:bloco:2')).status === 402)
   conferir('o 2º bloco só se usa comprado', (await personalizar({ peca: 'p', parte: 'golpe2', opcao: 'dempsey' }, bia.token)).status === 403)
   const doPerfil = (await api('GET', '/perfil', { token: bia.token })).json
