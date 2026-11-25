@@ -46,6 +46,14 @@ export interface ForcaDoGolpe {
   foraDoTabuleiro?: boolean
 }
 
+/** O voo da vítima, pra câmera acompanhar (abrir conforme ela se afasta): onde cai, se sai do tabuleiro e o quanto do voo
+ * já foi (0 a 1, no relógio do jogo). */
+export interface VooDoNocaute {
+  pouso: THREE.Vector3
+  foraDoTabuleiro: boolean
+  progresso: () => number
+}
+
 interface AvisosDoNocaute {
   /** A peça bateu no chão (o baque, a poeira): `onde` é o meio do corpo, no chão. */
   aoPousar: (onde: THREE.Vector3, massa: number) => void
@@ -131,7 +139,7 @@ export function sacudir(vitima: THREE.Object3D, direcao: { x: number; z: number 
  * O golpe que derruba: a peça sai voando pela força do golpe e cai (ver o começo do arquivo). `outras` são as peças no
  * tabuleiro, pra o voo parar antes de bater numa delas.
  */
-export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: ForcaDoGolpe, outras: THREE.Object3D[], continua: () => boolean, avisos: AvisosDoNocaute) {
+export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: ForcaDoGolpe, outras: THREE.Object3D[], continua: () => boolean, avisos: AvisosDoNocaute): VooDoNocaute {
   for (const s of sacudidas) if (s.vitima === vitima) sacudidas.delete(s)
   voltarAoDescanso(vitima)
   novaSequenciaRPG(vitima)
@@ -165,10 +173,12 @@ export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: F
   const frente = FRENTE.clone().transformDirection(vitima.matrixWorld)
   const esquerda = LADO.clone().transformDirection(vitima.matrixWorld)
   const deFrente = -frente.dot(rumo)
+  const inicio = agoraDoJogo()
+  const vooMs = (0.24 + 0.2 * distancia) * 1000 + (foraDoTabuleiro ? 180 : 0)
   nocautes.add({
     vitima,
     cena,
-    inicio: agoraDoJogo(),
+    inicio,
     rumo,
     eixo: new THREE.Vector3().crossVectors(CIMA, rumo).normalize(),
     giroTotal,
@@ -179,7 +189,7 @@ export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: F
     altura,
     chao,
     distancia,
-    vooMs: (0.24 + 0.2 * distancia) * 1000 + (foraDoTabuleiro ? 180 : 0),
+    vooMs,
     arco: golpe.foraDoTabuleiro ? 1.05 + 0.06 * distancia : 0.06 + 0.18 * Math.min(1, distancia) * Math.min(1.3, golpe.forca),
     pose: {
       pratras: 0.9 * frente.dot(rumo),
@@ -195,6 +205,7 @@ export function nocautear(cena: THREE.Object3D, vitima: THREE.Object3D, golpe: F
     continua,
     avisos,
   })
+  return { pouso: pouso.clone().setY(chao), foraDoTabuleiro, progresso: () => Math.min(1, (agoraDoJogo() - inicio) / vooMs) }
 }
 
 /** Quanto falta, de `de` no `rumo`, pra passar da beira do tabuleiro (moldura incluída). */

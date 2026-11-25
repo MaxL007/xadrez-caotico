@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { VooDoNocaute } from '../combate/nocaute'
 import { tremerTabuleiro } from '../combate/efeitosDasArmas'
 import { tocarSom } from '../../som/sons'
 import { congelar } from './relogioDoJogo'
@@ -99,6 +100,8 @@ export interface SensacaoDaPartida {
   /** A captura começou: `area` é o que tem de ficar à vista (os pontos do golpe inteiro e as peças que lutam, que não
    * contam como obstáculo), `peso` de 0 a 1, `tom` o dos efeitos (trocas seguidas). */
   comecarLuta: (area: AreaDaLuta, peso: number, tom: number) => void
+  /** A vítima foi arremessada: a câmera abre conforme ela voa (até a vista de antes, quando sai do tabuleiro). */
+  acompanharVoo: (voo: VooDoNocaute) => void
   /** A vítima saiu: tudo volta ao normal. */
   terminarLuta: () => void
   /** Os efeitos de tela do anime (efeitosDeAnime.ts): as linhas de foco apontando pra `ponto` por `ms`. */

@@ -268,8 +268,9 @@ As pastas de `src` são por função:
     (`espiral` em `areaDaLuta`).
 
   Os sons são `espiral:chute`, `espiral:salta`, `espiral:agarra`, `espiral:enrola`, `espiral:gira`, `espiral:colide` e
-  `espiral:pouso`. O usuário não mandou desenho do símbolo: `EMBLEMAS.espiral` é uma espiral de aço afinando até a
-  linha do chão, com o estouro da pancada e a seta do chute subindo. Fica em `combate/espiralAbsoluto.ts`; as fotos saem
+  `espiral:pouso`. O símbolo é o desenho do usuário (25/11): o redemoinho de nove braços afinando em ponta, formas
+  cheias sem buracos, traçadas da imagem pixel a pixel e simplificadas (`pecas/desenhos/espiral.json`, bisel fino como o
+  da Dempsey). Fica em `combate/espiralAbsoluto.ts`; as fotos saem
   de `SO=espiral,espiral-de-lado node testes/fotos-armas.mjs`.
 - Nas outras habilidades a vítima também reage: no Puxão, vê a rainha carregando, vira pra ela e se inclina pra trás com
   os braços na frente; puxada, resiste inclinada pra trás e arrastando os pés, se debatendo, até ser arrancada do chão
@@ -675,6 +676,14 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
   chega perto (`comeco` em `areaDaLuta`, com o quanto do caminho já andou; `acompanhar` na aproximação). Parada a
   peça, o enquadramento é o do golpe. O cavalo de lança para mais longe (`parada`), e no Empurrão a área inclui a
   barreira em volta da rainha e o começo do voo pra fora do tabuleiro (`praFora`).
+- Sem zoom antes do acompanhamento (bug visto pelo usuário, 25/11): o ponto de vista do caminho inteiro era calculado a
+  partir da distância mínima da luta, então a câmera dava um zoom de uma vez e só depois acompanhava, e ficava parada no
+  zoom enquanto a peça ainda guardava a katana ou virava. Agora, com quem ataca longe, ela só gira pro lado e centra o
+  caminho, sem chegar mais perto do que estava; toda a aproximação vem do andar da peça (`progresso`).
+- O voo da vítima (pedido do usuário): a câmera abre conforme a peça arremessada se afasta, a mesma mecânica da chegada,
+  ao contrário (`vista.acompanharVoo`). `nocautear` devolve o voo (onde cai, se sai do tabuleiro, o quanto já foi) e
+  todo golpe que derruba passa por `sensacao.acompanharVoo`. Saindo do tabuleiro (o Empurrão), a câmera chega à vista
+  de antes da luta quando a vítima passa da beira; caindo no tabuleiro, abre só o bastante pra caber a queda.
 - A tela inicial e a partida nova olham sempre pro meio do tabuleiro (`CENTRO` em `vistaDaCamera.ts`): o giro da câmera
   leva o centro de volta. Antes o centro ficava preso perto da última luta quando a pessoa encostava na câmera no meio
   da aproximação (no celular, todo toque conta), e o tabuleiro aparecia torto até na tela inicial (bug visto pelo

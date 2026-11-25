@@ -203,7 +203,7 @@ function dempsey(c: CapturaComHabilidade) {
       estouroDeRiscos(c.cena, queixo, 12, 0.2 * c.vitima.scale.x, cor, 240)
       respingos(c.cena, queixo, praOndeVai, 0.011 * c.vitima.scale.x, 520)
       c.sentirImpacto(1.3, true)
-      nocautear(
+      c.sensacao.acompanharVoo(nocautear(
         c.cena,
         c.vitima,
         { direcao, forca: 2.2, massaDeQuemBate: massaDaPeca(c.atacante.userData.tipo), massaDaVitima: massaDaPeca(tipoVitima), altura: 0.65 },
@@ -217,7 +217,7 @@ function dempsey(c: CapturaComHabilidade) {
           },
           aoTerminar: c.fim,
         },
-      )
+      ))
       c.comemorarAliadas()
     },
   })
@@ -254,7 +254,7 @@ function empurrar(c: CapturaComHabilidade) {
       anelDeImpacto(c.cena, ponto, praOndeVai, cor, 0.5 * tamanho, 320)
       estouroDeRiscos(c.cena, ponto, 14, 0.24 * tamanho, cor, 260)
       c.sentirImpacto(1.2, false)
-      nocautear(
+      c.sensacao.acompanharVoo(nocautear(
         c.cena,
         c.vitima,
         { direcao, forca: 2.5, massaDeQuemBate: massaDaPeca('q'), massaDaVitima: massaDaPeca(tipoVitima), altura: 0.5, foraDoTabuleiro: true },
@@ -268,7 +268,7 @@ function empurrar(c: CapturaComHabilidade) {
           },
           aoTerminar: c.fim,
         },
-      )
+      ))
       c.comemorarAliadas()
     },
   })

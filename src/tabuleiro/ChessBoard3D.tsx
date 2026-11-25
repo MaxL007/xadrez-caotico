@@ -373,6 +373,7 @@ export function ChessBoard3D() {
         definirTomDosGolpes(tom)
         setVinhetaDaLuta(peso)
       },
+      acompanharVoo: (voo) => vista.acompanharVoo(voo.pouso, voo.progresso, voo.foraDoTabuleiro),
       terminarLuta: () => {
         desesmaecer()
         vista.voltarDaLuta()

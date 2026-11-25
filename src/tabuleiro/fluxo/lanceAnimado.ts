@@ -461,7 +461,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
                 aoPuxar: () => {
                   tocarSom('lanca:puxa')
                   // sem a lança segurando, o corpo desaba pra frente, pro lado do cavalo (que segura o tombo: cai ali)
-                  nocautear(
+                  sensacao.acompanharVoo(nocautear(
                     scene,
                     vitima,
                     {
@@ -484,7 +484,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
                         seguirParaDestino()
                       },
                     },
-                  )
+                  ))
                 },
               })
             },
@@ -536,7 +536,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
               animarImpacto(scene, posVitima.x, posVitima.z)
               impacto()
               const massaDaVitima = massaDaPeca(tipoVitima)
-              nocautear(
+              sensacao.acompanharVoo(nocautear(
                 scene,
                 vitima,
                 { direcao: direcaoDoSalto, forca: 1.9, massaDeQuemBate: massaDaPeca('n'), massaDaVitima, altura: 0.55 },
@@ -553,7 +553,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
                     umaParte()
                   },
                 },
-              )
+              ))
               if (1.9 * Math.pow(massaDaPeca('n') / massaDaVitima, 0.35) > 1.2) sensacao.socoNaCamera(2.5, 280)
               comemorarAliadas()
             },
@@ -657,7 +657,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
         faisca(scene, vitima.position.clone().add(new THREE.Vector3(0, altura * 0.85 * vitima.scale.y, 0)), 0xffffff, 0.5 * vitima.scale.x)
         // o corpo congela no instante do acerto, já na pose da pancada, e sai voando quando o tempo volta
         const ms = impacto()
-        nocautear(scene, vitima, { direcao: direcaoGolpe, forca, massaDeQuemBate, massaDaVitima, altura }, piecesGroup.children, vigente, {
+        sensacao.acompanharVoo(nocautear(scene, vitima, { direcao: direcaoGolpe, forca, massaDeQuemBate, massaDaVitima, altura }, piecesGroup.children, vigente, {
           aoPousar: (onde, massa) => {
             tocarSom(`queda:${tipoVitima}`)
             animarImpacto(scene, onde.x, onde.z)
@@ -667,7 +667,7 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             removerVitima()
             seguirParaDestino()
           },
-        })
+        }))
         if (passoDepois) depoisDoCongelamento(ms, () => vigente() && continuarDoGolpe(atacante, direcaoGolpe))
         // o golpe que arremessa longe: a câmera sente
         if (forca * Math.pow(massaDeQuemBate / massaDaVitima, 0.35) > 1.2) sensacao.socoNaCamera(2.5, 280)

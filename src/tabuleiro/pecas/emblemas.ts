@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import desenhoDaDempsey from './desenhos/dempsey.json'
+import desenhoDoEspiral from './desenhos/espiral.json'
 
 // O símbolo de cada habilidade especial, pro expositor da Personalização e da Loja (no lugar da arma, que não é o que
-// se compra). Todos vêm de desenhos do usuário: o do Puxão Universal (dois elos cercados de arcos) e o da Dempsey Roll
+// se compra). Todos vêm de desenhos do usuário: o do Puxão Universal (dois elos cercados de arcos), o do Espiral Absoluto
+// (o redemoinho) e o da Dempsey Roll
 // (duas luvas com o ∞), mais embaixo, saem dos traços da imagem dele. O do retalhamento: um átomo de três órbitas cruzadas com dois cortes em
 // crescente por cima, como garras. Cada órbita é uma faixa achatada, inclinada: de frente ela aparece grossa nas pontas e
 // fina no meio, como o traço de pincel do desenho.
@@ -311,52 +313,21 @@ function empurrao(): THREE.Group {
   return emblema
 }
 
-// --- o Espiral Absoluto (o golpe é do usuário; o símbolo, não: ele não mandou desenho). A espiral da queda, em aço, larga
-// por fora e afinando até o centro, que desce até a linha do chão; no centro, o estouro da pancada (riscos e faíscas).
-// Por fora, do lado esquerdo, a seta do chute subindo. Fica dentro do mesmo quadro dos outros (até uns 0,75 de raio).
+// --- o Espiral Absoluto, do desenho do usuário (25/11): o redemoinho de nove braços pretos, cada um afinando em ponta,
+// girando em volta do miolo enrolado. São formas cheias, sem buracos: cada braço sai da imagem como ela é, o contorno
+// seguido pixel a pixel e simplificado. Os pontos (a imagem tem 1254 px de lado) ficam em desenhos/espiral.json. As
+// pontas são finas, então vai o bisel fino da Dempsey.
 
-/** Uma faixa em espiral: do raio `de` (por dentro) ao `ate` (por fora) em `voltas`, larga por fora e fina no centro. */
-function faixaEmEspiral(de: number, ate: number, voltas: number, larguraFora: number, larguraDentro: number): THREE.Shape {
-  const passos = 160
-  const total = voltas * Math.PI * 2
-  const ponto = (u: number, meiaLargura: number) => {
-    const angulo = u * total
-    const raio = de + (ate - de) * u + meiaLargura
-    return new THREE.Vector2(Math.cos(angulo) * raio, Math.sin(angulo) * raio)
-  }
-  const largura = (u: number) => larguraDentro + (larguraFora - larguraDentro) * u
-  const pontos: THREE.Vector2[] = []
-  for (let i = 0; i <= passos; i++) pontos.push(ponto(i / passos, largura(i / passos) / 2))
-  for (let i = passos; i >= 0; i--) pontos.push(ponto(i / passos, -largura(i / passos) / 2))
-  return new THREE.Shape(pontos)
-}
+const QUADRO_DO_REDEMOINHO: Quadro = { centro: new THREE.Vector2(desenhoDoEspiral.centro[0], desenhoDoEspiral.centro[1]), escala: 1 / 740 }
 
 function espiral(): THREE.Group {
   const emblema = new THREE.Group()
-  const malha = (forma: THREE.Shape, x = 0, y = 0, z = 0) => {
-    const parte = new THREE.Mesh(extrudar(forma, 48), acoEscuro)
+  const ponto = doDesenho(QUADRO_DO_REDEMOINHO)
+  for (const { contorno } of desenhoDoEspiral.formas as unknown as { contorno: [number, number][] }[]) {
+    const parte = new THREE.Mesh(extrudarFino(new THREE.Shape(contorno.map(ponto))), acoEscuro)
     parte.castShadow = true
-    parte.position.set(x, y, z)
     emblema.add(parte)
   }
-  // a espiral, com o centro um pouco acima do meio, pra caber a linha do chão embaixo; o espaço entre as voltas é maior
-  // que a faixa mais larga, então ela não se encosta
-  malha(faixaEmEspiral(0.04, 0.46, 2.4, 0.085, 0.025), 0.03, 0.08)
-  // a descida do centro até o chão: um risco grosso no alto e fino embaixo
-  malha(risco(graus(-90), 0.02, 0.46, 0.03), 0.03, 0.08)
-  // a linha do chão, fina nas pontas, e o estouro da pancada em cima dela
-  const chao = new THREE.Shape()
-  chao.absellipse(0.03, -0.4, 0.5, 0.014, 0, Math.PI * 2, false, 0)
-  malha(chao)
-  for (const g of [20, 50, 90, 130, 160]) malha(risco(graus(g), 0.05, g === 90 ? 0.17 : 0.13, 0.014), 0.03, -0.39, 0.002)
-  for (const [x, tamanho, giro] of [
-    [-0.3, 0.022, 20],
-    [0.36, 0.02, 60],
-  ]) {
-    malha(faiscaDoEmblema(new THREE.Vector2(x, -0.3), tamanho, graus(giro)), 0, 0, 0.002)
-  }
-  // a seta do chute, por fora da espiral, subindo
-  malha(setaParaFora(graus(100), 0.12, 0.46), -0.55, 0.02, 0.002)
   return emblema
 }
 

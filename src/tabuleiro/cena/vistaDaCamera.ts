@@ -186,7 +186,9 @@ export function criarVistaDaCamera(
     inicio: number
     duracao: number
     voltando: boolean
-    /** Acompanhando quem ataca: de `para` (o caminho inteiro à vista) até `perto` (só o golpe), conforme `progresso`. */
+    /** Acompanhando uma peça: de `para` até `perto`, conforme `progresso` (0 a 1). Na chegada de quem ataca, `para` é o
+     * caminho inteiro e `perto` só o golpe; no voo da vítima, `para` é o golpe e `perto` o voo inteiro (ou a vista de
+     * antes, quando ela sai do tabuleiro). */
     acompanhar?: { perto: PontoDeVista; progresso: () => number }
   }
   const CHEGA_MS = 650
@@ -326,6 +328,10 @@ export function criarVistaDaCamera(
     }
     if (!melhor) return []
     const giroDaCamera = Math.abs(diferencaAngular(poseAtualDaCamera().theta, melhor.pose.theta))
+    // com quem ataca ainda longe, a câmera só gira pro lado da luta e centra o caminho: não chega mais perto do que já
+    // estava. A aproximação toda vem do andar da peça (antes ela dava um zoom de uma vez, até a distância mínima da luta,
+    // e só depois acompanhava; parada esperando a peça sair, ficava no zoom: bug visto pelo usuário)
+    if (comeco) melhor.pose.raio = Math.max(melhor.pose.raio, poseAtualDaCamera().raio)
     const longe: PontoDeVista = { alvo: alvo.clone(), pose: melhor.pose }
     irAte(longe, CHEGA_MS + 260 * giroDaCamera, false)
     if (comeco && aproximacao) {
@@ -335,6 +341,41 @@ export function criarVistaDaCamera(
       aproximacao.acompanhar = { perto: { alvo: alvo.clone(), pose: { ...melhor.pose, raio } }, progresso: comeco.progresso }
     }
     return melhor.tampam
+  }
+
+  /**
+   * A vítima foi arremessada (pedido do usuário): a câmera abre conforme ela voa, a mesma mecânica da chegada de quem
+   * ataca, ao contrário. Do golpe ela vai até o enquadramento do voo inteiro (do golpe até onde a vítima cai); se a
+   * vítima sai do tabuleiro, até a vista de antes da luta, chegando lá quando ela passa da beira. `progresso` é o quanto
+   * do voo já foi (0 a 1).
+   */
+  function acompanharVoo(ateOnde: THREE.Vector3, progresso: () => number, praFora: boolean) {
+    if (!aproximacao || aproximacao.voltando || emMenu || giroCamera || menosMovimento()) return
+    window.clearTimeout(voltaDoRei)
+    const agora = pontoDeVistaAtual()
+    let destino: PontoDeVista
+    if (praFora) destino = { alvo: aproximacao.antes.alvo.clone(), pose: { ...aproximacao.antes.pose } }
+    else {
+      // o voo inteiro à vista, do mesmo lado: o centro entre o golpe e a queda, longe o bastante pros dois caberem
+      const alvo = agora.alvo.clone().lerp(new THREE.Vector3(ateOnde.x, agora.alvo.y, ateOnde.z), 0.5)
+      const teste = new THREE.PerspectiveCamera(camera.fov, camera.aspect, camera.near, camera.far)
+      const posicao = new THREE.Vector3()
+      const pontos = [agora.alvo.clone(), ateOnde.clone().setY(0.05), ateOnde.clone().setY(0.6)]
+      let raio = agora.pose.raio
+      for (; raio < 22; raio += 0.2) {
+        posicao.setFromSphericalCoords(raio, agora.pose.phi, agora.pose.theta).add(alvo)
+        teste.position.copy(posicao)
+        teste.lookAt(alvo)
+        teste.updateMatrixWorld()
+        if (pontos.every((p) => {
+          const naTela = p.clone().project(teste)
+          return naTela.z < 1 && Math.abs(naTela.x) <= FOLGA_DA_LUTA.lados && naTela.y <= FOLGA_DA_LUTA.cima && naTela.y >= -FOLGA_DA_LUTA.baixo
+        })) break
+      }
+      destino = { alvo, pose: { ...agora.pose, raio } }
+    }
+    // parte de onde a câmera está (sem tranco) e abre só com o voo
+    aproximacao = { antes: aproximacao.antes, de: agora, para: agora, inicio: performance.now(), duracao: 1, voltando: false, acompanhar: { perto: destino, progresso } }
   }
 
   /** A captura começou em `ponto`: a câmera chega perto (`peso` de 0 a 1). */
@@ -406,7 +447,11 @@ export function criarVistaDaCamera(
       const { perto } = acompanhar
       para = {
         alvo: para.alvo.clone().lerp(perto.alvo, k),
-        pose: { raio: para.pose.raio + (perto.pose.raio - para.pose.raio) * k, phi: para.pose.phi + (perto.pose.phi - para.pose.phi) * k, theta: para.pose.theta },
+        pose: {
+          raio: para.pose.raio + (perto.pose.raio - para.pose.raio) * k,
+          phi: para.pose.phi + (perto.pose.phi - para.pose.phi) * k,
+          theta: para.pose.theta + diferencaAngular(para.pose.theta, perto.pose.theta) * k,
+        },
       }
     }
     const t = Math.min(1, (agora - aproximacao.inicio) / aproximacao.duracao)
@@ -483,6 +528,7 @@ export function criarVistaDaCamera(
     atualizarAproximacao,
     aproximarDaLuta,
     enquadrarLuta,
+    acompanharVoo,
     focarNaPeca,
     voltarDaLuta,
     socoNaCamera,
