@@ -9,7 +9,8 @@ import crypto from 'crypto'
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright')
 
-const SITE = 'http://127.0.0.1:5184/xadrez-caotico/'
+// a partida automática fica fora da aba Amigos (um modo pra mais tarde): ?avancado=1 a mostra
+const SITE = 'http://127.0.0.1:5184/xadrez-caotico/?avancado=1'
 const API = 'http://127.0.0.1:8787'
 let falhas = 0
 const conferir = (nome, cond, extra = '') => {

@@ -100,8 +100,13 @@ As pastas de `src` são por função:
 - Os avatares sugeridos em `public/avatares` saem dos modelos das peças: `node scripts/gerar-avatares.mjs`, com o site de
   desenvolvimento no ar. As cores em `scripts/avatares/retratos.js` copiam as de `materiaisPorFaccao`.
 - Os números do perfil somam as partidas contra a máquina, contadas no aparelho, com as amistosas, contadas no servidor.
-- O Perfil tem três abas: Perfil, Conquistas e Configurações. O botão do menu que era Configurações agora é
+- O Perfil tem duas abas no topo: Perfil e Configurações. Dentro da aba Perfil, embaixo da foto e dos números, ficam
+  as abas Partidas (a que abre) e Conquistas (pedido do usuário, 26/11). O botão do menu que era Configurações agora é
   Personalização.
+- A aba Partidas (pedido do usuário, 26/11) é o histórico: abre com todas as partidas terminadas, contra a máquina (do
+  aparelho) e amistosas (do servidor), as mais novas primeiro, 30 por vez. Dois filtros que se somam: o resultado
+  (todas, vitórias, empates, derrotas) e contra quem (todos, amigos, máquina); cada opção mostra quantas daria com o
+  outro filtro aplicado. O histórico aparece sempre, independente da aba de lances (`config.registro`).
 
 ## Avisos com o jogo fechado
 
@@ -375,7 +380,8 @@ As pastas de `src` são por função:
    - em `fotos-armas.mjs`, as fotos de cada fase;
    - `testar-golpe-que-pesa` acusa o que faltar do cadastro, da animação, do símbolo, do preço ou dos textos
      (`habilidadesIncompletas`).
-- Toda peça começa sem arma, inclusive as da máquina e as do adversário: as armas aparecem só em quem liberou e vestiu.
+- Toda peça começa sem arma: as armas aparecem só em quem liberou e vestiu. O adversário online veste o que comprou, e a
+  máquina veste o sorteio da partida (ver abaixo).
   Peão: katana ou espada. Torre: marreta, machado (lâmina em meia-lua) ou maça. Cavalo: lança. Bispo: cajado ou cristal.
   Rainha: cajado, cristal ou lua. Rei: cajado, cristal ou cetro.
 - Sem arma (`userData.arma === 'nenhuma'`), toda peça menos o cavalo, que pisoteia com as patas, vai até a vítima e luta
@@ -454,7 +460,7 @@ As pastas de `src` são por função:
   pessoa, as peças do adversário vestem o que ele comprou e equipou (`vestimenta.adversario`, `escolhasDaCor`): pedido
   do usuário (25/11), pra quem não comprou ver as armas e as habilidades e ter vontade de jogar pra comprar. A sala lê a
   personalização dos dois no banco a cada conexão (`lerVestimentas` em `sala.ts`; o banco só guarda o que foi comprado)
-  e manda a do outro em `vestimentaDoAdversario`. A máquina não veste nada. A marreta da torre muda em
+  e manda a do outro em `vestimentaDoAdversario`. A marreta da torre muda em
   `criarMarreta`. A vitrine da aba tem renderizador próprio e é montada por `montarVitrine`.
 - `testes/fotos-personalizacao.mjs` fotografa cada peça vestida: é como se confere se as partes encaixam.
 
@@ -598,7 +604,16 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
   1 minuto. O servidor manda `relogio: { restante, desde, agora }` com cada lance e o aparelho soma o que passou desde
   que chegou (`mostradorDaSala`), sem depender do relógio do aparelho. `ACELERAR_RELOGIO` em `worker/.dev.vars` (só no
   simulador) faz o relógio andar 30 vezes mais depressa nos testes.
-- Adversário automático (aba Amigos, `POST/GET /fila`, tabela `fila`): só blitz. O aparelho pergunta a cada 2,5 s; o
+- A máquina veste peças sorteadas (pedido do usuário, 26/11): cada partida nova contra ela sorteia, pra cada tipo de
+  peça, a armadura parte por parte, a montaria do cavalo, a arma e a habilidade especial, entre todas as opções do
+  catálogo (`conta/vestimentaDaMaquina.ts`); a habilidade que pede arma leva a arma junto. O sorteio fica gravado na
+  partida (`vestimentaDaMaquina`, em `xadrezRepo.ts`): continuando a partida, a máquina veste o mesmo. Vai em
+  `vestimenta.adversario` (só com partida aberta e sem sala), então as capturas da máquina usam a habilidade sorteada.
+  As partidas de antes e as de teste (`carregarTeste`) ficam sem nada.
+- Adversário automático (`POST/GET /fila`, tabela `fila`): fora da aba Amigos desde 26/11 (pedido do usuário: um modo
+  pra um momento mais avançado). Só aparece com `?avancado=1` no endereço (`modoAvancado` em `PainelAmigos.tsx`), que
+  é o que `testar-adversario-automatico` usa; pra voltar a oferecer, `modoAvancado` devolve true. O servidor continua
+  igual. Só blitz. O aparelho pergunta a cada 2,5 s; o
   par é reservado numa transação só (os dois lugares juntos) e a sala nasce antes de a fila mostrar o código. Quem
   bloqueou (ou foi bloqueado) não se encontra (tabela `bloqueios`); bloquear também desfaz a amizade e faz os convites
   responderem como se a pessoa não existisse. Denúncias (`POST /salas/:codigo/denunciar`, tabela `denuncias`, uma por

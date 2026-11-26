@@ -8,6 +8,11 @@ import { linkDoConvite, receberConviteLido, type ResultadoDoConvite } from '../c
 import { PainelConquistas } from './PainelConquistas'
 import { PainelPrivacidade } from './PainelPrivacidade'
 import { AdversarioAutomatico } from './AdversarioAutomatico'
+
+/** A partida automática (o adversário automático, a fila) fica guardada pra um momento mais avançado do jogo (pedido do
+ * usuário, 26/11): some da aba Amigos e só aparece com ?avancado=1 no endereço, que é o que o teste dela usa. Pra
+ * voltar a oferecer a todos, é só esta função devolver true. */
+const modoAvancado = () => new URLSearchParams(location.search).has('avancado')
 import { RITMOS, type Ritmo } from '../jogo/relogio'
 import { CONQUISTAS, type Contagem } from '../conta/conquistas'
 
@@ -411,7 +416,7 @@ export function PainelAmigos({
           ))}
         </div>
       )}
-      <AdversarioAutomatico t={t} onAbrirSala={onAbrirSala} />
+      {modoAvancado() && <AdversarioAutomatico t={t} onAbrirSala={onAbrirSala} />}
       {amigos && <MeuId t={t} id={amigos.meuId} />}
       {amigos && <ConvitePorLink t={t} codigo={amigos.meuConvite} onLido={onAtualizar} />}
       <ConvidarAmigos t={t} onConvidou={onAtualizar} />

@@ -611,7 +611,6 @@ export function MenuXadrez({
               t={t}
               idioma={config.idioma}
               partidas={partidasTerminadas}
-              comHistorico={config.registro}
               onVerPartida={onVerPartida}
               onAbrirSala={onAbrirSala}
               onEntrar={() => setPainel('conta')}

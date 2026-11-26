@@ -2,6 +2,7 @@ import { dbGetAll, dbPut, dbPutVarios } from './db'
 import { makeId } from '../app/utils'
 import type { Dificuldade } from '../jogo/engine'
 import { relogioNovo, type RelogioSalvo, type Ritmo } from '../jogo/relogio'
+import { sortearVestimentaDaMaquina } from '../conta/vestimentaDaMaquina'
 
 const STORE_PARTIDAS = 'xadrezPartidas'
 const STORE_APRENDIZADO = 'xadrezAprendizado'
@@ -30,12 +31,26 @@ export interface PartidaXadrez {
   fen?: string
   /** O servidor anotou o começo desta partida contra a máquina: sem bilhete, a vitória não paga óticoins. */
   bilhete?: boolean
+  /** O que as peças da máquina vestem nesta partida (o sorteio do começo: ver conta/vestimentaDaMaquina.ts). */
+  vestimentaDaMaquina?: Record<string, Record<string, string>>
 }
 
 /** `ritmo`: partida blitz, com relógio. */
 export function novaPartida(jogador: string, corJogador: 'w' | 'b', dificuldade: Dificuldade, ritmo?: Ritmo): PartidaXadrez {
   const agora = Date.now()
-  return { id: makeId(), jogador, corJogador, pgn: '', status: 'EM_ANDAMENTO', criadaEm: agora, atualizadaEm: agora, dificuldade, ...(ritmo ? { relogio: relogioNovo(ritmo) } : {}) }
+  return {
+    id: makeId(),
+    jogador,
+    corJogador,
+    pgn: '',
+    status: 'EM_ANDAMENTO',
+    criadaEm: agora,
+    atualizadaEm: agora,
+    dificuldade,
+    ...(ritmo ? { relogio: relogioNovo(ritmo) } : {}),
+    // a máquina veste peças sorteadas do catálogo
+    vestimentaDaMaquina: sortearVestimentaDaMaquina(),
+  }
 }
 
 export function resultadoDaPartida(partida: PartidaXadrez): 'venceu' | 'perdeu' | 'empate' {

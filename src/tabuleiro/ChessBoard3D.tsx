@@ -488,8 +488,11 @@ export function ChessBoard3D() {
     /** `porParteEm`: a peça nova dessa casa sai com cada equipamento numa malha própria (a da promoção, que recebe
      * os equipamentos voando). */
     function sincronizarPecas(recriar = false, porParteEm?: string) {
-      // na partida contra outra pessoa, as peças dela vestem o que ela comprou e equipou (o servidor manda)
-      const adversario = escolhasDaPrevia ? {} : (salaRef.current?.estado?.vestimentaDoAdversario ?? {})
+      // na partida contra outra pessoa, as peças dela vestem o que ela comprou e equipou (o servidor manda); contra a
+      // máquina, o que foi sorteado pra ela no começo da partida. Na tela inicial e na prévia da Loja, nada
+      // (no menu e na prévia não há partida aberta: partidaAtualRef fica vazia)
+      const contraAMaquina = salaRef.current ? undefined : partidaAtualRef.current?.vestimentaDaMaquina
+      const adversario = escolhasDaPrevia ? {} : (salaRef.current?.estado?.vestimentaDoAdversario ?? contraAMaquina ?? {})
       definirVestimenta({ cor: corHumanoRef.current, escolhas: escolhasDaPrevia ?? vestimentaDeTeste ?? personalizacaoAtual().escolhas, adversario })
       if (recriar) {
         // inclusive as que estavam caindo/sumindo de uma captura em andamento
