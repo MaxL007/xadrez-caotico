@@ -99,14 +99,17 @@ As pastas de `src` são por função:
   60 KB em base64. `GET /fotos/<ID>` é aberto, porque uma `<img>` não manda sessão: quem tem o ID vê a foto.
 - Os avatares sugeridos em `public/avatares` saem dos modelos das peças: `node scripts/gerar-avatares.mjs`, com o site de
   desenvolvimento no ar. As cores em `scripts/avatares/retratos.js` copiam as de `materiaisPorFaccao`.
-- Os números do perfil somam as partidas contra a máquina, contadas no aparelho, com as amistosas, contadas no servidor.
-- O Perfil tem duas abas no topo: Perfil e Configurações. Dentro da aba Perfil, embaixo da foto e dos números, ficam
-  as abas Partidas (a que abre) e Conquistas (pedido do usuário, 26/11). O botão do menu que era Configurações agora é
+- O Perfil tem duas abas no topo: Perfil e Configurações. Na aba Perfil, embaixo da foto, do ID e das óticoins, ficam
+  duas seções recolhíveis (pedido do usuário, 26/11): Partidas (abre aberta) e Conquistas (abre fechada). O placar de
+  números saiu do Perfil: cada filtro das partidas já diz quantas são. O botão do menu que era Configurações agora é
   Personalização.
-- A aba Partidas (pedido do usuário, 26/11) é o histórico: abre com todas as partidas terminadas, contra a máquina (do
-  aparelho) e amistosas (do servidor), as mais novas primeiro, 30 por vez. Dois filtros que se somam: o resultado
-  (todas, vitórias, empates, derrotas) e contra quem (todos, amigos, máquina); cada opção mostra quantas daria com o
-  outro filtro aplicado. O histórico aparece sempre, independente da aba de lances (`config.registro`).
+- As Partidas são o histórico: abrem com todas as partidas terminadas, contra a máquina (do aparelho) e amistosas (do
+  servidor), as mais novas primeiro, 30 por vez. Dois filtros que se somam: o resultado (todas, vitórias, empates,
+  derrotas) e contra quem (todos, amigos, máquina); cada opção mostra quantas daria com o outro filtro aplicado. O
+  histórico aparece sempre, independente da aba de lances (`config.registro`).
+- A partida aberta pelo Perfil troca o botão Menu por Voltar (`voltarAoPerfil` no ChessBoard3D), que reabre o menu no
+  Perfil como estava: as seções abertas, os filtros, quantas à vista e a partida tocada no meio da tela (`lembrado`, em
+  `PainelPerfil.tsx`). Qualquer outra partida aberta (Continuar, Novo jogo, Amigos) volta a ser Menu.
 
 ## Avisos com o jogo fechado
 

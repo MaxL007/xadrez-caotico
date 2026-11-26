@@ -2,18 +2,17 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from '
 import type { ChaveTexto, Idioma, Traduzir } from '../textos/idiomas'
 import { AVATARES, MOLDURAS, urlDoAvatar } from '../conta/aparencia'
 import { prepararFoto } from '../conta/foto'
-import { enviarFoto, lerMeuPerfil, listarSalas, mudarAparencia, useSessao, type Jogador, type Retrospecto, type SalaNaLista } from '../dados/servidor'
+import { enviarFoto, lerMeuPerfil, listarSalas, mudarAparencia, useSessao, type Jogador, type SalaNaLista } from '../dados/servidor'
 import { resultadoDaPartida, type PartidaXadrez } from '../dados/xadrezRepo'
 import type { SituacaoDasConquistas } from '../conta/conquistas'
 import { CONQUISTAS } from '../conta/conquistas'
-import { Avatar, MeuId, Oticoin, Placar } from './ElementosDoJogador'
+import { Avatar, MeuId, Oticoin } from './ElementosDoJogador'
 import { PainelConquistas } from './PainelConquistas'
 
 // Perfil de quem está jogando: quem é, a foto e a moldura, os números e o histórico das partidas.
 
 const botaoCor = 'rounded-lg border border-[#c9a24a]/40 px-3 py-2 text-sm font-semibold text-[#f5e6c8] transition hover:bg-[#3a2614] disabled:opacity-50'
 const botaoLink = 'text-xs font-semibold text-[#c9b48a] underline-offset-2 hover:underline disabled:opacity-50'
-const secao = 'space-y-2 border-t border-[#c9a24a]/20 pt-3'
 const HISTORICO_POR_VEZ = 30
 
 type Desfecho = 'venceu' | 'perdeu' | 'empate'
@@ -33,6 +32,17 @@ type FiltroDoAdversario = 'todos' | 'amigos' | 'maquina'
 type Aba = 'perfil' | 'configuracoes'
 /** O que o Perfil mostra embaixo dos números: as partidas ou as conquistas. */
 type Secao = 'partidas' | 'conquistas'
+
+/** Como o perfil estava quando a pessoa abriu uma partida dele: o "Voltar" da partida devolve tudo igual. */
+interface PerfilLembrado {
+  abertas: Record<Secao, boolean>
+  filtroDoResultado: FiltroDoResultado
+  filtroDoAdversario: FiltroDoAdversario
+  quantos: number
+  /** A partida tocada, pra lista voltar com ela à vista. */
+  tocada: string
+}
+let lembrado: PerfilLembrado | null = null
 
 /** Um grupo de botões de filtro: um só marcado, com quantas partidas cada um mostra. */
 function Filtro<T extends string>({ rotulo, valor, opcoes, onMudar }: { rotulo: string; valor: T; opcoes: { id: T; nome: string; quantas: number }[]; onMudar: (id: T) => void }) {
@@ -62,14 +72,6 @@ function desfechoDaSala(sala: SalaNaLista): Desfecho {
   if (sala.resultado === 'empate') return 'empate'
   return (sala.resultado === 'brancas') === (sala.minhaCor === 'w') ? 'venceu' : 'perdeu'
 }
-
-function contarContraMaquina(partidas: PartidaXadrez[]): Retrospecto {
-  const desfechos = partidas.map(resultadoDaPartida)
-  const contar = (desfecho: Desfecho) => desfechos.filter((d) => d === desfecho).length
-  return { partidas: partidas.length, vitorias: contar('venceu'), derrotas: contar('perdeu'), empates: contar('empate') }
-}
-
-const SEM_PARTIDAS: Retrospecto = { partidas: 0, vitorias: 0, derrotas: 0, empates: 0 }
 
 function EscolherAparencia({
   t,
@@ -184,6 +186,7 @@ export function PainelPerfil({
   conquistas,
   children,
   abaInicial,
+  voltandoDaPartida = false,
 }: {
   t: Traduzir
   idioma: Idioma
@@ -198,18 +201,30 @@ export function PainelPerfil({
   children: ReactNode
   /** A aba que abre: quem volta da privacidade volta para as Configurações. */
   abaInicial?: Aba
+  /** Voltando de uma partida aberta daqui: o perfil volta como estava. */
+  voltandoDaPartida?: boolean
 }) {
+
   const sessao = useSessao()
+  // lido uma vez: o aviso de volta só vale na abertura
+  const [antes] = useState(() => (voltandoDaPartida ? lembrado : null))
   const token = sessao?.token
   const [perfil, setPerfil] = useState<Awaited<ReturnType<typeof lerMeuPerfil>> | null>(null)
   const [salas, setSalas] = useState<SalaNaLista[]>([])
   const [falhou, setFalhou] = useState(false)
   const [editando, setEditando] = useState(false)
-  const [quantos, setQuantos] = useState(HISTORICO_POR_VEZ)
+  const [quantos, setQuantos] = useState(antes?.quantos ?? HISTORICO_POR_VEZ)
   const [aba, setAba] = useState<Aba>(abaInicial ?? 'perfil')
-  const [secaoDoPerfil, setSecaoDoPerfil] = useState<Secao>('partidas')
-  const [filtroDoResultado, setFiltroDoResultado] = useState<FiltroDoResultado>('todas')
-  const [filtroDoAdversario, setFiltroDoAdversario] = useState<FiltroDoAdversario>('todos')
+  // as partidas e as conquistas são seções recolhíveis (pedido do usuário): as partidas abrem abertas
+  const [abertas, setAbertas] = useState<Record<Secao, boolean>>(antes?.abertas ?? { partidas: true, conquistas: false })
+  const [filtroDoResultado, setFiltroDoResultado] = useState<FiltroDoResultado>(antes?.filtroDoResultado ?? 'todas')
+  const [filtroDoAdversario, setFiltroDoAdversario] = useState<FiltroDoAdversario>(antes?.filtroDoAdversario ?? 'todos')
+  // de volta da partida, a que foi tocada aparece no meio da tela
+  useEffect(() => {
+    if (!antes) return
+    const quadro = requestAnimationFrame(() => document.querySelector(`[data-id-da-partida="${CSS.escape(antes.tocada)}"]`)?.scrollIntoView({ block: 'center' }))
+    return () => cancelAnimationFrame(quadro)
+  }, [antes])
 
   useEffect(() => {
     if (!token) return
@@ -227,15 +242,6 @@ export function PainelPerfil({
       cancelado = true
     }
   }, [token])
-
-  const contraMaquina = useMemo(() => contarContraMaquina(partidas), [partidas])
-  const amistosas = (token && perfil?.geral) || SEM_PARTIDAS
-  const total: Retrospecto = {
-    partidas: contraMaquina.partidas + amistosas.partidas,
-    vitorias: contraMaquina.vitorias + amistosas.vitorias,
-    derrotas: contraMaquina.derrotas + amistosas.derrotas,
-    empates: contraMaquina.empates + amistosas.empates,
-  }
 
   const historico = useMemo(() => {
     const itens: ItemDoHistorico[] = [
@@ -333,7 +339,15 @@ export function PainelPerfil({
         )}
         <div className="space-y-0.5" data-historico>
           {filtrado.slice(0, quantos).map((item) => (
-            <button key={item.id} type="button" onClick={item.abrir} data-partida={item.contra} data-desfecho={item.desfecho} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-[#3a2614]">
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                lembrado = { abertas, filtroDoResultado, filtroDoAdversario, quantos, tocada: item.id }
+                item.abrir()
+              }}
+              data-id-da-partida={item.id}
+              data-partida={item.contra} data-desfecho={item.desfecho} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-[#3a2614]">
               <span className="min-w-0 truncate">
                 {t('online.contra', { nome: item.adversario })} <span className="text-[#c9b48a]">· {new Date(item.quando).toLocaleDateString(idioma)}</span>
               </span>
@@ -396,22 +410,31 @@ export function PainelPerfil({
         </p>
       )}
 
-      <div className={secao}>
-        <Placar t={t} retrospecto={total} />
-        <p className="text-xs text-[#c9b48a]" data-placar-maquina>
-          {t('perfil.contraMaquina', { v: contraMaquina.vitorias, d: contraMaquina.derrotas, e: contraMaquina.empates })}
-        </p>
-        <p className="text-xs text-[#c9b48a]" data-placar-amistosas>
-          {t('perfil.amistosas', { v: amistosas.vitorias, d: amistosas.derrotas, e: amistosas.empates })}
-        </p>
-      </div>
-
-      <div className="space-y-3" data-secoes-do-perfil>
-        {grupoDeAbas<Secao>(t('menu.perfil'), secaoDoPerfil, setSecaoDoPerfil, [
-          ['partidas', t('perfil.abaPartidas', { n: historico.length })],
-          ['conquistas', t('perfil.abaConquistas', { feitas, total: CONQUISTAS.length })],
-        ])}
-        {secaoDoPerfil === 'partidas' ? mostrarPartidas() : <PainelConquistas t={t} situacao={conquistas} />}
+      <div className="space-y-2" data-secoes-do-perfil>
+        {(
+          [
+            ['partidas', t('perfil.abaPartidas', { n: historico.length }), mostrarPartidas],
+            ['conquistas', t('perfil.abaConquistas', { feitas, total: CONQUISTAS.length }), () => <PainelConquistas t={t} situacao={conquistas} />],
+          ] as const
+        ).map(([id, nome, conteudo]) => (
+          <section key={id} className="rounded-xl border border-[#c9a24a]/30" data-secao-do-perfil={id}>
+            <button
+              type="button"
+              aria-expanded={abertas[id]}
+              aria-controls={`perfil-${id}`}
+              onClick={() => setAbertas((atual) => ({ ...atual, [id]: !atual[id] }))}
+              className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition hover:bg-[#3a2614]"
+            >
+              {nome}
+              <span aria-hidden className={`text-xs text-[#c9a24a] transition-transform ${abertas[id] ? 'rotate-180' : ''}`}>▼</span>
+            </button>
+            {abertas[id] && (
+              <div id={`perfil-${id}`} className="px-3 pb-3">
+                {conteudo()}
+              </div>
+            )}
+          </section>
+        ))}
       </div>
     </div>
   )

@@ -280,7 +280,6 @@ export function MenuXadrez({
   temPartida,
   partidasTerminadas,
   partidasContraMaquina,
-  onVerPartida,
   onContinuar,
   onNovoJogo,
   onAbrirSala,
@@ -289,6 +288,9 @@ export function MenuXadrez({
   onImportou,
   escondido = false,
   onVerEmAcao,
+  voltandoAoPerfil = false,
+  onVerDoPerfil,
+  onAbrirSalaDoPerfil,
 }: {
   t: Traduzir
   config: ConfigXadrez
@@ -298,7 +300,6 @@ export function MenuXadrez({
   partidasTerminadas: PartidaXadrez[]
   /** Todas as partidas contra a máquina, também as em andamento: é delas que saem as conquistas. */
   partidasContraMaquina: PartidaXadrez[]
-  onVerPartida: (partida: PartidaXadrez) => void
   onContinuar: () => void
   onNovoJogo: () => void
   onAbrirSala: (codigo: string) => void
@@ -311,11 +312,16 @@ export function MenuXadrez({
   escondido?: boolean
   /** "Ver em ação": a prévia do item da Loja no tabuleiro. */
   onVerEmAcao: (item: string) => void
+  /** De volta de uma partida aberta pelo Perfil: o menu abre no Perfil, como estava. */
+  voltandoAoPerfil?: boolean
+  /** A partida aberta pelo Perfil: o botão de cima dela vira "Voltar", que volta pra cá. */
+  onVerDoPerfil: (partida: PartidaXadrez) => void
+  onAbrirSalaDoPerfil: (codigo: string) => void
 }) {
   const sessao = useSessao()
   const { amigos, atualizar: atualizarAmigos } = useAmigos()
   const novidades = (amigos?.convitesRecebidos.length ?? 0) + (amigos?.partidasRecebidas.length ?? 0)
-  const [painel, setPainel] = useState<Painel>('inicio')
+  const [painel, setPainel] = useState<Painel>(voltandoAoPerfil ? 'perfil' : 'inicio')
   const aplicativo = useAplicativo()
   const podeInstalar = !aplicativo.instalado && (aplicativo.pedido !== null || aplicativo.noIphone)
   const [dicaDoIphone, setDicaDoIphone] = useState(false)
@@ -611,8 +617,9 @@ export function MenuXadrez({
               t={t}
               idioma={config.idioma}
               partidas={partidasTerminadas}
-              onVerPartida={onVerPartida}
-              onAbrirSala={onAbrirSala}
+              onVerPartida={onVerDoPerfil}
+              onAbrirSala={onAbrirSalaDoPerfil}
+              voltandoDaPartida={voltandoAoPerfil}
               onEntrar={() => setPainel('conta')}
               conquistas={conquistas}
               abaInicial={perfilNasConfiguracoes ? 'configuracoes' : 'perfil'}

@@ -176,6 +176,12 @@ export function ChessBoard3D() {
   const [revancheFalhou, setRevancheFalhou] = useState(false)
   // a tela inicial por cima do tabuleiro, ou a partida
   const [tela, setTela] = useState<'menu' | 'jogo'>('menu')
+  // a partida aberta pelo Perfil (pedido do usuário): o botão Menu vira Voltar, e o menu reabre no Perfil como estava.
+  // Vale até o menu aparecer de novo; qualquer outra partida aberta desliga
+  const [voltarAoPerfil, setVoltarAoPerfil] = useState(false)
+  useEffect(() => {
+    if (tela === 'menu') setVoltarAoPerfil(false)
+  }, [tela])
   /** O item da Loja em prévia no tabuleiro (o menu fica escondido enquanto isso). */
   const [previa, setPrevia] = useState<string | null>(null)
   const [statusTexto, setStatusTexto] = useState('')
@@ -1421,6 +1427,8 @@ export function ChessBoard3D() {
   }
 
   async function handleEscolherCor(cor: 'w' | 'b') {
+    // uma partida nova não é mais a do Perfil: o botão volta a ser Menu
+    setVoltarAoPerfil(false)
     // numa partida amistosa, "Novo jogo" chama o mesmo amigo de novo, não a máquina
     if (sala) {
       try {
@@ -1513,10 +1521,24 @@ export function ChessBoard3D() {
             temPartida={partidasEmAndamento.length > 0}
             partidasTerminadas={partidasFinalizadas}
             partidasContraMaquina={partidasContraMaquina}
-            onVerPartida={handleRetomarPartida}
-            onContinuar={handleContinuar}
+            onVerDoPerfil={(partida) => {
+              setVoltarAoPerfil(true)
+              handleRetomarPartida(partida)
+            }}
+            onAbrirSalaDoPerfil={(codigo) => {
+              setVoltarAoPerfil(true)
+              abrirSala(codigo)
+            }}
+            voltandoAoPerfil={voltarAoPerfil}
+            onContinuar={() => {
+              setVoltarAoPerfil(false)
+              handleContinuar()
+            }}
             onNovoJogo={handleNovoJogo}
-            onAbrirSala={abrirSala}
+            onAbrirSala={(codigo) => {
+              setVoltarAoPerfil(false)
+              abrirSala(codigo)
+            }}
             montarVitrine={montarVitrine}
             montarExpositor={montarExpositor}
             onImportou={atualizarListaDePartidas}
@@ -1531,8 +1553,8 @@ export function ChessBoard3D() {
           // fica embaixo, longe das peças
           <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <div className="pointer-events-auto flex items-start justify-between gap-2">
-              <button type="button" onClick={handleMenu} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
-                {t('menu.menu')}
+              <button type="button" onClick={handleMenu} data-voltar-ao-perfil={voltarAoPerfil || undefined} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
+                {t(voltarAoPerfil ? 'menu.voltar' : 'menu.menu')}
               </button>
               {/* a blitz: o relógio no canto de cima, o da máquina em cima e o seu embaixo */}
               {ritmoNaTela && <RelogioDaPartida t={t} ritmo={ritmoNaTela} corDoJogador={corDoJogador} andar={andarRelogio} adversario={adversarioDaSala} />}
