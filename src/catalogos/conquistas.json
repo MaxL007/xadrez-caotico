@@ -19,7 +19,6 @@
     { "id": "convite-1", "nivel": "basicas", "medida": "convites", "meta": 1, "oticoins": 10 },
     { "id": "convites-5", "nivel": "basicas", "medida": "convites", "meta": 5, "oticoins": 50 },
     { "id": "convites-10", "nivel": "basicas", "medida": "convites", "meta": 10, "oticoins": 100 },
-    { "id": "ascensoes-20", "nivel": "basicas", "medida": "ascensoes", "meta": 20, "oticoins": 10 },
     { "id": "rainhas-25", "nivel": "intermediarias", "medida": "rainhas", "meta": 25, "oticoins": 20 },
     { "id": "rainhas-70", "nivel": "intermediarias", "medida": "rainhas", "meta": 70, "oticoins": 60 },
     { "id": "rainhas-200", "nivel": "intermediarias", "medida": "rainhas", "meta": 200, "oticoins": 180 },

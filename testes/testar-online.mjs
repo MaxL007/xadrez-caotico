@@ -285,11 +285,11 @@ try {
   await ana.locator('[data-perfil]').getByText('Joga desde').waitFor()
   conferir('o perfil mostra o ID e desde quando joga', true)
   conferir('o perfil do amigo também tem a bolinha verde', (await ana.locator('[data-perfil] [data-online="sim"]').count()) === 1)
-  await ana.locator('[data-perfil]').getByRole('tab', { name: /^Conquistas \(\d+\/35\)$/ }).click()
+  await ana.locator('[data-perfil]').getByRole('tab', { name: /^Conquistas \(\d+\/34\)$/ }).click()
   await ana.locator('[data-conquistas="amigo"]').waitFor()
   conferir(
     'o perfil do amigo mostra as conquistas dele, com o progresso e sem o saldo',
-    (await ana.locator('[data-conquistas="amigo"] [data-conquista]').count()) === 35 && (await ana.locator('[data-conquistas="amigo"] [data-saldo]').count()) === 0,
+    (await ana.locator('[data-conquistas="amigo"] [data-conquista]').count()) === 34 && (await ana.locator('[data-conquistas="amigo"] [data-saldo]').count()) === 0,
   )
   await ana.locator('[data-perfil]').getByRole('tab', { name: 'Perfil', exact: true }).click()
   await foto(ana, 'amigos-perfil.png')
@@ -378,7 +378,7 @@ try {
   await ana.getByRole('button', { name: /^Conquistas \(/ }).click()
   // o convite agora é o patamar I da conquista Amigos: o tracinho dele fica marcado
   await ana.locator('[data-serie="amigos"] [data-conquista="convite-1"][data-alcancado]').waitFor()
-  conferir('as conquistas aparecem nos níveis que têm conquistas soltas (as intermediárias viraram patamares), com a do convite recebida', (await ana.locator('[data-nivel]').count()) === 1 && (await ana.locator('[data-conquista]').count()) === 35)
+  conferir('as conquistas aparecem só nos cartões com patamares (nenhuma solta, nenhuma repetida), com a do convite recebida', (await ana.locator('[data-nivel]').count()) === 0 && (await ana.locator('[data-serie]').count()) === 10 && (await ana.locator('[data-conquista]').count()) === 34)
   await ana.getByRole('tab', { name: 'Perfil', exact: true }).click()
   conferir('o perfil mostra o nome e o ID', (await ana.locator('[data-meu-id]').innerText()) === idAna && (await ana.getByText(nomeAna, { exact: true }).count()) >= 1)
   conferir('o perfil não mostra mais o placar', (await ana.locator('[data-placar]').count()) === 0)

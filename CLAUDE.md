@@ -490,8 +490,9 @@ As pastas de `src` são por função:
   e 250: 10, 50 e 100) e Rainhas, A ÚLTIMA PALAVRA (25, 70, 200 e 600: 20, 60, 180 e 530). Xeques dá o ESTRATEGISTA (100,
   300, 500 e 1000: 40, 150, 250 e 600) e Vitórias, o REI (100, 250, 600 e 1000: 70, 200, 480 e 800; a de 200 vitórias
   saiu). Amigos dá o CORAÇÃO DE FERRO (convidar 1, 5 e 10: 10, 50 e 100; o primeiro pagava 5 e a diferença
-  entrou na 0016; a de 50 convites saiu) e Roques, o ASTUTO (1, 15 e 50: 5, 100 e 300). Fora das séries sobrou só
-  `ascensoes-20`. Um nível que fica sem conquistas soltas (hoje, as intermediárias e as avançadas) não aparece no painel. As metas que mudaram viraram
+  entrou na 0016; a de 50 convites saiu) e Roques, o ASTUTO (1, 15 e 50: 5, 100 e 300). A `ascensoes-20`, que sobrou
+  solta, saiu (27/11: aparecia a Ascensão duas vezes, bug visto pelo usuário); quem a recebeu ficou com as óticoins.
+  Hoje toda conquista é patamar de uma série, e o nível sem conquistas soltas não aparece no painel. As metas que mudaram viraram
   conquistas novas (`torres-60`/`-180` e `bispos-60`/`-180` → `-100`/`-300`; `cavalos-100` → `cavalos-200`; `rainhas-50`, `-150` e `-500` → `-70`, `-200` e `-600`): quem recebeu
   as antigas fica com o que ganhou e recebe as novas ao chegar nelas; as outras levaram a diferença na 0016. O painel de conquistas mostra
   cada série num cartão só, antes dos níveis (`ConquistaComPatamares`): o lugar da medalha (vazio por enquanto, até o
