@@ -331,8 +331,13 @@ export function criarVistaDaCamera(
     // com quem ataca ainda longe, a câmera só gira pro lado da luta e centra o caminho: não chega mais perto do que já
     // estava. A aproximação toda vem do andar da peça (antes ela dava um zoom de uma vez, até a distância mínima da luta,
     // e só depois acompanhava; parada esperando a peça sair, ficava no zoom: bug visto pelo usuário)
-    if (comeco) melhor.pose.raio = Math.max(melhor.pose.raio, poseAtualDaCamera().raio)
-    const longe: PontoDeVista = { alvo: alvo.clone(), pose: melhor.pose }
+    // (26/11) e, de novo (27/11), a troca do centro pro lugar da luta: com a mesma distância do centro, a câmera andava na
+    // direção da luta e chegava uns 16% mais perto com quem ataca ainda parado, virando ou guardando a katana. Agora ela
+    // fica pelo menos tão longe da luta quanto já estava
+    if (comeco) melhor.pose.raio = Math.max(melhor.pose.raio, poseAtualDaCamera().raio, camera.position.distanceTo(alvo))
+    // e na altura de agora: descer pra altura da luta já fazia a peça parecer maior (a de baixo vê o corpo inteiro). A
+    // altura também muda só com o andar de quem ataca
+    const longe: PontoDeVista = { alvo: alvo.clone(), pose: comeco ? { ...melhor.pose, phi: poseAtualDaCamera().phi } : melhor.pose }
     irAte(longe, CHEGA_MS + 260 * giroDaCamera, false)
     if (comeco && aproximacao) {
       // o golpe sozinho, do mesmo lado e na mesma altura: é onde a câmera chega quando quem ataca chega
@@ -361,6 +366,11 @@ export function criarVistaDaCamera(
       const teste = new THREE.PerspectiveCamera(camera.fov, camera.aspect, camera.near, camera.far)
       const posicao = new THREE.Vector3()
       const pontos = [agora.alvo.clone(), ateOnde.clone().setY(0.05), ateOnde.clone().setY(0.6)]
+      // e abre de verdade (bug visto pelo usuário, 27/11): antes só se afastava se a queda não coubesse na tela, e quase
+      // sempre cabia, então a câmera ficava parada no golpe. Agora vai pelo menos até a metade do caminho de volta à
+      // distância de antes da luta, a mesma mecânica da chegada de quem ataca, ao contrário
+      const posicaoDeAntes = new THREE.Vector3().setFromSphericalCoords(aproximacao.antes.pose.raio, aproximacao.antes.pose.phi, aproximacao.antes.pose.theta).add(aproximacao.antes.alvo)
+      const metadeDaVolta = agora.pose.raio + 0.5 * Math.max(0, posicaoDeAntes.distanceTo(alvo) - agora.pose.raio)
       let raio = agora.pose.raio
       for (; raio < 22; raio += 0.2) {
         posicao.setFromSphericalCoords(raio, agora.pose.phi, agora.pose.theta).add(alvo)
@@ -372,7 +382,7 @@ export function criarVistaDaCamera(
           return naTela.z < 1 && Math.abs(naTela.x) <= FOLGA_DA_LUTA.lados && naTela.y <= FOLGA_DA_LUTA.cima && naTela.y >= -FOLGA_DA_LUTA.baixo
         })) break
       }
-      destino = { alvo, pose: { ...agora.pose, raio } }
+      destino = { alvo, pose: { ...agora.pose, raio: Math.max(raio, Math.min(metadeDaVolta, controls.maxDistance)) } }
     }
     // parte de onde a câmera está (sem tranco) e abre só com o voo
     aproximacao = { antes: aproximacao.antes, de: agora, para: agora, inicio: performance.now(), duracao: 1, voltando: false, acompanhar: { perto: destino, progresso } }

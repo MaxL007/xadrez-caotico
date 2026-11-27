@@ -726,11 +726,15 @@ em `src/tabuleiro/sensacao/golpeQuePesa.ts`).
 - Sem zoom antes do acompanhamento (bug visto pelo usuário, 25/11): o ponto de vista do caminho inteiro era calculado a
   partir da distância mínima da luta, então a câmera dava um zoom de uma vez e só depois acompanhava, e ficava parada no
   zoom enquanto a peça ainda guardava a katana ou virava. Agora, com quem ataca longe, ela só gira pro lado e centra o
-  caminho, sem chegar mais perto do que estava; toda a aproximação vem do andar da peça (`progresso`).
+  caminho, sem chegar mais perto do que estava; toda a aproximação vem do andar da peça (`progresso`). De novo em 27/11
+  (visto pelo usuário): a troca do centro pro lugar da luta e a descida pra altura da luta faziam a vítima crescer uns 16%
+  na tela com quem ataca ainda parado. Agora a câmera fica pelo menos tão longe da luta quanto estava e na altura de
+  agora; a altura também muda só com o andar.
 - O voo da vítima (pedido do usuário): a câmera abre conforme a peça arremessada se afasta, a mesma mecânica da chegada,
   ao contrário (`vista.acompanharVoo`). `nocautear` devolve o voo (onde cai, se sai do tabuleiro, o quanto já foi) e
   todo golpe que derruba passa por `sensacao.acompanharVoo`. Saindo do tabuleiro (o Empurrão), a câmera chega à vista
-  de antes da luta quando a vítima passa da beira; caindo no tabuleiro, abre só o bastante pra caber a queda.
+  de antes da luta quando a vítima passa da beira; caindo no tabuleiro, abre pelo menos até a metade da volta à distância de antes (27/11: só abria se a queda não
+  coubesse, e quase sempre cabia, então a câmera ficava parada no golpe).
 - A tela inicial e a partida nova olham sempre pro meio do tabuleiro (`CENTRO` em `vistaDaCamera.ts`): o giro da câmera
   leva o centro de volta. Antes o centro ficava preso perto da última luta quando a pessoa encostava na câmera no meio
   da aproximação (no celular, todo toque conta), e o tabuleiro aparecia torto até na tela inicial (bug visto pelo
