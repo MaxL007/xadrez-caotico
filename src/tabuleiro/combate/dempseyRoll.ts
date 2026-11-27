@@ -119,8 +119,8 @@ interface Dempsey {
   meiasVoltas: number
   marcos: Set<string>
   vitimaSolta: boolean
-  /** Quando o último gancho acertou: a cabeça vai pra trás de uma vez e volta (como no anime, o golpe é na cabeça). */
-  ultimoGancho: number
+  /** Os ganchos que acertaram a cabeça: quando e com que força. Cada um soma a reação dele (`reacaoAoSoco`). */
+  socosNaCabeca: { quando: number; forca: number }[]
   continua: () => boolean
   avisos: AvisosDaDempsey
 }
@@ -128,6 +128,29 @@ interface Dempsey {
 const dempseys = new Set<Dempsey>()
 
 const suave = (t: number) => t * t * (3 - 2 * t)
+
+/**
+ * A cabeça de quem leva um soco forte (pedido do usuário, 27/11): estala pra trás de uma vez, fica um instante lá
+ * tremendo, volta passando um pouco do ponto (um aceno pra frente, de quem sentiu) e dá uma sacudida curta, de quem
+ * tenta se recompor sem perder os sentidos. `ms` desde o acerto. Devolve o quanto vai pra trás (negativo é o aceno pra
+ * frente) e a sacudida (o giro em volta do pescoço), os dois de -1 a 1.
+ */
+export function reacaoAoSoco(ms: number): { praTras: number; sacode: number } {
+  if (ms < 0 || ms > 900) return { praTras: 0, sacode: 0 }
+  /** O estalo: chega lá em 45 ms. */
+  const ESTALO = 45
+  /** Fica lá, tremendo, até aqui. */
+  const SEGURA = 140
+  let praTras: number
+  if (ms < ESTALO) praTras = suave(ms / ESTALO)
+  else if (ms < SEGURA) praTras = 1 - 0.08 * ((ms - ESTALO) / (SEGURA - ESTALO))
+  // a volta: uma mola amortecida, que passa do ponto pra frente (o aceno) e assenta
+  else praTras = 0.92 * Math.exp(-(ms - SEGURA) / 120) * Math.cos((Math.PI * (ms - SEGURA)) / 300)
+  // a sacudida: duas balançadas rápidas, sumindo, logo depois da volta
+  const DE = 240
+  const sacode = ms < DE ? 0 : suave(Math.min(1, (ms - DE) / 60)) * Math.exp(-(ms - DE) / 170) * Math.sin((2 * Math.PI * (ms - DE)) / 150)
+  return { praTras, sacode }
+}
 const sobe = (t: number, de: number, ate: number) => suave(Math.min(1, Math.max(0, (t - de) / (ate - de))))
 const fracao = (t: number, de: number, ate: number) => Math.min(1, Math.max(0, (t - de) / (ate - de)))
 
@@ -206,7 +229,7 @@ export function dempseyRoll(peca: THREE.Object3D, vitima: THREE.Object3D, contin
     meiasVoltas: 0,
     marcos: new Set(),
     vitimaSolta: false,
-    ultimoGancho: -Infinity,
+    socosNaCabeca: [],
     continua,
     avisos,
   })
@@ -371,21 +394,35 @@ function posarVitima(d: Dempsey, t: number, dt: number, agora: number) {
     // a cabeça acompanha o balanço de quem vai bater
     if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(CIMA, 0.35 * ladoDoOito(t) * guarda))
   }
-  // a cabeça jogada pra trás no instante do gancho: sobe rápido, segura um instante e volta (pedido do usuário)
-  const desdeOGancho = t - d.ultimoGancho
-  const praTras = desdeOGancho >= 0 ? (1 - Math.exp(-desdeOGancho / 22)) * Math.exp(-desdeOGancho / 170) * realismo() : 0
-  if (praTras > 0.001) {
+  // cada soco na cabeça: estala pra trás, segura tremendo, volta com um aceno e sacode (`reacaoAoSoco`); os socos
+  // seguidos somam, e cada um vem mais forte que o anterior (a peça sentindo o dano)
+  let praTras = 0
+  let sacode = 0
+  for (const soco of d.socosNaCabeca) {
+    const reacao = reacaoAoSoco(t - soco.quando)
+    praTras += soco.forca * reacao.praTras
+    sacode += soco.forca * reacao.sacode
+  }
+  praTras = THREE.MathUtils.clamp(praTras, -0.5, 1.3) * realismo()
+  sacode = THREE.MathUtils.clamp(sacode, -1, 1) * realismo()
+  if (Math.abs(praTras) > 0.001 || Math.abs(sacode) > 0.001) {
     const cabeca = ossoRPG(vitima, 'Head')
-    if (peito) girarOssoNoMundo(peito, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.22 * praTras))
-    if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.75 * praTras))
-    if (cabeca) girarOssoNoMundo(cabeca, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.5 * praTras))
+    // no estalo a cabeça treme em dois (o tranco do soco)
+    const treme = praTras > 0.6 ? (acaso(Math.floor(agora / QUADRO_EM_DOIS) + 7) - 0.5) * 0.08 : 0
+    if (peito) girarOssoNoMundo(peito, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.2 * praTras))
+    if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.7 * praTras + treme))
+    if (cabeca) {
+      girarOssoNoMundo(cabeca, new THREE.Quaternion().setFromAxisAngle(ladoDaVitima, -0.5 * praTras))
+      // a sacudida: a cabeça vira pros dois lados em volta do pescoço, pouco, de quem ainda está de pé
+      girarOssoNoMundo(cabeca, new THREE.Quaternion().setFromAxisAngle(CIMA.clone().applyQuaternion(cabeca.getWorldQuaternion(new THREE.Quaternion())), 0.28 * sacode))
+    }
   }
   if (d.empurrao.lengthSq() > 0) {
     // girar em volta de (cima × empurrão) leva o alto da peça pro lado do empurrão
     const eixo = new THREE.Vector3().crossVectors(CIMA, d.empurrao).normalize()
     if (tronco) girarOssoNoMundo(tronco, new THREE.Quaternion().setFromAxisAngle(eixo, 0.15 * forca))
     if (peito) girarOssoNoMundo(peito, new THREE.Quaternion().setFromAxisAngle(eixo, 0.3 * forca))
-    if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(eixo, 0.75 * forca))
+    if (pescoco) girarOssoNoMundo(pescoco, new THREE.Quaternion().setFromAxisAngle(eixo, 0.45 * forca))
   }
   if (tonta > 0) {
     // tonta: o tronco descreve um círculo pequeno, a cabeça caindo
@@ -427,7 +464,8 @@ function avisar(d: Dempsey, t: number) {
       d.balanco = 0
       d.velocidade = 8 + numero * 0.8
       d.recuo += 0.022
-      d.ultimoGancho = t
+      // cada soco pesa mais que o anterior: a peça vai sentindo o dano
+      d.socosNaCabeca.push({ quando: t, forca: 0.75 + 0.07 * numero })
       // cambaleia pro lado do golpe e volta um pouco no seguinte
       d.deLado = -deQual * 0.04
       // pra onde a cabeça vai: pro lado do gancho e pra trás

@@ -249,8 +249,10 @@ As pastas de `src` são por função:
     cai, ela cambaleia pro lado do golpe e os joelhos vão cedendo; depois do terceiro, tonta, o tronco roda devagar.
   - O impacto de cada gancho (pedido do usuário: no anime, o golpe é na cabeça): a faísca, o anel de impacto abrindo,
     o estouro de riscos e os respingos voando pra onde a cabeça vai (`anelDeImpacto`, `estouroDeRiscos` e
-    `respingos`, em `efeitosDeAnime.ts`). No instante do acerto, a cabeça vai pra trás de uma vez, com o pescoço e o
-    peito: chega em uns 20 ms, segura e volta em uns 170 ms (`ultimoGancho`).
+    `respingos`, em `efeitosDeAnime.ts`). Cada soco na cabeça (pedido do usuário, 27/11, `reacaoAoSoco`): ela estala pra trás em
+    45 ms com o pescoço e o peito, fica lá tremendo até 140 ms, volta passando um pouco do ponto (um aceno pra frente, de
+    quem sentiu) e dá uma sacudida curta, de quem tenta se recompor sem cair. Os socos seguidos somam, e cada um pesa mais
+    que o anterior (`socosNaCabeca`); o tranco pro lado ficou menor, pra cabeça ir pra trás se ver.
 
   O símbolo é a segunda versão do desenho do usuário (21/11): duas luvas de boxe de frente, cada uma com o ∞ no dorso.
   É desenho de contorno, então cada parte preta sai da imagem com os buracos brancos de dentro (o contorno seguido pixel
