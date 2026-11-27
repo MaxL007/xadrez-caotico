@@ -88,6 +88,12 @@
 }
 
 @layer components {
+  /* a óticoin no centro do quadro (pedido do usuário, 27/11): vista um pouco de cima, a borda grossa de baixo deixa a
+     moeda 2,3% abaixo do meio nas imagens dela (o giro e os dois lados parados). Sobe na hora de mostrar, pra gerar as
+     imagens de novo não desfazer nem dobrar a correção */
+  .oticoin {
+    translate: 0 -2.3%;
+  }
   /* a óticoin girando: a fileira de quadros do giro, andada de quadro em quadro */
   .oticoin-giro {
     background-repeat: no-repeat;

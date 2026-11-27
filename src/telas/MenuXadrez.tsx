@@ -17,7 +17,7 @@ import { PainelLoja } from './PainelLoja'
 import { PainelPrivacidade } from './PainelPrivacidade'
 import { marcarPasseioVisto, PasseioInicial, passeioJaVisto, passeioNaAutomacao } from './PasseioInicial'
 import { instalarAplicativo, useAplicativo } from '../app/aplicativo'
-import { avisosSuportados, desligarAvisos, ligarAvisos, manterAvisos, situacaoDosAvisos, type SituacaoDosAvisos } from '../app/notificacoes'
+import { avisosJaPerguntados, avisosSuportados, desligarAvisos, ligarAvisos, manterAvisos, marcarAvisosPerguntados, situacaoDosAvisos, type SituacaoDosAvisos } from '../app/notificacoes'
 import { dispensarAvisoDoConvite, guardarPedidosAvisados, pedidosAvisados, useConviteDeAmizade } from '../conta/conviteDeAmizade'
 import type { VitrineDaPeca } from '../tabuleiro/pecas/equipamentos'
 import type * as THREE from 'three'
@@ -158,6 +158,7 @@ function AvisosComOJogoFechado({ t, idioma }: { t: Traduzir; idioma: Idioma }) {
         ligado={situacao === 'ligados'}
         onMudar={(ligar) => {
           if (mudando || !sessao || situacao === 'bloqueados') return
+          marcarAvisosPerguntados(sessao.usuario.id)
           setMudando(true)
           void (ligar ? ligarAvisos(idioma) : desligarAvisos())
             .then(setSituacao)
@@ -166,6 +167,63 @@ function AvisosComOJogoFechado({ t, idioma }: { t: Traduzir; idioma: Idioma }) {
         }}
       />
     </Linha>
+  )
+}
+
+/**
+ * A pergunta dos avisos, logo depois de entrar na conta (pedido do usuário, 27/11): uma vez só por conta neste aparelho,
+ * e só onde o aparelho sabe mostrar os avisos e eles ainda estão desligados. Ativar pede a permissão do aparelho (no
+ * toque, como o navegador exige); depois, só nas Configurações.
+ */
+function PerguntaDosAvisos({ t, idioma }: { t: Traduzir; idioma: Idioma }) {
+  const sessao = useSessao()
+  const usuario = sessao?.usuario.id
+  const [perguntar, setPerguntar] = useState(false)
+  const [ativando, setAtivando] = useState(false)
+  useEffect(() => {
+    setPerguntar(false)
+    // os testes automáticos não veem a pergunta (cobriria os botões), como o passeio
+    if (!usuario || !avisosSuportados() || avisosJaPerguntados(usuario) || navigator.webdriver) return
+    let vivo = true
+    void situacaoDosAvisos().then((s) => {
+      if (!vivo) return
+      // já ligados ou bloqueados no aparelho: não há o que perguntar
+      if (s === 'desligados') setPerguntar(true)
+      else marcarAvisosPerguntados(usuario)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [usuario])
+  if (!perguntar || !usuario) return null
+  const responder = (ativar: boolean) => {
+    marcarAvisosPerguntados(usuario)
+    if (!ativar) {
+      setPerguntar(false)
+      return
+    }
+    setAtivando(true)
+    void ligarAvisos(idioma)
+      .catch(() => undefined)
+      .finally(() => setPerguntar(false))
+  }
+  return (
+    <div role="dialog" aria-label={t('avisos.pergunta')} className="absolute left-1/2 top-14 z-20 w-[min(22rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-[#c9a24a]/60 bg-[#1c120a]/95 p-4 text-[#f5e6c8] shadow-xl" data-pergunta-avisos>
+      <p className="flex items-center gap-2 font-display text-base font-semibold">
+        <img src={`${import.meta.env.BASE_URL}icones/icone-192.png`} alt="" aria-hidden className="h-6 w-6" />
+        {t('avisos.pergunta')}
+      </p>
+      <p className="mt-1.5 text-xs leading-snug text-[#c9b48a]">{t('config.avisosDica')}</p>
+      <p className="mt-1 text-[0.7rem] text-[#c9b48a]/80">{t('avisos.depois')}</p>
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" className={botaoPequeno} disabled={ativando} onClick={() => responder(false)}>
+          {t('avisos.agoraNao')}
+        </button>
+        <button type="button" disabled={ativando} onClick={() => responder(true)} className="rounded-lg border border-[#e6c675] bg-[#c9a24a] px-3 py-1 text-xs font-semibold text-[#1c120a] hover:bg-[#e6c675] disabled:opacity-60">
+          {t('avisos.ativar')}
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -588,6 +646,8 @@ export function MenuXadrez({
       )}
 
       {painel === 'inicio' && passeio && <PasseioInicial t={t} onFim={() => setPasseio(false)} />}
+      {/* depois de entrar na conta: ativar os avisos? (uma vez só; não por cima do passeio) */}
+      {painel === 'inicio' && !passeio && !mostrandoCodigo && <PerguntaDosAvisos t={t} idioma={config.idioma} />}
 
       {painel !== 'inicio' && (
         <section role="dialog" aria-label={t(TITULOS[painel])} className={painelMenu}>

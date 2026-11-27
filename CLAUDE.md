@@ -135,6 +135,13 @@ As pastas de `src` são por função:
   acabado (404/410) é apagada.
 - A sala (`sala.ts`, `avisarQuemSaiu`) só avisa quem não está com a partida aberta (as conexões dela), sem segurar o lance
   (`waitUntil`). As rotas de convite esperam o aviso no máximo 1,5 s (`avisarSemDemora`).
+- Logo depois de entrar na conta, a tela inicial pergunta se a pessoa quer ativar os avisos (pedido do usuário, 27/11:
+  `PerguntaDosAvisos` em MenuXadrez): uma vez só por conta neste aparelho (`xadrez:avisosPerguntados:<conta>`), e só
+  onde os avisos funcionam e ainda estão desligados. Mexer no controle das Configurações também conta como resposta;
+  depois, só por lá. O navegador automático dos testes não vê a pergunta, como o passeio.
+- O ícone pequeno do aviso (o `badge`, na barra do Android) é `public/icones/insignia-96.png`, a óticoin em silhueta
+  branca sobre fundo transparente (`node scripts/gerar-insignia.mjs`): o Android usa só a transparência, e o ícone opaco
+  de antes virava um quadrado branco (visto pelo usuário, 27/11).
 - O service worker (`scripts/aplicativo/sw.js`) mostra o aviso (não mostra se o jogo está aberto e à vista) e, no toque,
   abre o jogo no endereço dele: `?sala=<código>` entra na partida (`ChessBoard3D`) e `?amigos=1` abre os Amigos (menu).
   Com o jogo já aberto, manda o endereço por mensagem. Só existe no site publicado: no desenvolvimento a chave não aparece.
@@ -145,6 +152,10 @@ As pastas de `src` são por função:
 
 - O site é um PWA: `public/manifest.webmanifest`, ícones em `public/icones` (a óticoin é a logo; saem de
   `node scripts/gerar-oticoin.mjs`, junto com as imagens da moeda) e o service worker `scripts/aplicativo/sw.js`.
+- A moeda fica no centro de verdade em todos os ícones (pedido do usuário, 27/11): vista um pouco de cima, a borda grossa
+  de baixo deixava o desenho uns 2,5% abaixo do meio. O gerador (`scripts/oticoin/moeda.js`, `CONTORNO`) centra o contorno
+  dos pixels da moeda, e os ícones de hoje foram acertados nos pixels. As imagens da moeda no jogo (o giro e os dois lados)
+  sobem 2,3% na hora de mostrar (a classe `oticoin`, em index.css), pra gerar de novo não desfazer nem dobrar a correção.
 - `npm run build` roda `scripts/gerar-sw.mjs`, que grava `dist/sw.js` com a lista de arquivos e o hash de cada um. O
   aparelho guarda tudo e, a cada versão, baixa só o que mudou. Os arquivos da versão anterior ficam mais uma rodada,
   porque uma tela aberta há tempo ainda pode pedir algum.

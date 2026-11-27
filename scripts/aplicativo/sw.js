@@ -106,7 +106,9 @@ self.addEventListener('push', (evento) => {
         tag: aviso.etiqueta || 'xadrez',
         renotify: true,
         icon: enderecoDe('icones/icone-192.png'),
-        badge: enderecoDe('icones/icone-mascara-512.png'),
+        // o ícone pequeno da barra do Android: só a transparência vale, então é a óticoin em silhueta branca (o ícone
+        // opaco virava um quadrado branco). Sai de scripts/gerar-insignia.mjs
+        badge: enderecoDe('icones/insignia-96.png'),
         data: { url: enderecoDe(aviso.url || '') },
       })
     })(),

@@ -10,6 +10,27 @@ import type { Idioma } from '../textos/idiomas'
 export type SituacaoDosAvisos = 'sem-suporte' | 'bloqueados' | 'desligados' | 'ligados'
 
 const LIGADOS = 'xadrez:avisos'
+/** A pergunta do primeiro login (pedido do usuário, 27/11): por conta, neste aparelho. */
+const PERGUNTADOS = (usuario: string) => `xadrez:avisosPerguntados:${usuario}`
+
+/** Já perguntamos se essa conta quer os avisos neste aparelho (ou ela já mexeu neles nas Configurações). */
+export function avisosJaPerguntados(usuario: string): boolean {
+  try {
+    return localStorage.getItem(PERGUNTADOS(usuario)) === '1'
+  } catch {
+    // sem armazenamento, não insiste: a pessoa liga nas Configurações
+    return true
+  }
+}
+
+/** Não pergunta mais: daqui em diante, só nas Configurações, quando a pessoa quiser. */
+export function marcarAvisosPerguntados(usuario: string) {
+  try {
+    localStorage.setItem(PERGUNTADOS(usuario), '1')
+  } catch {
+    // fica pra próxima
+  }
+}
 
 /** O navegador sabe mostrar avisos com o jogo fechado (o service worker e o serviço de push). */
 export function avisosSuportados(): boolean {

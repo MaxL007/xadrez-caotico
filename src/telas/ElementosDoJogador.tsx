@@ -54,12 +54,12 @@ export function Oticoin({ tamanho = 16, figura = 'rei', girando = false }: { tam
     return (
       <span
         aria-hidden
-        className="oticoin-giro inline-block shrink-0"
+        className="oticoin oticoin-giro inline-block shrink-0"
         style={{ width: tamanho, height: tamanho, ['--tamanho' as string]: `${tamanho}px`, backgroundImage: `url(${import.meta.env.BASE_URL}oticoin/giro.webp)` }}
       />
     )
   }
-  return <img src={`${import.meta.env.BASE_URL}oticoin/${figura}.png`} alt="" aria-hidden width={tamanho} height={tamanho} className="shrink-0" />
+  return <img src={`${import.meta.env.BASE_URL}oticoin/${figura}.png`} alt="" aria-hidden width={tamanho} height={tamanho} className="oticoin shrink-0" />
 }
 
 function Quadro({ rotulo, valor }: { rotulo: string; valor: number }) {

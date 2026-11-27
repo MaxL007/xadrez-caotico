@@ -145,6 +145,26 @@ const logo = new Image()
 logo.src = renderer.domElement.toDataURL('image/png')
 await logo.decode()
 
+/** Onde a moeda está no render da logo: o contorno dos pixels que não são transparentes (o centro e o tamanho). */
+const CONTORNO = (() => {
+  const tela = document.createElement('canvas')
+  tela.width = logo.width
+  tela.height = logo.height
+  const c = tela.getContext('2d', { willReadFrequently: true })
+  c.drawImage(logo, 0, 0)
+  const { data } = c.getImageData(0, 0, tela.width, tela.height)
+  let x0 = tela.width, x1 = -1, y0 = tela.height, y1 = -1
+  for (let y = 0; y < tela.height; y++)
+    for (let x = 0; x < tela.width; x++)
+      if (data[(y * tela.width + x) * 4 + 3] > 128) {
+        x0 = Math.min(x0, x)
+        x1 = Math.max(x1, x)
+        y0 = Math.min(y0, y)
+        y1 = Math.max(y1, y)
+      }
+  return { cx: (x0 + x1 + 1) / 2, cy: (y0 + y1 + 1) / 2, largura: x1 - x0 + 1, altura: y1 - y0 + 1 }
+})()
+
 /** A moeda num quadrado de `lado`, ocupando `parte` dele, sobre o fundo do jogo (ou transparente). */
 function icone(lado, parte, comFundo) {
   const tela = document.createElement('canvas')
@@ -159,9 +179,13 @@ function icone(lado, parte, comFundo) {
     c.fillRect(0, 0, lado, lado)
   }
   c.imageSmoothingQuality = 'high'
-  // a moeda ocupa uns 87% da largura do quadro renderizado; inclinada, um pouco mais da altura
-  const tamanho = (lado * parte) / 0.87
-  c.drawImage(logo, (lado - tamanho) / 2, (lado - tamanho) / 2, tamanho, tamanho)
+  // a moeda no centro de verdade (pedido do usuário, 27/11): vista um pouco de cima, a borda grossa de baixo deixava o
+  // desenho uns 2,5% abaixo do meio do quadro. Centra o contorno da moeda (`CONTORNO`, medido nos pixels do render), e
+  // o lado maior dela ocupa `parte` do quadro
+  const escala = (lado * parte) / Math.max(CONTORNO.largura, CONTORNO.altura)
+  const largura = logo.width * escala
+  const altura = logo.height * escala
+  c.drawImage(logo, lado / 2 - CONTORNO.cx * escala, lado / 2 - CONTORNO.cy * escala, largura, altura)
   return tela.toDataURL('image/png')
 }
 
