@@ -450,7 +450,9 @@ As pastas de `src` são por função:
   cartão e no item aberto. O menu some (fica montado, escondido, pra Loja voltar no item), o tabuleiro da tela inicial
   carrega uma posição pronta pra peça do item (`tabuleiro/fluxo/previaDaLoja.ts`, `CENAS`), veste a peça de quem joga com
   o item por cima do que ela já usa (`vestimentaDaPrevia`; a habilidade que pede arma vem com ela) e joga a captura de
-  verdade, com a câmera de perto (`vista.irParaAcao`). Sem partida (nada salvo) e sem resposta da máquina; "Pular" volta
+  verdade. A câmera vai pra vista de jogo do lado da cena (`vista.irParaAcao`, o tabuleiro inteiro), e a captura usa a
+  câmera da luta de sempre: chega perto com quem ataca e abre com o voo (27/11: antes ia direto de perto até a captura,
+  o zoom antes do golpe, visto pelo usuário). Sem partida (nada salvo) e sem resposta da máquina; "Pular" volta
   na hora. De volta, o item aberto diz o que faz (`loja.acao.<arma>` ou o texto da habilidade), "Gostou? É seu por N",
   e, pra quem não tem as óticoins, as três conquistas
   mais perto de sair (`maisPerto`), pra dar vontade de jogar mais.
