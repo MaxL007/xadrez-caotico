@@ -91,7 +91,7 @@ async function fotografar(nome, { pgn, vestir, golpe = null, de, para, promocao 
 
 // câmera: [distância, de que lado em graus, inclinação em graus]
 const TORRE = { pgn: '1. a4 h5 2. a5 h4 3. a6 bxa6', de: 'a1', para: 'a6', camera: [4.8, -60, 58] }
-// a vítima do peão é um cavalo: peão contra peão tem 15% de chance da honra do samurai
+// a vítima do peão é um cavalo
 const PEAO = { pgn: '1. e4 Nc6 2. d4 a6 3. d5 a5', de: 'd5', para: 'c6', camera: [4.2, -35, 58] }
 const BISPO = { pgn: '1. e4 e5 2. Bc4 d6', de: 'c4', para: 'f7', camera: [4.6, -30, 50] }
 try {

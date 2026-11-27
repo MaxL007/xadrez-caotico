@@ -25,6 +25,7 @@ import { ehRitmo, semMaterialParaMate, temposDoRitmo, type Ritmo } from '../../s
 import aparencia from '../../src/catalogos/aparencia.json'
 import personalizacao from '../../src/catalogos/personalizacao.json'
 import conquistas from '../../src/catalogos/conquistas.json'
+import { TITULOS, tituloValido } from './titulos'
 
 export { Sala } from './sala'
 import { avisar, deBase64Url, enderecoDePushValido, idiomaValido, type Acontecimento } from './push'
@@ -482,9 +483,9 @@ async function sairDaPresenca(pedido: Request, env: Ambiente) {
 async function lerMeuPerfil(pedido: Request, env: Ambiente) {
   const usuario = await exigirUsuario(pedido, env)
   const [eu, geral, itens, recebidas] = await Promise.all([
-    env.DB.prepare('SELECT id_jogador, nome, avatar, moldura, criado_em, tudo_liberado, personalizacao FROM usuarios WHERE id = ?1')
+    env.DB.prepare('SELECT id_jogador, nome, avatar, moldura, criado_em, tudo_liberado, personalizacao, titulo FROM usuarios WHERE id = ?1')
       .bind(usuario.id)
-      .first<LinhaDeJogador & { criado_em: number; tudo_liberado: number; personalizacao: string | null }>(),
+      .first<LinhaDeJogador & { criado_em: number; tudo_liberado: number; personalizacao: string | null; titulo: string | null }>(),
     env.DB.prepare(RETROSPECTO).bind(usuario.id).first<Retrospecto>(),
     env.DB.prepare('SELECT item FROM itens WHERE usuario_id = ?1').bind(usuario.id).all<{ item: string }>(),
     env.DB.prepare('SELECT conquista FROM conquistas WHERE usuario_id = ?1').bind(usuario.id).all<{ conquista: string }>(),
@@ -498,6 +499,7 @@ async function lerMeuPerfil(pedido: Request, env: Ambiente) {
     personalizacao: lerPersonalizacao(eu.personalizacao),
     itens: itens.results.map((i) => i.item),
     conquistas: recebidas.results.map((c) => c.conquista),
+    titulo: tituloValido(eu.titulo),
   })
 }
 
@@ -525,7 +527,14 @@ function opcoesDaParte(peca: string, parte: string): string[] | undefined {
 }
 
 /** Equipamentos que saem por conquista: valem pra toda peça que usa aquela parte. */
-const POR_CONQUISTA = personalizacao.itens as Record<string, { conquista: string }>
+const POR_CONQUISTA = personalizacao.itens as Record<string, { conquista: string; antigas?: string[] }>
+/** As conquistas que liberam o item: a de agora e as que saíram do catálogo (quem as recebeu continua com ele). */
+const conquistasDoItem = (item: string): string[] => (Object.hasOwn(POR_CONQUISTA, item) ? [POR_CONQUISTA[item].conquista, ...(POR_CONQUISTA[item].antigas ?? [])] : [])
+/** Recebeu alguma das conquistas. */
+const temAlguma = (env: Ambiente, usuarioId: string, conquistas: string[]) =>
+  env.DB.prepare(`SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista IN (${conquistas.map((_, i) => `?${i + 2}`).join(', ')})`)
+    .bind(usuarioId, ...conquistas)
+    .first()
 /** O que cada peça compra na Loja, com o preço em óticoins: a compra vale só pra aquela peça. O que não está nem aqui
  * nem em POR_CONQUISTA é livre. */
 const NA_LOJA = personalizacao.loja as Record<string, Record<string, number>>
@@ -563,12 +572,12 @@ async function mudarPersonalizacao(pedido: Request, env: Ambiente) {
   if (conta.tudo_liberado !== 1) {
     const doCatalogo = `${bloco ? 'golpe' : parte}:${opcao}`
     const vendida = precoNaLoja(peca as string, parte as string, opcao) !== undefined
-    const conquista = Object.hasOwn(POR_CONQUISTA, doCatalogo) ? POR_CONQUISTA[doCatalogo].conquista : null
+    const conquistas = conquistasDoItem(doCatalogo)
     // a arma vendida na Loja também sai pela conquista dela: vale qualquer um dos dois
-    if (vendida || conquista) {
+    if (vendida || conquistas.length) {
       const [comprada, pelaConquista] = await Promise.all([
         vendida ? env.DB.prepare('SELECT 1 AS sim FROM itens WHERE usuario_id = ?1 AND item = ?2').bind(usuario.id, `${peca}:${doCatalogo}`).first() : null,
-        conquista ? env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, conquista).first() : null,
+        conquistas.length ? temAlguma(env, usuario.id, conquistas) : null,
       ])
       if (!comprada && !pelaConquista) throw new Falha(403, 'item-bloqueado')
     }
@@ -607,6 +616,25 @@ async function mudarAparencia(pedido: Request, env: Ambiente) {
   }
   if (instrucoes.length > 0) await env.DB.batch(instrucoes)
   return responder({ ok: true })
+}
+
+// --- títulos ------------------------------------------------------------------------------
+// (o catálogo e a conferência ficam em titulos.ts, que a sala também usa)
+async function mudarTitulo(pedido: Request, env: Ambiente) {
+  const usuario = await exigirUsuario(pedido, env)
+  const { titulo } = await lerCorpo<{ titulo?: unknown }>(pedido)
+  if (titulo !== null && (typeof titulo !== 'string' || !TITULOS.has(titulo))) throw new Falha(422, 'titulo-invalido')
+  if (titulo !== null) {
+    const pedidas = TITULOS.get(titulo) ?? []
+    const [conta, recebidas] = await Promise.all([
+      env.DB.prepare('SELECT tudo_liberado FROM usuarios WHERE id = ?1').bind(usuario.id).first<{ tudo_liberado: number }>(),
+      env.DB.prepare('SELECT conquista FROM conquistas WHERE usuario_id = ?1').bind(usuario.id).all<{ conquista: string }>(),
+    ])
+    const tem = new Set(recebidas.results.map((r) => r.conquista))
+    if (conta?.tudo_liberado !== 1 && !pedidas.every((c) => tem.has(c))) throw new Falha(403, 'titulo-bloqueado')
+  }
+  await env.DB.prepare('UPDATE usuarios SET titulo = ?1 WHERE id = ?2').bind(titulo, usuario.id).run()
+  return responder({ titulo })
 }
 
 /** O site reduz a foto e manda só JPEG (`/9j/` é como o início do arquivo sai em base64): fora isso nada é aceito. */
@@ -650,8 +678,8 @@ async function comprarItem(pedido: Request, env: Ambiente) {
     throw new Falha(409, 'falta-o-bloco-anterior')
   }
   // a arma que já saiu pela conquista não precisa ser comprada
-  const conquista = Object.hasOwn(POR_CONQUISTA, `${parte}:${opcao}`) ? POR_CONQUISTA[`${parte}:${opcao}`].conquista : null
-  if (conquista && (await env.DB.prepare('SELECT 1 AS sim FROM conquistas WHERE usuario_id = ?1 AND conquista = ?2').bind(usuario.id, conquista).first())) {
+  const conquistas = conquistasDoItem(`${parte}:${opcao}`)
+  if (conquistas.length && (await temAlguma(env, usuario.id, conquistas))) {
     throw new Falha(409, 'ja-tem')
   }
 
@@ -1380,6 +1408,7 @@ async function rotear(pedido: Request, env: Ambiente, url: URL): Promise<Respons
   if (metodo === 'GET' && caminho === '/perfil') return lerMeuPerfil(pedido, env)
   if (metodo === 'POST' && caminho === '/perfil/aparencia') return mudarAparencia(pedido, env)
   if (metodo === 'POST' && caminho === '/perfil/foto') return enviarFoto(pedido, env)
+  if (metodo === 'POST' && caminho === '/perfil/titulo') return mudarTitulo(pedido, env)
   if (metodo === 'POST' && caminho === '/perfil/personalizacao') return mudarPersonalizacao(pedido, env)
   if (foto && metodo === 'GET') return verFoto(env, foto[1])
   if (metodo === 'POST' && caminho === '/loja/comprar') return comprarItem(pedido, env)

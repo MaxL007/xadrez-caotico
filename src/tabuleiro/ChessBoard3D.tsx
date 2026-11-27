@@ -54,6 +54,7 @@ import { criarPartidaOnline } from './fluxo/partidaOnline'
 import { EscolhaDoNovoJogo } from './EscolhaDoNovoJogo'
 import { MenuDoAdversario } from './MenuDoAdversario'
 import { type EstadoDoEmpate, useSalaOnline } from './fluxo/useSalaOnline'
+import { conferirMeuTitulo, useMeuTitulo } from '../conta/titulos'
 import { criarPartidaContraMaquina, PAUSA_MAQUINA_MS } from './fluxo/partidaContraMaquina'
 
 
@@ -173,6 +174,12 @@ export function ChessBoard3D() {
   tRef.current = t
   const sessao = useSessao()
   const jogador = sessao?.usuario.nome ?? t('conta.convidado')
+  // o título escolhido no Perfil (pedido do usuário): aparece embaixo do nome na partida. O aparelho confere com o
+  // servidor uma vez por visita, porque a escolha pode ter sido feita noutro aparelho
+  const meuTitulo = useMeuTitulo()
+  useEffect(() => {
+    if (sessao) conferirMeuTitulo()
+  }, [sessao])
   const [revancheFalhou, setRevancheFalhou] = useState(false)
   // a tela inicial por cima do tabuleiro, ou a partida
   const [tela, setTela] = useState<'menu' | 'jogo'>('menu')
@@ -1553,9 +1560,13 @@ export function ChessBoard3D() {
           // fica embaixo, longe das peças
           <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <div className="pointer-events-auto flex items-start justify-between gap-2">
-              <button type="button" onClick={handleMenu} data-voltar-ao-perfil={voltarAoPerfil || undefined} className="rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
-                {t(voltarAoPerfil ? 'menu.voltar' : 'menu.menu')}
-              </button>
+              <div className="flex min-w-0 items-start gap-2">
+                <button type="button" onClick={handleMenu} data-voltar-ao-perfil={voltarAoPerfil || undefined} className="shrink-0 rounded-lg bg-white/90 px-3 py-1.5 text-sm font-semibold text-[#3a2a1a] shadow backdrop-blur">
+                  {t(voltarAoPerfil ? 'menu.voltar' : 'menu.menu')}
+                </button>
+                {/* quem joga, com o título embaixo do nome (na partida online, o que a sala diz; senão, o do Perfil) */}
+                {sessao && <PlacaDoJogador nome={sessao.usuario.nome} titulo={sala ? (sala.titulos?.[sala.minhaCor] ?? null) : meuTitulo} t={t} />}
+              </div>
               {/* a blitz: o relógio no canto de cima, o da máquina em cima e o seu embaixo */}
               {ritmoNaTela && <RelogioDaPartida t={t} ritmo={ritmoNaTela} corDoJogador={corDoJogador} andar={andarRelogio} adversario={adversarioDaSala} />}
             </div>
@@ -1619,6 +1630,12 @@ export function ChessBoard3D() {
                     <span className="flex items-center gap-1.5">
                       <p className="rounded-lg bg-white/70 px-2.5 py-0.5 text-center text-xs font-medium text-[#5a4630] shadow" data-adversario>
                         {t('online.contra', { nome: adversarioDaSala })}
+                        {/* o título do amigo, embaixo do nome dele */}
+                        {sala.titulos?.[sala.minhaCor === 'w' ? 'b' : 'w'] && (
+                          <span className="block text-[0.6rem] font-bold tracking-[0.2em] text-[#8a6a20]" data-titulo-do-adversario>
+                            {t(`titulo.${sala.titulos[sala.minhaCor === 'w' ? 'b' : 'w']}` as ChaveTexto)}
+                          </span>
+                        )}
                       </p>
                       {/* bloquear e denunciar: some com o convite ainda esperando resposta */}
                       {sala.status !== 'aguardando' && <MenuDoAdversario key={sala.codigo} t={t} codigo={sala.codigo} nome={adversarioDaSala} />}
@@ -1733,6 +1750,20 @@ export function ChessBoard3D() {
         )}
       </div>
 
+    </div>
+  )
+}
+
+/** O nome de quem joga, no alto da partida, com o título escolhido embaixo. */
+function PlacaDoJogador({ nome, titulo, t }: { nome: string; titulo: string | null; t: (chave: ChaveTexto) => string }) {
+  return (
+    <div className="pointer-events-none min-w-0 rounded-lg bg-[#1c120a]/80 px-3 py-1 leading-tight shadow backdrop-blur" data-placa-do-jogador>
+      <p className="truncate text-sm font-semibold text-[#f5e6c8]">{nome}</p>
+      {titulo && (
+        <p className="truncate font-display text-[0.65rem] font-bold tracking-[0.25em] text-[#e6c675]" data-titulo-na-partida={titulo}>
+          {t(`titulo.${titulo}` as ChaveTexto)}
+        </p>
+      )}
     </div>
   )
 }

@@ -17,7 +17,7 @@ export interface CenaDaPrevia {
 
 /** Uma captura pra cada peça, em campo aberto e perto da câmera. */
 const CENAS: Record<string, CenaDaPrevia> = {
-  // o peão toma o cavalo (peão contra peão teria a chance da honra do samurai)
+  // o peão toma o cavalo
   p: { pgn: '1. e4 Nc6 2. d4 a6 3. d5 a5', de: 'd5', para: 'c6', lado: -35 },
   r: { pgn: '1. a4 h5 2. a5 h4 3. a6 bxa6', de: 'a1', para: 'a6', lado: -60 },
   n: { pgn: '1. Nc3 d5', de: 'c3', para: 'd5', lado: -30 },

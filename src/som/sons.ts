@@ -784,22 +784,6 @@ export const SONS: Record<string, (s: Saida) => number> = {
   },
 
   // --- efeitos especiais
-  // a rendição de quem luta de espada: o sino grave de uma capela e um acorde de trompas, em vez da flauta de bambu
-  'honra:espada': (s) => {
-    sino(s, 196, 3.4, 0.14)
-    trompa(s, 262, 1.7, 0.05, 0.6)
-    trompa(s, 330, 1.7, 0.035, 0.62)
-    trompa(s, 392, 1.7, 0.03, 0.64)
-    sino(s, 392, 2.2, 0.05, 1.4)
-    return 3.6
-  },
-  honra: (s) => {
-    sino(s, 294, 3.2, 0.14)
-    // flauta de bambu: sopro de ar com a nota tremendo de leve
-    tom(s, { freq: 587, ate: 622, inicio: 0.7, ataque: 0.4, dur: 1.5, vol: 0.05, tipo: 'triangle' })
-    sopro(s, { inicio: 0.7, ataque: 0.4, dur: 1.4, vol: 0.022, freq: 1200, q: 2 })
-    return 3.3
-  },
   promocao: (s) => {
     const notas = [294, 440, 587, 740, 880, 1175]
     notas.forEach((nota, i) => {

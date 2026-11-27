@@ -100,38 +100,7 @@
       "empurrao"
     ]
   },
-  "itens": {
-    "arma:katana": {
-      "conquista": "peoes-50"
-    },
-    "arma:espada": {
-      "conquista": "peoes-400"
-    },
-    "arma:marreta": {
-      "conquista": "torres-30"
-    },
-    "arma:machado": {
-      "conquista": "torres-60"
-    },
-    "arma:maca": {
-      "conquista": "torres-180"
-    },
-    "arma:cajado": {
-      "conquista": "bispos-30"
-    },
-    "arma:cristal": {
-      "conquista": "bispos-60"
-    },
-    "arma:cetro": {
-      "conquista": "rainhas-50"
-    },
-    "arma:lua": {
-      "conquista": "rainhas-150"
-    },
-    "arma:lanca": {
-      "conquista": "cavalos-50"
-    }
-  },
+  "itens": {},
   "loja": {
     "p": {
       "cabeca:elmo": 25,

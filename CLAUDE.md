@@ -17,7 +17,7 @@ continuar assim: nada de dados, nomes ou endereços da empresa aqui, porque o re
 As pastas de `src` são por função:
 
 - `catalogos/`: o que se edita à mão e o servidor também lê: `personalizacao.json` (partes, armas por peça, habilidades,
-  preços da Loja, que conquista libera cada arma), `conquistas.json` (o que cada conquista pede e paga) e
+  preços da Loja), `conquistas.json` (o que cada conquista pede e paga) e
   `aparencia.json` (avatares e molduras). Mudou um deles, publica o servidor junto (`wrangler deploy`).
 - `tabuleiro/`: a partida em 3D. `ChessBoard3D.tsx` junta as peças num `useEffect`: monta a cena, cria os módulos abaixo
   e liga as ações (`acoesRef` é a ponte do React pra cena). `casas.ts` tem as coordenadas e as texturas do tabuleiro;
@@ -37,7 +37,7 @@ As pastas de `src` são por função:
     IK de dois ossos), `expositor.ts`, `vitrine.ts` e `emblemas.ts` (os símbolos das habilidades).
   - `tabuleiro/animacoes/`: `movimento.ts` (andar, correr, virar, o salto do cavalo), `gestos.ts` (gestos, gesto
     amigável, comemoração, recusa e descanso), `queda.ts` (a vítima sumindo) e `cerimonias.ts`
-    (pétalas da honra e ascensão da promoção).
+    (a ascensão da promoção).
   - `tabuleiro/combate/`: `golpes.ts` (a espada do peão, o alcance, o impacto), `poderes.ts` (orbe, raio, onda),
     `marreta.ts` (marreta, machado e maça, com a peça presa), `efeitosDasArmas.ts` (os efeitos de cada arma) e
     `lutaSemArma.ts` (socos e chute), `nocaute.ts` (a vítima jogada pela força), `lancaDoCavalo.ts` (a estocada da
@@ -100,7 +100,8 @@ As pastas de `src` são por função:
 - Os avatares sugeridos em `public/avatares` saem dos modelos das peças: `node scripts/gerar-avatares.mjs`, com o site de
   desenvolvimento no ar. As cores em `scripts/avatares/retratos.js` copiam as de `materiaisPorFaccao`.
 - O Perfil tem duas abas no topo: Perfil e Configurações. Na aba Perfil, embaixo da foto, do ID e das óticoins, ficam
-  duas seções recolhíveis (pedido do usuário, 26/11): Partidas (abre aberta) e Conquistas (abre fechada). O placar de
+  três seções recolhíveis (pedido do usuário, 26/11): Partidas, Conquistas e Títulos. Na primeira vez, todas
+  recolhidas; depois, cada uma abre como a pessoa deixou (`xadrezCaotico:secoesDoPerfil`, no aparelho). O placar de
   números saiu do Perfil: cada filtro das partidas já diz quantas são. O botão do menu que era Configurações agora é
   Personalização.
 - As Partidas são o histórico: abrem com todas as partidas terminadas, contra a máquina (do aparelho) e amistosas (do
@@ -158,7 +159,10 @@ As pastas de `src` são por função:
 - Aberta a toda conta, mas só o padrão de cada parte é livre. Catálogo em `src/catalogos/personalizacao.json`, o mesmo que o
   Worker confere: `loja` traz, por peça, o que se compra e o preço (tabela do usuário; a compra vale só pra aquela peça,
   item `peça:parte:opção` na tabela `itens`), inclusive as armas e o retalhamento da katana (`p:golpe:retalhamento`);
-  `itens` traz a conquista que também libera cada arma: vale a compra ou a conquista. A conta com
+  nenhuma arma sai por conquista, só pela Loja (pedido do usuário, 27/11; antes, `itens` dizia a conquista que também
+  liberava cada arma, e hoje está vazio: o mecanismo continua no aparelho e no servidor, com `antigas` pra conquistas que
+  saíram do catálogo, se um dia voltar). Quem já tinha recebido a conquista que liberava uma arma ficou com
+  ela: a migração 0017 a registrou como comprada, em cada peça que a usava (pedido do usuário: o que foi ganho continua). A conta com
   `tudo_liberado` usa tudo. A escolha fica em `usuarios.personalizacao`, só o que foge do padrão; opção que saiu do
   catálogo é ignorada.
 - Habilidade especial é uma parte própria (`golpe`, catálogo `habilidades`, por peça): o peão, com o
@@ -343,11 +347,10 @@ As pastas de `src` são por função:
   - A prévia da Loja tira os outros blocos, pra não perguntar.
 - A katana fica na bainha quando a peça não vai usá-la (bug visto pelo usuário). Um gesto com a katana cortado no meio
   por um lance perdia a guarda: a nova sequência invalidava o "guardar" do fim do gesto, e a katana ficava na mão. Com
-  ela na mão saíam a Dempsey Roll, os socos e a reverência da honra do samurai. Agora `embainharAntes` (lanceAnimado)
+  ela na mão saíam a Dempsey Roll e os socos. Agora `embainharAntes` (lanceAnimado)
   guarda a katana antes:
   - das habilidades de longe e das de mãos livres;
   - dos socos e do chute;
-  - da honra do samurai (que também não acontece mais com uma habilidade escolhida);
   - do passo de sempre.
 
   Se a guarda não terminar em 1,6 s, segue sem ela. A vítima de qualquer captura perde a katana da mão na hora.
@@ -449,7 +452,7 @@ As pastas de `src` são por função:
   o item por cima do que ela já usa (`vestimentaDaPrevia`; a habilidade que pede arma vem com ela) e joga a captura de
   verdade, com a câmera de perto (`vista.irParaAcao`). Sem partida (nada salvo) e sem resposta da máquina; "Pular" volta
   na hora. De volta, o item aberto diz o que faz (`loja.acao.<arma>` ou o texto da habilidade), "Gostou? É seu por N",
-  a conquista que também libera a arma, com a barra de progresso, e, pra quem não tem as óticoins, as três conquistas
+  e, pra quem não tem as óticoins, as três conquistas
   mais perto de sair (`maisPerto`), pra dar vontade de jogar mais.
 - A Loja tem três abas: Armaduras, peça por peça, com atalhos no fim pras armas e habilidades daquela peça; Armas e
   Habilidades, cada uma numa lista só separada por peça, cada cartão com o retrato e o nome de quem usa. Cajado e
@@ -473,9 +476,34 @@ As pastas de `src` são por função:
   `public/oticoin` a fileira de quadros do giro e os dois lados parados, que o componente `Oticoin` mostra.
 - Catálogo em `src/catalogos/conquistas.json`, também lido pelo Worker. Só contam partidas contra a máquina; as com amigos
   ficam de fora. Capturas, xeques, roques, ascensões (as promoções de quem joga, pelo `p` nas flags do lance) e vitórias
-  saem das partidas salvas (`contarPartidas`); convites aceitos, o servidor conta. Ascensões: 20 pagam 10, 50 pagam 25 e
-  200 pagam 100 (pedido do usuário). Uma medida nova entra no progresso guardado (`POST /conquistas/progresso` exige
+  saem das partidas salvas (`contarPartidas`); convites aceitos, o servidor conta. Ascensões: 20 pagam 10, 50 pagam 25,
+  200 pagam 100 e 500 pagam 250 (pedido do usuário; as três últimas são a série do título METAMORFO). Uma medida nova entra no progresso guardado (`POST /conquistas/progresso` exige
   todas as medidas do catálogo): o site antigo em cache tem o progresso recusado em silêncio até atualizar.
+- Títulos (pedido do usuário, 26/11): cada um sai de uma conquista com patamares, no modelo do Mobile Legends (27/11):
+  a conquista sobe de patamar e o último dá o título. No catálogo (`titulos` em `conquistas.json`), `serie` é o nome da
+  conquista e `conquistas`, os patamares em ordem, cada um uma conquista de sempre (paga e é recebida igual). O primeiro
+  é a Ascensão, que dá o METAMORFO: `ascensoes-50`, `ascensoes-200` e `ascensoes-500`. A segunda, Peões (27/11), dá o SOBERANO
+  DOS PEÕES: `peoes-50` (5), `peoes-150` (15), `peoes-400` (40) e `peoes-1000` (100 óticoins). Os valores subiram
+  (eram 2, 5, 15 e 50). Torres dá a TORRE SUPREMA e Bispos, o MAGO ANCESTRAL: 30, 100 e 300 capturas, pagando 6, 50 e
+  190 (eram 30, 60 e 180, pagando 4, 8 e 24). Quem já tinha recebido algum patamar das três
+  séries recebeu a diferença uma vez, pela migração 0016 (pedido do usuário). Cavalos dá o CAVALEIRO REAL (50, 200
+  e 250: 10, 50 e 100) e Rainhas, A ÚLTIMA PALAVRA (25, 70, 200 e 600: 20, 60, 180 e 530). Xeques dá o ESTRATEGISTA (100,
+  300, 500 e 1000: 40, 150, 250 e 600) e Vitórias, o REI (100, 250, 600 e 1000: 70, 200, 480 e 800; a de 200 vitórias
+  saiu). Amigos dá o CORAÇÃO DE FERRO (convidar 1, 5 e 10: 10, 50 e 100; o primeiro pagava 5 e a diferença
+  entrou na 0016; a de 50 convites saiu) e Roques, o ASTUTO (1, 15 e 50: 5, 100 e 300). Fora das séries sobrou só
+  `ascensoes-20`. Um nível que fica sem conquistas soltas (hoje, as intermediárias e as avançadas) não aparece no painel. As metas que mudaram viraram
+  conquistas novas (`torres-60`/`-180` e `bispos-60`/`-180` → `-100`/`-300`; `cavalos-100` → `cavalos-200`; `rainhas-50`, `-150` e `-500` → `-70`, `-200` e `-600`): quem recebeu
+  as antigas fica com o que ganhou e recebe as novas ao chegar nelas; as outras levaram a diferença na 0016. O painel de conquistas mostra
+  cada série num cartão só, antes dos níveis (`ConquistaComPatamares`): o lugar da medalha (vazio por enquanto, até o
+  usuário escolher o desenho; `data-medalha`), o patamar de agora em romano, um tracinho por patamar, a barra até o
+  próximo com o prêmio dele e a recompensa final. As conquistas de uma série saem da lista dos níveis. A seção Títulos do
+  Perfil mostra cada um com as conquistas que pede e, liberado, "Usar"/"Tirar". A escolha fica em `usuarios.titulo`
+  (migração 0015); `POST /perfil/titulo` confere as conquistas recebidas (`titulo-bloqueado`; a conta com
+  `tudo_liberado` usa todos) e `GET /perfil` devolve o título. O aparelho guarda uma cópia (`conta/titulos.ts`,
+  `useMeuTitulo`) e confere com o servidor uma vez por visita. Na partida, a placa no alto (`PlacaDoJogador`, ao lado do
+  Menu) mostra o nome e o título embaixo, contra a máquina e contra amigos; na partida online, a sala lê o título dos
+  dois junto com a vestimenta (`titulos` na fotografia), e o amigo vê o seu embaixo do "Contra <nome>". Título novo:
+  o grupo em `titulos`, o texto `titulo.<id>` nos três idiomas e publicar o servidor.
 - Vitória contra a máquina paga pela dificuldade: 1 no fácil, 2 no intermediário, 3 no difícil (`POST /vitorias/receber`,
   tabela `vitorias_pagas`). O servidor confere a partida salva na conta (terminada, vencida, com dificuldade) e paga cada
   uma uma vez só. A blitz paga igual. O aparelho manda ao abrir o menu, as mais antigas primeiro.
@@ -564,9 +592,9 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
   senha dela perdia o golpe e travava o jogo. A luta sem arma só para se outro jogo entrar (`vigente`).
 - O AnimationMixer só reescreve um osso quando o valor do clipe muda: rotações somadas acumulam de quadro em
   quadro, então salve e restaure a pose a cada quadro (`salvarOssosDoGolpe`).
-- Regras do usuário: cada tipo de peça tem golpes próprios; golpe só na captura, sorteado; peão contra peão tem
-  15% de chance de rendição com honra (com sino de capela e trompas quando quem captura é de espada); mortais precisam
-  parecer mortais de verdade.
+- Regras do usuário: cada tipo de peça tem golpes próprios; golpe só na captura, sorteado; mortais precisam parecer
+  mortais de verdade. A rendição com honra (o peão capturado por outro peão se curvava e tombava entre pétalas, 15%
+  das vezes) saiu em 26/11, a pedido do usuário; os clipes `Reverencia` e `Sacrificio` continuam nos modelos, sem uso.
 - Os passos soam quando o pé encosta no chão (`ouvidoDosPes`: o pé tem de subir de verdade antes de pisar de novo); o
   cavalo, sem esses ossos, galopa pela distância. O saque da katana e o da espada têm sons diferentes, no instante em
   que a lâmina sai da bainha.

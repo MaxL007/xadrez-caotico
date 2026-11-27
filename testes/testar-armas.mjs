@@ -101,7 +101,7 @@ try {
   await h('forcarGolpeSemArma', null)
 
   // =================== peão ===================
-  // a vítima é um cavalo: peão contra peão pode se render com honra (15%), e aí não há golpe
+  // a vítima é um cavalo
   const COM_PEAO = { pgn: '1. e4 Nc6 2. d4 a6 3. d5 a5', de: 'd5', para: 'c6' }
   const katana = await capturar('katana', { ...COM_PEAO, vestir: { p: { arma: 'katana' } } })
   conferir('a katana tem som ao sair da bainha', katana.tocados.includes('katana:saca') && !katana.tocados.includes('espada:saca'), katana.tocados.join(' '))

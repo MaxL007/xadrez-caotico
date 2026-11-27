@@ -15,6 +15,7 @@ import { semMaterialParaMate, temposDoRitmo, type Ritmo } from '../../src/jogo/r
 import type { Ambiente } from './index'
 import type { Usuario } from './conta'
 import { avisar, type Acontecimento } from './push'
+import { tituloValido } from './titulos'
 
 const SEM_LANCE_LIMITE_MS = 7 * 24 * 60 * 60 * 1000
 const CONVITE_VALE_MS = 3 * 24 * 60 * 60 * 1000
@@ -56,6 +57,8 @@ interface EstadoDaSala {
   relogio?: RelogioDaSala
   /** Partida do adversário automático: as duas pessoas não precisam ser amigas e ela começa na hora. */
   automatica?: boolean
+  /** O título que cada um escolheu mostrar embaixo do nome (lido junto com a vestimenta). */
+  titulos?: Partial<Record<Cor, string | null>>
   /** O que as peças de cada um vestem, lido do banco quando ele se conecta: o banco só guarda o que foi comprado. Cada
    * um recebe o do outro, pra ver as armas, armaduras e habilidades dele. */
   vestimentas?: Partial<Record<Cor, Vestimenta>>
@@ -199,23 +202,27 @@ export class Sala extends DurableObject<Ambiente> {
   private async lerVestimentas(estado: EstadoDaSala): Promise<boolean> {
     const ids = [estado.brancas?.id, estado.pretas?.id].filter((id): id is string => !!id)
     if (!ids.length) return false
-    let linhas: { id: string; personalizacao: string | null }[]
+    let linhas: { id: string; personalizacao: string | null; titulo: string | null }[]
     try {
-      const resposta = await this.env.DB.prepare(`SELECT id, personalizacao FROM usuarios WHERE id IN (${ids.map((_, i) => `?${i + 1}`).join(', ')})`)
+      const resposta = await this.env.DB.prepare(`SELECT id, personalizacao, titulo FROM usuarios WHERE id IN (${ids.map((_, i) => `?${i + 1}`).join(', ')})`)
         .bind(...ids)
-        .all<{ id: string; personalizacao: string | null }>()
+        .all<{ id: string; personalizacao: string | null; titulo: string | null }>()
       linhas = resposta.results
     } catch {
       return false
     }
     const atual = (await this.ler()) ?? estado
     const vestimentas: Partial<Record<Cor, Vestimenta>> = {}
+    const titulos: Partial<Record<Cor, string | null>> = {}
     for (const linha of linhas) {
       const cor = this.corDe(atual, linha.id)
-      if (cor) vestimentas[cor] = lerVestimenta(linha.personalizacao)
+      if (!cor) continue
+      vestimentas[cor] = lerVestimenta(linha.personalizacao)
+      titulos[cor] = tituloValido(linha.titulo)
     }
-    if (JSON.stringify(vestimentas) === JSON.stringify(atual.vestimentas ?? {})) return false
+    if (JSON.stringify(vestimentas) === JSON.stringify(atual.vestimentas ?? {}) && JSON.stringify(titulos) === JSON.stringify(atual.titulos ?? {})) return false
     atual.vestimentas = vestimentas
+    atual.titulos = titulos
     await this.gravar(atual)
     return true
   }
@@ -434,6 +441,7 @@ export class Sala extends DurableObject<Ambiente> {
       relogio: this.relogioParaEnviar(estado),
       automatica: !!estado.automatica,
       vestimentaDoAdversario: (cor && estado.vestimentas?.[cor === 'w' ? 'b' : 'w']) ?? null,
+      titulos: { w: estado.titulos?.w ?? null, b: estado.titulos?.b ?? null },
     }
   }
 

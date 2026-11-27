@@ -209,12 +209,14 @@ export type EscolhasDasPecas = Record<string, Record<string, string>>
 
 /** `tudoLiberado`: a conta pode usar o que ainda não está aberto pra todos, como as molduras e a personalização. */
 export const lerMeuPerfil = () =>
-  pedir<Omit<Perfil, 'entreVoces'> & { tudoLiberado: boolean; personalizacao: EscolhasDasPecas; itens: string[]; conquistas: string[] }>('GET', '/perfil')
+  pedir<Omit<Perfil, 'entreVoces'> & { tudoLiberado: boolean; personalizacao: EscolhasDasPecas; itens: string[]; conquistas: string[]; titulo: string | null }>('GET', '/perfil')
 /** Compra um equipamento com óticoins; devolve o saldo e os itens comprados. */
 export const comprarNaLoja = (item: string) => pedir<{ oticoins: number; itens: string[] }>('POST', '/loja/comprar', { item })
 export const salvarEscolhaDaPeca = (peca: string, parte: string, opcao: string) =>
   pedir<{ personalizacao: EscolhasDasPecas }>('POST', '/perfil/personalizacao', { peca, parte, opcao })
 export const mudarAparencia = (aparencia: { avatar?: string; moldura?: string }) => pedir('POST', '/perfil/aparencia', aparencia)
+/** O título embaixo do nome na partida (null tira); o servidor confere as conquistas. */
+export const mudarTitulo = (titulo: string | null) => pedir<{ titulo: string | null }>('POST', '/perfil/titulo', { titulo })
 export const enviarFoto = (foto: string) => pedir<{ avatar: string }>('POST', '/perfil/foto', { foto })
 export const lerConquistas = () => pedir<{ oticoins: number; recebidas: string[]; convites: number }>('GET', '/conquistas')
 /** As recompensas por vitória da última hora: `recebidas` são as horas em que entraram, no relógio do servidor (`agora`). */

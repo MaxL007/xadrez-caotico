@@ -461,7 +461,7 @@ export function vestirPeca(grupo: THREE.Object3D, tipo: string, escolhas: Record
     if (parte === 'ombros') regras.push(ESCONDER.ombros)
   }
 
-  // sem escolha, a peça fica sem arma: as armas saem pelas conquistas. A katana e o cajado de sempre vêm no modelo
+  // sem escolha, a peça fica sem arma: as armas saem pela Loja. A katana e o cajado de sempre vêm no modelo
   const arma = escolha('arma') ?? 'nenhuma'
   const maoDoCajado = MAO_DO_CAJADO[tipo]
   if (maoDoCajado && arma !== 'cajado') {

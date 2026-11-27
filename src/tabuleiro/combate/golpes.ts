@@ -4,10 +4,6 @@ import { CONFIG_BRACO_DIR, criarEspadaDoPeao, type MembrosPersonagem, POSE_BASE_
 
 // O golpe corpo a corpo (a espada do peão e as peças geométricas), o alcance de cada tipo e o efeito de impacto.
 
-/** Chance de o peão capturado por outro peão se render com a honra de um samurai (em vez de lutar). */
-export const CHANCE_HONRA_SAMURAI = 0.15
-/** A que distância do derrotado o vencedor para pra se curvar (em casas, no tamanho do modelo). */
-export const DISTANCIA_REVERENCIA = 0.75
 
 /** Até onde vai o golpe corpo a corpo (em casas, no tamanho do modelo): a peça para a essa
  * distância da vítima pra golpear — o peão com a espada alcança mais longe que a torre com o punho/pé. */

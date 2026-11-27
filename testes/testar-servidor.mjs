@@ -718,20 +718,34 @@ try {
   conferir('conta começa sem óticoins e sem conquistas', comeco.oticoins === 0 && comeco.recebidas.length === 0, JSON.stringify(comeco))
   conferir('o servidor conta os amigos que a pessoa convidou e aceitaram', comeco.convites >= 1, String(comeco.convites))
   const primeira = (await receber(['peoes-50', 'roque-1'])).json
-  conferir('recebe as óticoins das conquistas alcançadas', primeira.oticoins === 7 && primeira.novas.length === 2, JSON.stringify(primeira))
+  conferir('recebe as óticoins das conquistas alcançadas', primeira.oticoins === 10 && primeira.novas.length === 2, JSON.stringify(primeira))
   const deNovo = (await receber(['peoes-50', 'roque-1', 'peoes-50'])).json
-  conferir('a mesma conquista não paga duas vezes', deNovo.oticoins === 7 && deNovo.novas.length === 0, JSON.stringify(deNovo))
+  conferir('a mesma conquista não paga duas vezes', deNovo.oticoins === 10 && deNovo.novas.length === 0, JSON.stringify(deNovo))
   const pedidosJuntos = await Promise.all([receber(['torres-30']), receber(['torres-30']), receber(['torres-30'])])
-  conferir('nem pedindo várias vezes ao mesmo tempo', pedidosJuntos.filter((r) => r.json?.novas?.length === 1).length === 1 && (await api('GET', '/conquistas', { token: ana.token })).json.oticoins === 11)
+  conferir('nem pedindo várias vezes ao mesmo tempo', pedidosJuntos.filter((r) => r.json?.novas?.length === 1).length === 1 && (await api('GET', '/conquistas', { token: ana.token })).json.oticoins === 16)
   conferir('convite confirmado pelo servidor paga', (await receber(['convite-1'])).json?.novas?.includes('convite-1'))
-  const semConvites = (await receber(['convites-50'])).json
-  conferir('convites que não aconteceram não pagam', semConvites.novas.length === 0 && semConvites.oticoins === 16, JSON.stringify(semConvites))
+  const semConvites = (await receber(['convites-10'])).json
+  conferir('convites que não aconteceram não pagam', semConvites.novas.length === 0 && semConvites.oticoins === 26, JSON.stringify(semConvites))
   for (const [nome, ids] of [['inventada', ['inventada']], ['lista vazia', []], ['sem lista', 'peoes-50'], ['número', [7]]]) {
     conferir(`pedido de conquista recusado: ${nome}`, (await receber(ids)).status === 422)
   }
   const pagas = (await api('GET', '/conquistas', { token: ana.token })).json
-  conferir('a lista mostra o que já foi pago', ['peoes-50', 'roque-1', 'torres-30', 'convite-1'].every((id) => pagas.recebidas.includes(id)) && pagas.oticoins === 16)
+  conferir('a lista mostra o que já foi pago', ['peoes-50', 'roque-1', 'torres-30', 'convite-1'].every((id) => pagas.recebidas.includes(id)) && pagas.oticoins === 26)
   conferir('cada conta tem o seu saldo', (await api('GET', '/conquistas', { token: bia.token })).json?.oticoins === 0)
+
+  // =================== títulos (com o Caio, que não entra nas contas de óticoins daqui pra frente) ===================
+  const titulo = (valor, token = tokenCaio) => api('POST', '/perfil/titulo', { token, corpo: { titulo: valor } })
+  conferir('sem sessão não escolhe título', (await api('POST', '/perfil/titulo', { corpo: { titulo: 'metamorfo' } })).status === 401)
+  conferir('título que não existe é recusado', (await titulo('inventado')).status === 422)
+  const bloqueado = await titulo('metamorfo')
+  conferir('o METAMORFO fica trancado sem as três conquistas de ascensões', bloqueado.status === 403 && bloqueado.json?.erro === 'titulo-bloqueado', JSON.stringify(bloqueado.json))
+  await receber(['ascensoes-50', 'ascensoes-200'], tokenCaio)
+  conferir('com duas das três, continua trancado', (await titulo('metamorfo')).status === 403)
+  const terceira = (await receber(['ascensoes-500'], tokenCaio)).json
+  conferir('a de 500 ascensões paga 250', terceira?.novas?.includes('ascensoes-500') && terceira.oticoins === 375, JSON.stringify(terceira))
+  conferir('com as três, o título é aceito', (await titulo('metamorfo')).json?.titulo === 'metamorfo')
+  conferir('e volta no perfil', (await api('GET', '/perfil', { token: tokenCaio })).json?.titulo === 'metamorfo')
+  conferir('tirar o título também vale', (await titulo(null)).json?.titulo === null && (await api('GET', '/perfil', { token: tokenCaio })).json?.titulo === null)
 
   // =================== vitórias contra a máquina pagam óticoins ===================
   const partidaSalva = (id, extra) => ({ id, jogador: nomeAna, corJogador: 'w', pgn: '', status: 'FINALIZADA', criadaEm: Date.now(), atualizadaEm: Date.now(), ...extra })
@@ -873,18 +887,24 @@ try {
   ]) {
     conferir(`fora da loja: ${nome}`, (await comprar(item)).status === 422)
   }
-  await receber(['peoes-50', 'peoes-150', 'torres-60'], bia.token)
+  // as 100 torres pagam 50: as placas custam 15, e o elmo (25) e as manoplas (10) gastam o resto, pra Loja ficar sem saldo
+  await receber(['torres-100'], bia.token)
   const compra = await comprar('p:ombros:placas')
-  conferir('compra as placas do peão pelo preço da tabela', compra.status === 200 && compra.json?.oticoins === 0 && compra.json?.itens?.includes('p:ombros:placas'), JSON.stringify(compra.json))
+  conferir('compra as placas do peão pelo preço da tabela', compra.status === 200 && compra.json?.oticoins === 35 && compra.json?.itens?.includes('p:ombros:placas'), JSON.stringify(compra.json))
   conferir('comprado, o peão pode vestir', (await personalizar({ peca: 'p', parte: 'ombros', opcao: 'placas' }, bia.token)).status === 200)
   conferir('a compra vale só pra aquela peça', (await personalizar({ peca: 'r', parte: 'ombros', opcao: 'placas' }, bia.token)).status === 403)
   conferir('não compra duas vezes', (await comprar('p:ombros:placas')).status === 409)
-  conferir('a conquista dos 50 peões libera a katana', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'katana' }, bia.token)).status === 200)
-  conferir('a espada espera os 400 peões', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'espada' }, bia.token)).status === 403)
-  conferir('a marreta fica trancada antes das 30 torres', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'marreta' }, bia.token)).status === 403)
-  await receber(['torres-30'], bia.token)
-  conferir('as 30 torres liberam a marreta', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'marreta' }, bia.token)).status === 200)
-  conferir('e as 60 torres, o machado', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'machado' }, bia.token)).status === 200)
+  const gastar = [await comprar('p:cabeca:elmo'), await comprar('p:maos:manoplas')]
+  conferir('o elmo e as manoplas gastam o resto', gastar.every((c) => c.status === 200) && gastar[1].json?.oticoins === 0, JSON.stringify(gastar.map((c) => c.json)))
+  // nenhuma arma sai por conquista (pedido do usuário, 27/11): só pela Loja. Com o Caio, pra não mexer no saldo da Bia
+  await receber(['peoes-50', 'peoes-400', 'rainhas-25', 'rainhas-70', 'rainhas-200'], tokenCaio)
+  conferir('a conquista dos 50 peões não libera a katana', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'katana' }, tokenCaio)).status === 403)
+  conferir('nem a dos 400, a espada', (await personalizar({ peca: 'p', parte: 'arma', opcao: 'espada' }, tokenCaio)).status === 403)
+  conferir('nem as 200 rainhas, a lua', (await personalizar({ peca: 'q', parte: 'arma', opcao: 'lua' }, tokenCaio)).status === 403)
+  conferir('a conquista que saiu do catálogo não é aceita', (await receber(['rainhas-50'], tokenCaio)).status === 422)
+  await receber(['torres-30', 'torres-100'], bia.token)
+  conferir('nem as 30 torres liberam a marreta', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'marreta' }, bia.token)).status === 403)
+  conferir('nem as 100 torres, o machado', (await personalizar({ peca: 'r', parte: 'arma', opcao: 'machado' }, bia.token)).status === 403)
   conferir('a sela de guerra só se veste comprada', (await personalizar({ peca: 'n', parte: 'sela', opcao: 'guerra' }, bia.token)).status === 403)
   conferir('o cabresto de guerra está à venda pelo preço da tabela', (await comprar('n:cabresto:guerra')).status === 402)
   conferir('as armas estão à venda: a lança do cavalo', (await comprar('n:arma:lanca')).status === 402)
@@ -893,7 +913,9 @@ try {
   conferir('o Puxão Universal está à venda (sem saldo, não compra)', semSaldoProPuxao.status === 402, JSON.stringify(semSaldoProPuxao.json))
   conferir('o Empurrão Universal também (sem saldo, não compra)', (await comprar('q:golpe:empurrao')).status === 402)
   conferir('o Empurrão é só da rainha', (await personalizar({ peca: 'p', parte: 'golpe', opcao: 'empurrao' }, bia.token)).status === 422)
-  conferir('a arma que já saiu pela conquista não precisa ser comprada', (await comprar('p:arma:katana')).status === 409)
+  conferir('a marreta continua à venda depois da conquista (sem saldo, não compra)', (await comprar('r:arma:marreta')).status === 402)
+  conferir('a katana está à venda (sem saldo, não compra)', (await comprar('p:arma:katana')).status === 402)
+  conferir('e a espada também', (await comprar('p:arma:espada')).status === 402)
   conferir('o 2º bloco de habilidade do peão está à venda (sem saldo, não compra)', (await comprar('p:bloco:2')).status === 402)
   // com o Espiral Absoluto o peão tem três habilidades: o 3º bloco dele está à venda, mas pede o 2º antes
   const terceiroDoPeao = await comprar('p:bloco:3')

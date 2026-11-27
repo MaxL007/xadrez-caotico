@@ -29,7 +29,8 @@ export function partesDaPeca(peca: Peca): ParteDaPeca[] {
 }
 
 /** Equipamentos que saem por conquista: valem pra toda peça que usa aquela parte. */
-const POR_CONQUISTA = catalogo.itens as Record<string, { conquista: string }>
+/** `antigas`: conquistas que saíram do catálogo e liberavam o item: quem as recebeu continua com ele. */
+const POR_CONQUISTA = catalogo.itens as Record<string, { conquista: string; antigas?: string[] }>
 /** O que cada peça compra na Loja e o preço em óticoins: a compra vale só pra aquela peça. Os blocos de habilidade
  * (`bloco:2`, `bloco:3`) entram nas peças que têm habilidades pra eles, como o servidor confere. */
 export const NA_LOJA = Object.fromEntries(
@@ -41,7 +42,7 @@ export const NA_LOJA = Object.fromEntries(
 ) as Record<Peca, Record<string, number>>
 
 /** Como a opção se libera: é livre, sai por conquista ou se compra na Loja (o item é 'peça:parte:opção'). */
-export type Acesso = { tipo: 'livre' } | { tipo: 'conquista'; conquista: string } | { tipo: 'loja'; preco: number; item: string; conquista?: string }
+export type Acesso = { tipo: 'livre' } | { tipo: 'conquista'; conquista: string; antigas?: string[] } | { tipo: 'loja'; preco: number; item: string; conquista?: string; antigas?: string[] }
 
 export function acessoDaOpcao(peca: Peca, parteDaPeca: string, opcao: string): Acesso {
   // a habilidade é a mesma em qualquer bloco
@@ -49,8 +50,8 @@ export function acessoDaOpcao(peca: Peca, parteDaPeca: string, opcao: string): A
   const preco = NA_LOJA[peca]?.[`${parte}:${opcao}`]
   const porConquista = POR_CONQUISTA[`${parte}:${opcao}`]
   // a arma vendida na Loja também sai pela conquista dela
-  if (preco !== undefined) return { tipo: 'loja', preco, item: `${peca}:${parte}:${opcao}`, conquista: porConquista?.conquista }
-  if (porConquista) return { tipo: 'conquista', conquista: porConquista.conquista }
+  if (preco !== undefined) return { tipo: 'loja', preco, item: `${peca}:${parte}:${opcao}`, conquista: porConquista?.conquista, antigas: porConquista?.antigas }
+  if (porConquista) return { tipo: 'conquista', conquista: porConquista.conquista, antigas: porConquista.antigas }
   return { tipo: 'livre' }
 }
 
@@ -124,8 +125,9 @@ export function opcaoLiberada(atual: Estado, peca: Peca, parte: string, opcao: s
   if (!atual.conta) return false
   if (atual.tudoLiberado) return true
   const acesso = acessoDaOpcao(peca, parte, opcao)
-  if (acesso.tipo === 'loja') return atual.itens.includes(acesso.item) || (!!acesso.conquista && atual.conquistas.includes(acesso.conquista))
-  if (acesso.tipo === 'conquista') return atual.conquistas.includes(acesso.conquista)
+  const pelaConquista = (conquista: string | undefined, antigas: string[] = []) => !!conquista && [conquista, ...antigas].some((c) => atual.conquistas.includes(c))
+  if (acesso.tipo === 'loja') return atual.itens.includes(acesso.item) || pelaConquista(acesso.conquista, acesso.antigas)
+  if (acesso.tipo === 'conquista') return pelaConquista(acesso.conquista, acesso.antigas)
   return true
 }
 

@@ -7,7 +7,8 @@ import { resultadoDaPartida, type PartidaXadrez } from '../dados/xadrezRepo'
 import type { SituacaoDasConquistas } from '../conta/conquistas'
 import { CONQUISTAS } from '../conta/conquistas'
 import { Avatar, MeuId, Oticoin } from './ElementosDoJogador'
-import { PainelConquistas } from './PainelConquistas'
+import { nomeDaConquista, PainelConquistas, romano } from './PainelConquistas'
+import { escolherTitulo, guardarMeuTitulo, tituloLiberado, TITULOS, useMeuTitulo } from '../conta/titulos'
 
 // Perfil de quem está jogando: quem é, a foto e a moldura, os números e o histórico das partidas.
 
@@ -31,7 +32,7 @@ type FiltroDoResultado = 'todas' | Desfecho
 type FiltroDoAdversario = 'todos' | 'amigos' | 'maquina'
 type Aba = 'perfil' | 'configuracoes'
 /** O que o Perfil mostra embaixo dos números: as partidas ou as conquistas. */
-type Secao = 'partidas' | 'conquistas'
+type Secao = 'partidas' | 'conquistas' | 'titulos'
 
 /** Como o perfil estava quando a pessoa abriu uma partida dele: o "Voltar" da partida devolve tudo igual. */
 interface PerfilLembrado {
@@ -43,6 +44,28 @@ interface PerfilLembrado {
   tocada: string
 }
 let lembrado: PerfilLembrado | null = null
+
+// as seções abertas ou recolhidas ficam do jeito que a pessoa deixou (pedido do usuário), guardadas no aparelho. Na
+// primeira vez, todas recolhidas
+const CHAVE_DAS_SECOES = 'xadrezCaotico:secoesDoPerfil'
+const TODAS_RECOLHIDAS: Record<Secao, boolean> = { partidas: false, conquistas: false, titulos: false }
+
+function secoesGuardadas(): Record<Secao, boolean> {
+  try {
+    const lidas = JSON.parse(localStorage.getItem(CHAVE_DAS_SECOES) ?? '{}') as Partial<Record<Secao, unknown>>
+    return { partidas: lidas.partidas === true, conquistas: lidas.conquistas === true, titulos: lidas.titulos === true }
+  } catch {
+    return TODAS_RECOLHIDAS
+  }
+}
+
+function guardarSecoes(abertas: Record<Secao, boolean>) {
+  try {
+    localStorage.setItem(CHAVE_DAS_SECOES, JSON.stringify(abertas))
+  } catch {
+    // sem localStorage, vale só até fechar o jogo
+  }
+}
 
 /** Um grupo de botões de filtro: um só marcado, com quantas partidas cada um mostra. */
 function Filtro<T extends string>({ rotulo, valor, opcoes, onMudar }: { rotulo: string; valor: T; opcoes: { id: T; nome: string; quantas: number }[]; onMudar: (id: T) => void }) {
@@ -67,6 +90,66 @@ function Filtro<T extends string>({ rotulo, valor, opcoes, onMudar }: { rotulo: 
 
 const ROTULO_DO_DESFECHO: Record<Desfecho, ChaveTexto> = { venceu: 'online.listaVenceu', perdeu: 'online.listaPerdeu', empate: 'online.listaEmpate' }
 const COR_DO_DESFECHO: Record<Desfecho, string> = { venceu: 'text-[#9fe0a8]', perdeu: 'text-[#ffb4a8]', empate: 'text-[#c9b48a]' }
+
+/** Os títulos: cada um com as conquistas que pede, e o botão de usar quando liberado. */
+function SecaoDosTitulos({ t, recebidas, tudoLiberado, comConta }: { t: Traduzir; recebidas: string[]; tudoLiberado: boolean; comConta: boolean }) {
+  const meuTitulo = useMeuTitulo()
+  const [trocando, setTrocando] = useState(false)
+  const [falhou, setFalhou] = useState(false)
+  const trocar = (titulo: string | null) => {
+    setTrocando(true)
+    setFalhou(false)
+    escolherTitulo(titulo)
+      .catch(() => setFalhou(true))
+      .finally(() => setTrocando(false))
+  }
+  return (
+    <div className="space-y-2" data-titulos>
+      <p className="text-xs text-[#c9b48a]">{t(comConta ? 'perfil.tituloDica' : 'perfil.tituloEntrar')}</p>
+      {falhou && <p className="text-xs font-medium text-[#ffb4a8]">{t('conta.erroConexao')}</p>}
+      {TITULOS.map((titulo) => {
+        const liberado = comConta && tituloLiberado(titulo, recebidas, tudoLiberado)
+        const emUso = meuTitulo === titulo.id
+        return (
+          <div key={titulo.id} className="rounded-lg bg-[#2a1c10] px-3 py-2" data-titulo={titulo.id} data-liberado={liberado || undefined}>
+            <div className="flex items-center justify-between gap-3">
+              <p className={`font-display text-base font-bold tracking-[0.2em] ${liberado ? 'text-[#e6c675]' : 'text-[#c9b48a]/70'}`}>
+                {liberado ? '' : '🔒 '}
+                {t(`titulo.${titulo.id}` as ChaveTexto)}
+              </p>
+              {liberado &&
+                (emUso ? (
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="font-semibold text-[#9fe0a8]">✓ {t('perfil.tituloEmUso')}</span>
+                    <button type="button" className={botaoLink} disabled={trocando} onClick={() => trocar(null)}>
+                      {t('perfil.tituloTirar')}
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" disabled={trocando} onClick={() => trocar(titulo.id)} className="rounded-full border border-[#e6c675] bg-[#c9a24a] px-3 py-1 text-xs font-semibold text-[#1c120a] disabled:opacity-60">
+                    {t('perfil.tituloUsar')}
+                  </button>
+                ))}
+            </div>
+            {!liberado && comConta && <p className="mt-1 text-[0.7rem] text-[#c9b48a]">{t('perfil.tituloBloqueado')}</p>}
+            <ul className="mt-1.5 space-y-0.5">
+              {titulo.conquistas.map((id, i) => {
+                const conquista = CONQUISTAS.find((c) => c.id === id)
+                if (!conquista) return null
+                const feita = recebidas.includes(id)
+                return (
+                  <li key={id} className={`text-xs ${feita ? 'text-[#9fe0a8]' : 'text-[#c9b48a]'}`}>
+                    {feita ? '✓' : '○'} {t(`conquistas.serie.${titulo.serie}` as ChaveTexto)} {romano(i + 1)} · {nomeDaConquista(t, conquista)}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 function desfechoDaSala(sala: SalaNaLista): Desfecho {
   if (sala.resultado === 'empate') return 'empate'
@@ -215,8 +298,8 @@ export function PainelPerfil({
   const [editando, setEditando] = useState(false)
   const [quantos, setQuantos] = useState(antes?.quantos ?? HISTORICO_POR_VEZ)
   const [aba, setAba] = useState<Aba>(abaInicial ?? 'perfil')
-  // as partidas e as conquistas são seções recolhíveis (pedido do usuário): as partidas abrem abertas
-  const [abertas, setAbertas] = useState<Record<Secao, boolean>>(antes?.abertas ?? { partidas: true, conquistas: false })
+  // as partidas, as conquistas e os títulos são seções recolhíveis (pedido do usuário): abrem como ficaram da última vez
+  const [abertas, setAbertas] = useState<Record<Secao, boolean>>(() => antes?.abertas ?? secoesGuardadas())
   const [filtroDoResultado, setFiltroDoResultado] = useState<FiltroDoResultado>(antes?.filtroDoResultado ?? 'todas')
   const [filtroDoAdversario, setFiltroDoAdversario] = useState<FiltroDoAdversario>(antes?.filtroDoAdversario ?? 'todos')
   // de volta da partida, a que foi tocada aparece no meio da tela
@@ -233,6 +316,7 @@ export function PainelPerfil({
       .then(([meu, lista]) => {
         if (cancelado) return
         setPerfil(meu)
+        guardarMeuTitulo(meu.titulo)
         setSalas(lista.salas.filter((s) => s.status === 'fim'))
       })
       .catch(() => {
@@ -266,6 +350,8 @@ export function PainelPerfil({
     return itens.sort((a, b) => b.quando - a.quando)
   }, [partidas, salas, token, t, onVerPartida, onAbrirSala])
 
+  // as conquistas recebidas: as do servidor (no perfil) e as que acabaram de entrar (na situação das conquistas)
+  const recebidas = [...new Set([...(perfil?.conquistas ?? []), ...(conquistas?.recebidas ?? [])])]
   const feitas = conquistas ? CONQUISTAS.filter((c) => conquistas.contagem[c.medida] >= c.meta).length : 0
   /** Um grupo de abas: as do topo (o perfil e as configurações) e as de dentro do perfil (partidas e conquistas). */
   const grupoDeAbas = <T extends string>(rotulo: string, atual: T, mudar: (id: T) => void, itens: readonly (readonly [T, string])[]) => (
@@ -415,6 +501,11 @@ export function PainelPerfil({
           [
             ['partidas', t('perfil.abaPartidas', { n: historico.length }), mostrarPartidas],
             ['conquistas', t('perfil.abaConquistas', { feitas, total: CONQUISTAS.length }), () => <PainelConquistas t={t} situacao={conquistas} />],
+            [
+              'titulos',
+              t('perfil.abaTitulos', { feitos: TITULOS.filter((titulo) => token && tituloLiberado(titulo, recebidas, perfil?.tudoLiberado)).length, total: TITULOS.length }),
+              () => <SecaoDosTitulos t={t} recebidas={recebidas} tudoLiberado={!!perfil?.tudoLiberado} comConta={!!token} />,
+            ],
           ] as const
         ).map(([id, nome, conteudo]) => (
           <section key={id} className="rounded-xl border border-[#c9a24a]/30" data-secao-do-perfil={id}>
@@ -422,7 +513,13 @@ export function PainelPerfil({
               type="button"
               aria-expanded={abertas[id]}
               aria-controls={`perfil-${id}`}
-              onClick={() => setAbertas((atual) => ({ ...atual, [id]: !atual[id] }))}
+              onClick={() =>
+                setAbertas((atual) => {
+                  const novas = { ...atual, [id]: !atual[id] }
+                  guardarSecoes(novas)
+                  return novas
+                })
+              }
               className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition hover:bg-[#3a2614]"
             >
               {nome}

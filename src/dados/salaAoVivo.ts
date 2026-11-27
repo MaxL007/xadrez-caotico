@@ -39,6 +39,8 @@ export interface EstadoDaSala {
   automatica?: boolean
   /** O que as peças do adversário vestem (armas, armaduras, habilidades): o que ele comprou e equipou. */
   vestimentaDoAdversario?: Record<string, Record<string, string>> | null
+  /** O título que cada um escolheu mostrar embaixo do nome. */
+  titulos?: Partial<Record<'w' | 'b', string | null>>
 }
 
 export interface LanceDaSala {

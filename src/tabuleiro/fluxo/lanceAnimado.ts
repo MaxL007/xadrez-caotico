@@ -10,18 +10,17 @@ import { distanciaDaLuta, type GolpeSemArma, lutarSemArma, sortearGolpeSemArma }
 import { tocarSom } from '../../som/sons'
 import { type PartidaXadrez } from '../../dados/xadrezRepo'
 import { type Peca } from '../../conta/personalizacao'
-import { animarAscensao, animarPetalas, virarSuave } from '../animacoes/cerimonias'
+import { animarAscensao, virarSuave } from '../animacoes/cerimonias'
 import { estocarComLanca, paradaDaLanca } from '../combate/lancaDoCavalo'
 import { cavaloChegaEMontam, daMontaria, desfazerEquipamentos, doCavaleiro, encaixarEquipamentos, esconderPartes, partesVestidas, peaoCavaleiro } from '../animacoes/promocao'
 import { animarComemoracao, voltarAoDescanso } from '../animacoes/gestos'
 import { animarPosicao, animarPosicaoRPG, deslocarRPG, pararRPG, pecaSaltaRPG, rumoEntre, virarRPG } from '../animacoes/movimento'
-import { prepararParaSumir } from '../animacoes/queda'
 import { anelDeImpacto, estouroDeRiscos, faisca, respingos } from '../combate/efeitosDeAnime'
 import { nocautear, sacudir } from '../combate/nocaute'
 import { massaDaPeca } from '../sensacao/realismo'
 import { congelar } from '../sensacao/relogioDoJogo'
 import { squareToPosPeca } from '../casas'
-import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, CHANCE_HONRA_SAMURAI, DISTANCIA_REVERENCIA, type EstiloAtaque } from '../combate/golpes'
+import { ALCANCE_GOLPE, animarAtaqueEspada, animarImpacto, type EstiloAtaque } from '../combate/golpes'
 import { alcanceDaMaca, ARMAS_DA_TORRE, baterComMarreta, cairDaMaca, esmagarPeca, MACA_ERGUIDA_ATE_MS, MARRETA_PANCADA_MS, ondaDaMarretada, pancadaNoPeito, poeiraDaPancada, prenderPeloPeito, soltarDaMaca } from '../combate/marreta'
 import { lancarOndaDoRei, lancarPoderDoBispo, lancarRaioDaDama } from '../combate/poderes'
 import { CAPTURAS, type CapturaComHabilidade } from '../combate/habilidades'
@@ -559,66 +558,6 @@ export function criarLanceAnimado(dependencias: DependenciasDoLance) {
             },
           },
         )
-        return
-      }
-
-      // peão capturando peão: às vezes o derrotado se rende com a honra de um samurai — o vencedor
-      // vai até ele com a katana guardada e se curva em respeito; o derrotado vira de frente pra
-      // ele, ajoelha, faz uma reverência profunda e tomba pra frente, entre pétalas de cerejeira
-      const acoesVitima = vitima.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
-      const acoesAtacante = atacante.userData.acoesRPG as Record<string, THREE.AnimationAction> | undefined
-      const derrotado = vitima
-      const honra = () => {
-        const vitima = derrotado
-        novaSequenciaRPG(atacante)
-        const de = { x: atacante.position.x, z: atacante.position.z }
-        const distancia = Math.hypot(posVitima.x - de.x, posVitima.z - de.z)
-        const parada = DISTANCIA_REVERENCIA * atacante.scale.x
-        const fracao = Math.max(0, (distancia - parada) / distancia)
-        const ate = { x: de.x + (posVitima.x - de.x) * fracao, z: de.z + (posVitima.z - de.z) * fracao }
-        virarRPG(atacante, rumoEntre(de, posVitima), () =>
-          deslocarRPG(atacante, de, ate, () => {
-            pararRPG(atacante)
-            tocarClipeRPGUmaVez(atacante, 'Reverencia', { entrada: 0.3, saida: 0.4 })
-            novaSequenciaRPG(vitima)
-            mostrarEspadaRPG(vitima, false)
-            // quem luta de espada se despede com outro som: sino de capela e trompas, no lugar da flauta de bambu
-            tocarSom(atacante.userData.arma === 'espada' ? 'honra:espada' : 'honra')
-            animarPetalas(scene, vitima.position.clone(), 5200)
-            virarRPG(vitima, rumoEntre(vitima.position, atacante.position), () =>
-              tocarClipeRPGUmaVez(vitima, 'Sacrificio', {
-                entrada: 0.3,
-                voltarAoParado: false,
-                aoTerminar: () => {
-                  // caído, imóvel — some aos poucos, e o vencedor entra na casa
-                  const definirOpacidade = prepararParaSumir(vitima)
-                  const inicioSumir = performance.now()
-                  const sumir = (agora: number) => {
-                    const t = Math.min(1, (agora - inicioSumir) / 900)
-                    definirOpacidade(1 - t)
-                    if (t < 1) {
-                      requestAnimationFrame(sumir)
-                      return
-                    }
-                    removerVitima()
-                    seguirParaDestino()
-                  }
-                  requestAnimationFrame(sumir)
-                },
-              }),
-            )
-          }),
-        )
-      }
-      if (
-        !habilidade &&
-        tipoAtacante === 'p' &&
-        vitima.userData.tipo === 'p' &&
-        acoesVitima?.Sacrificio &&
-        acoesAtacante?.Reverencia &&
-        Math.random() < CHANCE_HONRA_SAMURAI
-      ) {
-        embainharAntes(atacante, () => vigente() && honra())
         return
       }
 
