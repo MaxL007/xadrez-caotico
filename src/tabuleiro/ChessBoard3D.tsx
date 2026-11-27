@@ -1040,10 +1040,9 @@ export function ChessBoard3D() {
         sincronizarPecas(true)
         limparDestaques()
         const geracao = andamento.geracao
-        const de = squareToPos(cenaDaLoja.de)
-        const para = squareToPos(cenaDaLoja.para)
-        const chega = vista.irParaAcao(new THREE.Vector3((de.x + para.x) / 2, 0.45, (de.z + para.z) / 2), THREE.MathUtils.degToRad(cenaDaLoja.lado))
-        // a câmera chega, e a peça ataca; no fim, um instante pra ver a peça vitoriosa e volta pra Loja
+        // a câmera vai pra vista de jogo do lado da cena, e a peça ataca com a câmera da luta de sempre; no fim, um
+        // instante pra ver a peça vitoriosa e volta pra Loja
+        const chega = vista.irParaAcao(THREE.MathUtils.degToRad(cenaDaLoja.lado))
         window.setTimeout(() => {
           if (geracao !== andamento.geracao) return
           executarLanceComAnimacao({ from: cenaDaLoja.de, to: cenaDaLoja.para }, () => {

@@ -161,13 +161,15 @@ export function criarVistaDaCamera(
     )
   }
 
-  /** A prévia da Loja: a câmera sai da tela inicial e vem de perto até `ponto` (onde a captura acontece), de lado e
-   * um pouco de cima; a volta é `irParaVistaDoMenu`. Devolve quantos ms a câmera leva pra chegar. */
-  function irParaAcao(ponto: THREE.Vector3, theta: number, raio = DISTANCIA_MINIMA_DA_LUTA + 0.6): number {
+  /** A prévia da Loja: a câmera sai da tela inicial pra vista de jogo do lado `theta` (o tabuleiro inteiro, como numa
+   * partida), e a captura faz o resto, com a câmera da luta de sempre: chega perto junto com quem ataca e abre com o voo
+   * da vítima (pedido do usuário, 27/11: antes a câmera já ia de perto até a captura, o zoom antes do golpe, e não
+   * sobrava nada pra acompanhar). A volta é `irParaVistaDoMenu`. Devolve quantos ms a câmera leva pra chegar. */
+  function irParaAcao(theta: number): number {
     desfazerAproximacao()
     emMenu = false
     definirLadoDaCamera(1)
-    levarCameraPara({ raio, phi: THREE.MathUtils.degToRad(57), theta }, false, ponto)
+    levarCameraPara({ raio: raioQueEnquadra(INCLINACAO_CAMERA_JOGO, theta), phi: INCLINACAO_CAMERA_JOGO, theta })
     return giroCamera ? GIRO_CAMERA_MS : 0
   }
 
