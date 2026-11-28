@@ -587,6 +587,9 @@ Ver README. Armadilhas:
 - O limite de 5 contas por hora vale no simulador também: `LIMITE_CONTAS` em `worker/.dev.vars` afrouxa.
 - O notebook entra em suspensão (tampa, botão) mesmo com a bateria de testes rodando: o teste que estava no meio falha
   por tempo. Conferir os eventos de energia do Windows antes de investigar uma falha que demorou horas.
+- Pra testar o fim no tempo contra a máquina, abrir a partida e ajustar o relógio na mesma chamada (`abrirComRelogio` em
+  `testar-blitz`): a máquina começa a pensar ao abrir, e um ajuste em outra chamada podia chegar depois de ela jogar
+  (com a página ocupada sincronizando a conta), e a partida não acabava no tempo. Era a falha de vez em quando da blitz.
 - O passeio da primeira vez não aparece pro navegador automático (`navigator.webdriver`), a não ser com
   `window.__comPasseio`: senão cobriria os botões de todos os testes.
 - Entrar em tela cheia leva segundos sem GPU e o canvas fica 12 px menor nesse meio-tempo: medir em laço.

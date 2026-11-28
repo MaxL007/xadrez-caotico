@@ -34,6 +34,15 @@ const relogio = () => h('relogio')
  * de recarregar com a conta aberta, a página sincroniza com o servidor enquanto a máquina pensa, e na máquina do GitHub
  * sobrecarregada isso passava dos 20 s de vez em quando (falha intermitente, sem defeito no jogo). */
 const esperarFim = () => page.waitForFunction(() => window.__xadrez.partidaAtual()?.status === 'FINALIZADA', null, { timeout: 60000, polling: 100 })
+/** Abre a partida de teste e já deixa `ms` no relógio de `cor`, na mesma chamada: a máquina começa a pensar ao abrir, e
+ * o ajuste numa chamada separada podia chegar depois de ela jogar (com a página ocupada sincronizando a conta, logo depois
+ * de recarregar). Aí a vez passava pra quem joga, o relógio da máquina parava e a partida não acabava no tempo: era a
+ * falha de vez em quando do "vencer no tempo", sem defeito no jogo (28/11). */
+const abrirComRelogio = (pgn, cor, ritmo, quem, ms) =>
+  page.evaluate(({ pgn, cor, ritmo, quem, ms }) => {
+    window.__xadrez.carregarTeste(pgn, cor, 'facil', ritmo)
+    window.__xadrez.ajustarRelogio(quem, ms)
+  }, { pgn, cor, ritmo, quem, ms })
 /** Uma posição, com quem joga e as casas, num PGN que o tabuleiro aceita. */
 const posicao = (fen) => `[SetUp "1"]\n[FEN "${fen}"]\n\n*`
 
@@ -101,8 +110,7 @@ try {
   conferir('e não deixa mais jogar', (await h('fen')) === fenNoFim)
 
   // =================== o tempo da máquina zera: você vence ===================
-  await h('carregarTeste', '1. e4', 'w', 'facil', '3+2')
-  await h('ajustarRelogio', 'b', 50)
+  await abrirComRelogio('1. e4', 'w', '3+2', 'b', 50)
   await esperarFim()
   await page.locator('[data-resultado="venceu"]').waitFor({ timeout: 20000 })
   partida = await h('partidaAtual')
@@ -113,20 +121,17 @@ try {
 
   // =================== sem peças para dar mate: empate ===================
   // você só com o rei: a máquina zera o tempo, mas você não teria como dar mate
-  await h('carregarTeste', posicao('4k3/8/8/8/8/8/3q4/4K3 b - - 0 1'), 'w', 'facil', '3+2')
-  await h('ajustarRelogio', 'b', 50)
+  await abrirComRelogio(posicao('4k3/8/8/8/8/8/3q4/4K3 b - - 0 1'), 'w', '3+2', 'b', 50)
   await esperarFim()
   await page.locator('[data-resultado="empate"]').waitFor({ timeout: 20000 })
   partida = await h('partidaAtual')
   conferir('a máquina zera o tempo, mas você só tem o rei: empate', partida.resultado === 'Empate (tempo esgotado, sem peças para dar mate)', partida.resultado)
   // rei e bispo contra rei e dama: existe um mate (com a dama tapando a fuga do próprio rei), então é vitória
-  await h('carregarTeste', posicao('4k3/8/8/8/8/8/3q4/4K1B1 b - - 0 1'), 'w', 'facil', '3+2')
-  await h('ajustarRelogio', 'b', 50)
+  await abrirComRelogio(posicao('4k3/8/8/8/8/8/3q4/4K1B1 b - - 0 1'), 'w', '3+2', 'b', 50)
   await esperarFim()
   conferir('rei e bispo contra rei e dama: o mate existe, vitória no tempo', (await h('partidaAtual')).resultado === 'Você venceu (tempo)', (await h('partidaAtual')).resultado)
   // com um peão já dá: vitória
-  await h('carregarTeste', posicao('4k3/8/8/8/8/8/4P3/4K3 b - - 0 1'), 'w', 'facil', '3+2')
-  await h('ajustarRelogio', 'b', 50)
+  await abrirComRelogio(posicao('4k3/8/8/8/8/8/4P3/4K3 b - - 0 1'), 'w', '3+2', 'b', 50)
   await esperarFim()
   await page.locator('[data-resultado="venceu"]').waitFor({ timeout: 20000 })
   conferir('com um peão, o tempo da máquina zerado é vitória', (await h('partidaAtual')).resultado === 'Você venceu (tempo)')
@@ -171,8 +176,7 @@ try {
     await page.waitForFunction(() => !!window.__xadrez?.carregarTeste, null, { timeout: 120000, polling: 300 })
   }
   async function vencerNoTempo() {
-    await h('carregarTeste', '1. e4', 'w', 'facil', '3+2')
-    await h('ajustarRelogio', 'b', 50)
+    await abrirComRelogio('1. e4', 'w', '3+2', 'b', 50)
     await esperarFim()
     await page.locator('[data-resultado="venceu"]').waitFor({ timeout: 60000 })
   }
