@@ -9,6 +9,11 @@ const API = (import.meta.env.VITE_API_URL as string | undefined) ?? ''
 const CHAVE_SESSAO = 'xadrezCaotico:sessao'
 const TEMPO_LIMITE_MS = 8000
 const CONFERIR_AMIGOS_MS = 15000
+/** Com um convite de partida novo esperando resposta, confere bem mais depressa (pedido do usuário, 28/11): o
+ * cancelamento de quem chamou aparece aqui quase junto. Só nos primeiros minutos de cada convite, pra um convite
+ * esquecido não gastar os pedidos do dia. Quem cancela espera o mesmo tanto antes de sair (`ESPERA_DO_CANCELAMENTO_MS`). */
+export const CONFERIR_COM_CONVITE_MS = 2000
+const CONVITE_NOVO_MS = 3 * 60 * 1000
 
 export interface Usuario {
   id: string
@@ -246,7 +251,19 @@ export function avisarQueSaiu() {
 export const receberConquistas = (ids: string[]) => pedir<{ oticoins: number; novas: string[]; recebidas: string[] }>('POST', '/conquistas/receber', { ids })
 export const enderecoDaFoto = (idJogador: string, versao: string) => `${API}/fotos/${idJogador}?v=${versao}`
 
-/** Confere de tempos em tempos, enquanto a aba está à vista: convites chegam sem precisar recarregar a página. */
+/** Quando este aparelho viu cada convite de partida pela primeira vez (o `codigo` da sala). */
+const convitesVistos = new Map<string, number>()
+
+/** O convite sumiu (aceito noutro aparelho, recusado ou cancelado por quem chamou): o aviso dele sai da bandeja também. */
+function fecharAvisoDoConvite(codigo: string) {
+  if (!('serviceWorker' in navigator)) return
+  void navigator.serviceWorker.getRegistration().then((registro) =>
+    registro?.getNotifications({ tag: `convite-${codigo}` }).then((avisos) => avisos.forEach((aviso) => aviso.close())),
+  ).catch(() => undefined)
+}
+
+/** Confere de tempos em tempos, enquanto a aba está à vista: convites chegam sem precisar recarregar a página. Com um
+ * convite de partida novo, bem mais depressa; e na volta pro jogo, na hora. */
 export function useAmigos() {
   const token = useSessao()?.token
   const [lido, setLido] = useState<{ token: string; amigos: Amigos } | null>(null)
@@ -254,7 +271,16 @@ export function useAmigos() {
   const atualizar = useCallback(async () => {
     if (!token) return
     try {
-      setLido({ token, amigos: await listarAmigos() })
+      const amigos = await listarAmigos()
+      const agora = Date.now()
+      const codigos = new Set(amigos.partidasRecebidas.map((p) => p.codigo))
+      for (const codigo of codigos) if (!convitesVistos.has(codigo)) convitesVistos.set(codigo, agora)
+      for (const codigo of [...convitesVistos.keys()])
+        if (!codigos.has(codigo)) {
+          convitesVistos.delete(codigo)
+          fecharAvisoDoConvite(codigo)
+        }
+      setLido({ token, amigos })
     } catch (erro) {
       if (erro instanceof ErroDoServidor && erro.status === 401) esquecerSessao()
     }
@@ -263,10 +289,27 @@ export function useAmigos() {
   useEffect(() => {
     if (!token) return
     void atualizar()
+    let ultima = Date.now()
+    // o relógio anda a cada 2 s, mas só pede ao servidor no ritmo de agora: 2 s com um convite novo, senão 15 s
     const relogio = setInterval(() => {
-      if (!document.hidden) void atualizar()
-    }, CONFERIR_AMIGOS_MS)
-    return () => clearInterval(relogio)
+      if (document.hidden) return
+      const agora = Date.now()
+      const temConviteNovo = [...convitesVistos.values()].some((visto) => agora - visto < CONVITE_NOVO_MS)
+      if (agora - ultima < (temConviteNovo ? CONFERIR_COM_CONVITE_MS : CONFERIR_AMIGOS_MS) - 100) return
+      ultima = agora
+      void atualizar()
+    }, CONFERIR_COM_CONVITE_MS)
+    // de volta pro jogo: confere na hora (com ele escondido, nada foi conferido)
+    const aoVoltar = () => {
+      if (document.hidden) return
+      ultima = Date.now()
+      void atualizar()
+    }
+    document.addEventListener('visibilitychange', aoVoltar)
+    return () => {
+      clearInterval(relogio)
+      document.removeEventListener('visibilitychange', aoVoltar)
+    }
   }, [token, atualizar])
 
   return { amigos: lido && lido.token === token ? lido.amigos : null, atualizar }

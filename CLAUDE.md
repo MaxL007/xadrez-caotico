@@ -73,7 +73,11 @@ As pastas de `src` são por função:
   abre Amigos, onde os pedidos ficam no topo com Confirmar e Recusar.
 - "Novo jogo" numa partida amistosa chama o mesmo amigo (`/salas/<código>/revanche`), não a máquina. O aviso chega pela
   conexão da partida aberta; se os dois pedem, o segundo entra na partida do primeiro.
-- O menu confere `/amigos` a cada 15 s (`useAmigos`), só com a aba à vista: conta nos 100 mil pedidos por dia. Durante
+- O menu confere `/amigos` a cada 15 s (`useAmigos`), só com a aba à vista: conta nos 100 mil pedidos por dia. Com um
+  convite de partida novo (nos primeiros 3 minutos dele), confere a cada 2 s, e na volta pro jogo confere na hora; o
+  convite que some fecha o aviso dele na bandeja. Quem cancela o convite espera esses 2 s ("Cancelando…") antes de sair:
+  o convite some pros dois quase juntos (pedido do usuário, 28/11: pro amigo demorava até 15 s). Push não serve pra isso:
+  o Chrome exige que todo push mostre um aviso. Durante
   uma partida não confere; a novidade aparece ao voltar ao menu.
 - A bolinha verde (`src/conta/presenca.ts`): com a conta aberta e o jogo à vista, o aparelho manda `POST /presenca` a
   cada minuto, em qualquer tela; ao esconder a aba ou fechar, manda `/presenca/sair` pelo `sendBeacon` (o token vai no

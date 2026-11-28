@@ -30,7 +30,7 @@ import { type ChaveTexto, tradutor, type Traduzir } from '../textos/idiomas'
 import { MenuXadrez } from '../telas/MenuXadrez'
 import { listPartidas, novaPartida, type PartidaXadrez, resultadoDaPartida, salvarPartida } from '../dados/xadrezRepo'
 import { ouvirDados } from '../dados/db'
-import { pedirRevanche, recusarSala, useSessao } from '../dados/servidor'
+import { CONFERIR_COM_CONVITE_MS, pedirRevanche, recusarSala, useSessao } from '../dados/servidor'
 import { type EstadoDaSala, type LanceDaSala, type ResultadoDaSala } from '../dados/salaAoVivo'
 import { registrarAprendizadoDaPartida, type ResultadoPartida as ResultadoPartidaXadrez } from '../dados/xadrezAprendizadoRepo'
 import { carregarPersonalizacao, ouvirPersonalizacao, personalizacaoAtual } from '../conta/personalizacao'
@@ -1387,9 +1387,19 @@ export function ChessBoard3D() {
   }, [salaRef])
 
 
-  // espera o servidor: a lista de partidas do menu não pode trazer de volta o convite cancelado
+  // espera o servidor: a lista de partidas do menu não pode trazer de volta o convite cancelado. Depois, espera o tempo
+  // em que o amigo confere os convites (`CONFERIR_COM_CONVITE_MS`): o convite some pros dois quase juntos (pedido do
+  // usuário, 28/11: pra quem cancelava sumia na hora, e pro amigo só na conferência seguinte, até 15 s depois)
+  const [cancelandoConvite, setCancelandoConvite] = useState(false)
   async function handleCancelarConvite() {
-    if (sala) await recusarSala(sala.codigo).catch(() => {})
+    if (cancelandoConvite) return
+    setCancelandoConvite(true)
+    try {
+      if (sala) await recusarSala(sala.codigo).catch(() => {})
+      await new Promise((pronto) => window.setTimeout(pronto, CONFERIR_COM_CONVITE_MS))
+    } finally {
+      setCancelandoConvite(false)
+    }
     handleMenu()
   }
 
@@ -1587,8 +1597,8 @@ export function ChessBoard3D() {
             {sala?.status === 'aguardando' && (
               <div className="pointer-events-auto flex w-full max-w-md flex-wrap items-center justify-between gap-2 rounded-xl bg-white/95 p-3 shadow-lg" role="status" data-convite>
                 <p className="text-xs text-[#5a4630]">{t('online.esperaDica')}</p>
-                <Button variant="secondary" onClick={handleCancelarConvite}>
-                  {t('online.cancelarConvite')}
+                <Button variant="secondary" onClick={handleCancelarConvite} disabled={cancelandoConvite}>
+                  {t(cancelandoConvite ? 'online.cancelandoConvite' : 'online.cancelarConvite')}
                 </Button>
               </div>
             )}
