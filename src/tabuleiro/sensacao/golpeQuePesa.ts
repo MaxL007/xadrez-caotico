@@ -68,12 +68,11 @@ export function areaDaLuta(
   if (joga) pontos.push(v.clone().addScaledVector(rumo, 0.9).setY(0.3))
   // a hélice do Puxão: a vítima gira presa na mão erguida, acima da rainha e pra trás dela
   if (jeito.alto) pontos.push(a.clone().addScaledVector(rumo, 0.35).setY(alturaA * 2.1), a.clone().addScaledVector(rumo, -0.45).setY(alturaA * 1.2))
-  // o Espiral Absoluto: a vítima sobe bem alto em cima da casa (o centro do corpo a ~3,1 vezes o tamanho dela) e desce
-  // numa espiral que abre pro lado do peão; ele pousa antes da casa
+  // o Espiral Absoluto: a vítima sobe bem alto em cima da casa (o centro do corpo a ~4,6 vezes o tamanho dela) e desce
+  // reta, girando; o peão, abraçado nas costas dela, pousa antes da casa
   if (jeito.espiral) {
-    const alto = alturaV * 3.9
-    const deLado = new THREE.Vector3(-rumo.z, 0, rumo.x).multiplyScalar(0.55 * alturaV)
-    pontos.push(v.clone().setY(alto), v.clone().add(deLado).setY(alto * 0.6), v.clone().sub(deLado).setY(alto * 0.6), v.clone().addScaledVector(rumo, -0.9 * alturaV).setY(alto * 0.75))
+    const alto = alturaV * 5.4
+    pontos.push(v.clone().setY(alto), v.clone().addScaledVector(rumo, -0.4 * alturaV).setY(alto * 0.85), v.clone().addScaledVector(rumo, -0.9 * alturaV).setY(0.3))
   }
   // o Empurrão: a barreira em volta de quem ataca (a bolha cobre o corpo inteiro e abre pros lados) e o começo do voo,
   // alto, pra fora do tabuleiro (o resto do voo sai da tela, como no anime)
@@ -91,7 +90,13 @@ export function areaDaLuta(
       ? undefined
       : {
           pontos: corpo(a, alturaA),
-          progresso: () => 1 - new THREE.Vector3(atacante.position.x, 0, atacante.position.z).distanceTo(parada) / caminho,
+          // só avança (pedido do usuário, 28/11): na habilidade, quem ataca sai do lugar (no Espiral, sobe pras costas da
+          // vítima e gira com ela), e a distância até a parada crescia e encolhia; a câmera aproximava e afastava sem
+          // parar, tremendo. Chegou perto, fica perto até o golpe acabar
+          progresso: (() => {
+            let maior = 0
+            return () => (maior = Math.max(maior, 1 - new THREE.Vector3(atacante.position.x, 0, atacante.position.z).distanceTo(parada) / caminho))
+          })(),
         }
   return { pontos, rumo, envolvidas: [atacante, vitima], comeco }
 }

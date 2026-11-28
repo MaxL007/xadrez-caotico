@@ -281,20 +281,21 @@ As pastas de `src` são por função:
   mecânica do vídeo, com mudanças pedidas pelo usuário pra não ficar igual (no vídeo: faixas de tecido, o atacante
   surgindo atrás, a broca caindo reta, o oponente enterrado de cabeça).
   - O pé direito acende com o joelho recolhido, e o chute sobe até o queixo; a vítima sobe bem alto (o meio do corpo a
-    3,1 vezes o tamanho dela), a cabeça pra trás.
+    4,6 vezes o tamanho dela; era 3,1, mais alto a pedido do usuário, 28/11), a cabeça pra trás.
   - O peão agacha e sobe atrás dela com um rastro de luz (`aoRastroDoSalto`) e a abraça pelas costas (um tranco no tempo).
   - No alto os dois viram de cabeça pra baixo e as fitas de luz na cor da facção enrolam a vítima inteira, com os braços
     presos no corpo (malhas filhas da vítima, liberadas no fim).
-  - A broca: os dois caem girando, três voltas acelerando e a broca girando em volta dela mesma, num caminho em espiral
-    que fecha em cima da casa, com o rastro de luz nos pés da vítima.
+  - A broca: os dois caem girando, três voltas acelerando e a broca girando em volta dela mesma, em linha reta em cima
+    da casa (28/11, pedido do usuário; antes descia num caminho em espiral), com o rastro de luz nos pés da vítima.
   - Perto do chão o peão solta, dá um mortal pra trás e cai meio agachado, de frente pra casa: os pés no chão, a mão
     direita no chão e a esquerda no ar. A vítima bate de cabeça (`aoColidir`: o golpe que decide), fica fincada um
     instante, tomba de costas e o chão cede numa cratera, como no Puxão (`aoDeitar`).
   - Fincada, a broca freia até o giro em que o tombo vai pra longe do peão (`giroDoTombo`): a cabeça fica na casa e o
     corpo deita do outro lado, então a cratera nunca abre debaixo do peão (antes, o tombo seguia o giro em que a broca
     parou e às vezes caía em cima dele).
-  - O peão termina onde pousou, e o lance o leva dali pra casa. A câmera inclui o alto da subida e a espiral
-    (`espiral` em `areaDaLuta`).
+  - O peão termina onde pousou, e o lance o leva dali pra casa. A câmera inclui o alto da subida e a queda
+    (`espiral` em `areaDaLuta`). A câmera tremia (bug visto pelo usuário, 28/11): o peão, nas costas da vítima girando,
+    fazia o acompanhamento de quem ataca ir e voltar. O `progresso` do acompanhamento agora só avança, em todo golpe.
 
   Os sons são `espiral:chute`, `espiral:salta`, `espiral:agarra`, `espiral:enrola`, `espiral:gira`, `espiral:colide` e
   `espiral:pouso`. O símbolo é o desenho do usuário (25/11): o redemoinho de nove braços afinando em ponta, formas

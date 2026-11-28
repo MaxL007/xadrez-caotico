@@ -9,14 +9,14 @@ import { acaso, emDois, linhasDeVelocidade, QUADRO_EM_DOIS } from './efeitosDeAn
 // O Espiral Absoluto, habilidade do peão (a ideia, a descrição e um vídeo de referência são do usuário, 25/11). Vale com
 // ou sem arma: luta com o corpo, como a Dempsey Roll. Segue a mecânica do vídeo (o chute que joga pro alto, a pegada
 // por trás no ar, os dois de cabeça pra baixo caindo como uma broca), com mudanças pedidas pelo usuário pra não ficar
-// igual: fitas de luz na cor da facção no lugar das faixas, o rastro de luz do peão subindo, a broca descendo num
-// caminho em espiral, a vítima que fica fincada e tomba de costas na cratera, e o mortal pra trás antes da queda.
+// igual: fitas de luz na cor da facção no lugar das faixas, o rastro de luz do peão subindo, a broca descendo reta
+// em cima da casa (28/11; antes descia num caminho em espiral), a vítima que fica fincada e tomba de costas na cratera, e o mortal pra trás antes da queda.
 //
 //  1. A base: o peão firma o pé esquerdo, recolhe o joelho direito e o pé acende (o "tiin").
 //  2. O chute pra cima no queixo: a vítima sobe bem alto, a cabeça jogada pra trás.
 //  3. O salto: o peão agacha e sobe atrás dela deixando um rastro de luz, e a abraça pelas costas.
 //  4. No alto, os dois viram de cabeça pra baixo e as fitas de luz enrolam a vítima inteira (os braços presos no corpo).
-//  5. A broca: os dois caem girando cada vez mais rápido, num caminho em espiral que fecha em cima da casa.
+//  5. A broca: os dois caem girando cada vez mais rápido, em linha reta, em cima da casa.
 //  6. Bem perto do chão o peão solta, dá um mortal pra trás e cai meio agachado: os pés no chão, uma mão no chão e a
 //     outra no ar. A vítima bate de cabeça no chão, fica fincada um instante, tomba de costas e o chão cede (a cratera,
 //     como no Puxão).
@@ -58,12 +58,11 @@ const FIM = 3550
 /** O tranco da pegada: o tempo para um instante. */
 const TRANCO_MS = 60
 
-/** O centro do corpo da vítima no ponto mais alto, acima do chão (no tamanho dela): "bem alto". */
-const ALTURA_DO_APICE = 3.1
+/** O centro do corpo da vítima no ponto mais alto, acima do chão (no tamanho dela): "bem alto" (era 3,1; mais alto a
+ * pedido do usuário, 28/11). */
+const ALTURA_DO_APICE = 4.6
 /** Na hora de soltar, a cabeça da vítima a esta altura do chão (no tamanho dela). */
 const CABECA_AO_SOLTAR = 0.35
-/** O raio da espiral no começo da queda (no tamanho da vítima): fecha até zero em cima da casa. */
-const RAIO_DA_ESPIRAL = 0.55
 /** O quanto a vítima vai pra trás com o chute, no ar, antes de virar de cabeça pra baixo. */
 const TOMBA_NO_CHUTE = 0.55
 /** As peças ficam em pé nesta altura do tabuleiro. */
@@ -334,15 +333,14 @@ const alturaDeSoltar = (e: Espiral) => centroComACabecaEm(e, CHAO + CABECA_AO_SO
 /** O ângulo da espiral na fração `s` da queda: começa devagar e acelera. */
 const anguloDaEspiral = (s: number) => VOLTAS * Math.PI * 2 * (0.3 * s + 0.7 * s * s)
 
-/** Onde está o meio do corpo da vítima na broca (fração `s` da queda), e o giro dela em volta dela mesma. */
+/** Onde está o meio do corpo da vítima na broca (fração `s` da queda), e o giro dela em volta dela mesma. A queda é
+ * reta, em cima da casa (pedido do usuário, 28/11: antes descia num caminho em espiral que abria pros lados); o que gira
+ * é a broca, em volta dela mesma. */
 function naEspiral(e: Espiral, s: number): { centro: THREE.Vector3; giro: number } {
   const angulo = anguloDaEspiral(s)
-  const raio = RAIO_DA_ESPIRAL * e.vitimaEscala * (1 - s)
   // a queda pesa: começa devagar e acelera, como quem cai
   const altura = alturaDoApice(e) + (alturaDeSoltar(e) - alturaDoApice(e)) * s * s
-  // o caminho em espiral sai de cima da casa e fecha de volta nela
-  const deLado = new THREE.Vector3(Math.cos(angulo) - 1, 0, Math.sin(angulo)).multiplyScalar(raio)
-  return { centro: e.vitimaBase.clone().add(deLado).setY(altura), giro: angulo * GIROS_DA_BROCA }
+  return { centro: e.vitimaBase.clone().setY(altura), giro: angulo * GIROS_DA_BROCA }
 }
 
 /** A vítima em cada instante: com medo do chute, subindo, virando de cabeça pra baixo, na broca, fincada e tombando. */
