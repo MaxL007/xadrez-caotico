@@ -589,7 +589,9 @@ Ver README. Armadilhas:
   por tempo. Conferir os eventos de energia do Windows antes de investigar uma falha que demorou horas.
 - Pra testar o fim no tempo contra a máquina, abrir a partida e ajustar o relógio na mesma chamada (`abrirComRelogio` em
   `testar-blitz`): a máquina começa a pensar ao abrir, e um ajuste em outra chamada podia chegar depois de ela jogar
-  (com a página ocupada sincronizando a conta), e a partida não acabava no tempo. Era a falha de vez em quando da blitz.
+  (com a página ocupada sincronizando a conta). A causa principal da falha de vez em quando da blitz, porém, era do jogo
+  (28/11): o relógio só começava a contar no primeiro tique do mostrador na tela, e com a página ocupada a máquina jogava
+  antes dele, sem gastar tempo. Agora `carregarPgn` já começa a contar (`andarRelogioDaPartida` ao abrir).
 - O passeio da primeira vez não aparece pro navegador automático (`navigator.webdriver`), a não ser com
   `window.__comPasseio`: senão cobriria os botões de todos os testes.
 - Entrar em tela cheia leva segundos sem GPU e o canvas fica 12 px menor nesse meio-tempo: medir em laço.
@@ -651,7 +653,8 @@ sem interface). Os .fbx e o .blend ficam só nesta máquina e não vão pro git.
 - Adaptações iguais pros dois lados: o relógio para enquanto a peça anda e golpeia (`lancesEmAndamento`, como quem
   aperta o relógio ao soltar a peça), com o jogo escondido e fora da partida (no menu o tempo é gravado e volta no
   "Continuar"). A máquina com menos de 20 s não faz a pausa e pensa no máximo 1/30 do que resta.
-- Quem desconta é o tabuleiro (`andarRelogioDaPartida`, também antes de cada lance: se zerou, o lance não sai); o
+- Quem desconta é o tabuleiro (`andarRelogioDaPartida`, também ao abrir a partida, pra já começar a contar, e antes de
+  cada lance: se zerou, o lance não sai); o
   `RelogioDaPartida.tsx`, no canto de cima, chama a cada 0,1 s e só desenha quando o que aparece muda.
 - Entre pessoas (partida amistosa com ritmo, revanche no mesmo ritmo, e o adversário automático), o relógio mora na
   sala (`worker/src/sala.ts`): cada lance desconta o tempo de quem jogou e soma o acréscimo; um alarme do Durable Object

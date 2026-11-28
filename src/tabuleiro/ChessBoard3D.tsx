@@ -1019,6 +1019,9 @@ export function ChessBoard3D() {
         sincronizarPecas(true)
         limparDestaques()
         atualizarStatusTexto()
+        // a blitz começa a contar já (28/11): antes contava só a partir do primeiro tique do mostrador na tela, e com a
+        // página ocupada (logo depois de entrar na conta) a máquina chegava a jogar antes dele, sem gastar tempo nenhum
+        if (relogioRef.current) maquina.andarRelogioDaPartida()
         if (!chess.isGameOver() && chess.turn() !== corHumanoRef.current) maquina.jogarLanceDaMaquina()
       },
       verEmAcao(item) {
